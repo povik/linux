@@ -1099,8 +1099,12 @@ static bool have_cpu_die(void)
 
 bool cpus_are_stuck_in_kernel(void)
 {
+#ifndef CONFIG_KEXEC_HACK
 	bool smp_spin_tables = (num_possible_cpus() > 1 && !have_cpu_die());
 
 	return !!cpus_stuck_in_kernel || smp_spin_tables ||
 		is_protected_kvm_enabled();
+#else
+	return false;
+#endif
 }

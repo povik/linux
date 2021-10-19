@@ -1277,8 +1277,13 @@ config PARAVIRT_TIME_ACCOUNTING
 
 	  If in doubt, say N here.
 
+config KEXEC_HACK
+	bool "kexec hack"
+	help
+	  Do some ad-hoc patching to SMP-related code so that kexec works.
+
 config KEXEC
-	depends on PM_SLEEP_SMP
+	depends on (PM_SLEEP_SMP || KEXEC_HACK)
 	select KEXEC_CORE
 	bool "kexec system call"
 	help

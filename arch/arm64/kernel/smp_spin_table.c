@@ -49,6 +49,10 @@ static int smp_spin_table_cpu_init(unsigned int cpu)
 	if (!dn)
 		return -ENODEV;
 
+#ifdef CONFIG_KEXEC_HACK
+	return -ENOSYS;
+#endif
+
 	/*
 	 * Determine the address from which the CPU is polling.
 	 */
