@@ -871,8 +871,7 @@ static void apple_nvme_disable(struct apple_nvme *anv, bool shutdown)
 
 		if (shutdown)
 			nvme_shutdown_ctrl(&anv->ctrl);
-		else
-			nvme_disable_ctrl(&anv->ctrl);
+		nvme_disable_ctrl(&anv->ctrl);
 	}
 
 	WRITE_ONCE(anv->ioq.enabled, false);
@@ -900,7 +899,6 @@ static void apple_nvme_disable(struct apple_nvme *anv, bool shutdown)
 	if (shutdown) {
 		nvme_start_queues(&anv->ctrl);
 		nvme_start_admin_queue(&anv->ctrl);
-		blk_cleanup_queue(anv->ctrl.admin_q);
 	}
 }
 
@@ -1571,6 +1569,9 @@ static void apple_nvme_shutdown(struct platform_device *pdev)
 	apple_nvme_disable(anv, true);
 	if (apple_rtkit_is_running(anv->rtk))
 		apple_rtkit_shutdown(anv->rtk);
+
+	writel_relaxed(0, anv->mmio_coproc + APPLE_ANS_COPROC_CPU_CONTROL);
+	(void)readl_relaxed(anv->mmio_coproc + APPLE_ANS_COPROC_CPU_CONTROL);
 }
 
 static const struct of_device_id apple_nvme_of_match[] = {
