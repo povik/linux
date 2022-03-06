@@ -21,10 +21,6 @@
 	};
 };
 
-&wifi0 {
-	brcm,board-type = "apple,atlantisb";
-};
-
 /*
  * Provide labels for the USB type C ports.
  */
