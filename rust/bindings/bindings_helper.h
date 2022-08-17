@@ -36,6 +36,7 @@
 #include <linux/random.h>
 #include <linux/security.h>
 #include <linux/slab.h>
+#include <linux/soc/apple/rtkit.h>
 #include <linux/sysctl.h>
 #include <linux/timekeeping.h>
 #include <linux/uaccess.h>
