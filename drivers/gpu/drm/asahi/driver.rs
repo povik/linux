@@ -18,9 +18,6 @@ use kernel::{
 
 use kernel::macros::vtable;
 
-mod asahi_gem;
-mod asahi_mmu;
-
 const ASC_CTL_SIZE: usize = 0x4000;
 const CPU_CONTROL: usize = 0x44;
 const CPU_RUN: u32 = 0x1 << 4; // BIT(4)
@@ -34,19 +31,19 @@ const INFO: drv::DriverInfo = drv::DriverInfo {
     date: c_str!("20220831"),
 };
 
-struct AsahiData {
+pub(crate) struct AsahiData {
     dev: device::Device,
-    uat: asahi_mmu::Uat,
+    uat: crate::mmu::Uat,
     rtkit: Mutex<Option<rtkit::RTKit<AsahiDevice>>>,
 }
 
-struct AsahiResources {
+pub(crate) struct AsahiResources {
     asc: IoMem<ASC_CTL_SIZE>,
 }
 
 type DeviceData = device::Data<drv::Registration<AsahiDevice>, AsahiResources, AsahiData>;
 
-struct AsahiDevice;
+pub(crate) struct AsahiDevice;
 
 impl AsahiDevice {
     fn start_cpu(res: &mut AsahiResources) -> Result {
@@ -61,7 +58,7 @@ impl AsahiDevice {
 #[vtable]
 impl rtkit::Operations for AsahiDevice {
     type Data = Arc<DeviceData>;
-    type Buffer = asahi_gem::ObjectRef;
+    type Buffer = crate::gem::ObjectRef;
 
     fn shmem_alloc(
         data: <Self::Data as PointerWrapper>::Borrowed<'_>,
@@ -72,7 +69,7 @@ impl rtkit::Operations for AsahiDevice {
         let dev = reg.device();
         dev_info!(dev, "shmem_alloc() {:#x} bytes\n", size);
 
-        let mut obj = asahi_gem::new_object(dev, size)?;
+        let mut obj = crate::gem::new_object(dev, size)?;
         obj.vmap()?;
         let map = obj.map_into(data.uat.kernel_context())?;
         dev_info!(dev, "shmem_alloc() -> VA {:#x}\n", map.iova());
@@ -83,7 +80,7 @@ impl rtkit::Operations for AsahiDevice {
 #[vtable]
 impl drv::Driver for AsahiDevice {
     type Data = ();
-    type Object = asahi_gem::Object;
+    type Object = crate::gem::Object;
 
     const INFO: drv::DriverInfo = INFO;
     const FEATURES: u32 = drv::FEAT_GEM | drv::FEAT_RENDER;
@@ -104,7 +101,7 @@ impl platform::Driver for AsahiDevice {
 
         dev_info!(dev, "Probing!\n");
 
-        pdev.set_dma_masks((1 << asahi_mmu::UAT_OAS) - 1);
+        pdev.set_dma_masks((1 << crate::mmu::UAT_OAS) - 1);
 
         // TODO: add device abstraction to ioremap by name
         // SAFETY: AGX does DMA via the UAT IOMMU (mostly)
@@ -118,7 +115,7 @@ impl platform::Driver for AsahiDevice {
         // Start the coprocessor CPU, so UAT can initialize the handoff
         AsahiDevice::start_cpu(&mut res)?;
 
-        let uat = asahi_mmu::Uat::new(&dev)?;
+        let uat = crate::mmu::Uat::new(&dev)?;
         let reg = drm::drv::Registration::<AsahiDevice>::new(&dev)?;
 
         let data = kernel::new_device_data!(
