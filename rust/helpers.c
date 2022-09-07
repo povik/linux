@@ -18,6 +18,7 @@
  * accidentally exposed.
  */
 
+#include <drm/drm_gem.h>
 #include <linux/amba/bus.h>
 #include <linux/bug.h>
 #include <linux/build_bug.h>
@@ -694,6 +695,18 @@ resource_size_t rust_helper_resource_size(const struct resource *res)
 	return resource_size(res);
 }
 EXPORT_SYMBOL_GPL(rust_helper_resource_size);
+
+void rust_helper_drm_gem_object_get(struct drm_gem_object *obj)
+{
+	drm_gem_object_get(obj);
+}
+EXPORT_SYMBOL_GPL(rust_helper_drm_gem_object_get);
+
+void rust_helper_drm_gem_object_put(struct drm_gem_object *obj)
+{
+	drm_gem_object_put(obj);
+}
+EXPORT_SYMBOL_GPL(rust_helper_drm_gem_object_put);
 
 /*
  * We use `bindgen`'s `--size_t-is-usize` option to bind the C `size_t` type
