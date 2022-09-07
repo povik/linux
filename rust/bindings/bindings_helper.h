@@ -18,6 +18,8 @@
 #include <linux/hw_random.h>
 #include <linux/interrupt.h>
 #include <linux/io.h>
+#include <linux/io-pgtable.h>
+#include <linux/iosys-map.h>
 #include <linux/irqdomain.h>
 #include <linux/irq.h>
 #include <linux/ktime.h>

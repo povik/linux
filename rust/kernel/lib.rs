@@ -97,6 +97,7 @@ pub mod sysctl;
 pub mod io_buffer;
 #[cfg(CONFIG_HAS_IOMEM)]
 pub mod io_mem;
+pub mod io_pgtable;
 pub mod ioctl;
 pub mod iov_iter;
 pub mod of;
