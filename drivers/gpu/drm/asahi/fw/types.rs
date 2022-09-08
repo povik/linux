@@ -37,6 +37,17 @@ macro_rules! const_f32 {
     }};
 }
 
+#[macro_export]
+macro_rules! no_debug {
+    ($type:ty) => {
+        impl Debug for $type {
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                write!(f, "...")
+            }
+        }
+    };
+}
+
 #[derive(Copy, Clone)]
 #[repr(C, packed)]
 pub(crate) struct Pad<const N: usize>([u8; N]);
