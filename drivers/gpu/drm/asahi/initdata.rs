@@ -379,14 +379,7 @@ impl<'a> InitDataBuilder::ver<'a> {
             unk_b38_0: 1,
             #[ver(V >= V13_0B4)]
             unk_b38_4: 1,
-            unk_b38: Array::new([
-                0xffffffffffffffff,
-                0xffffffffffffffff,
-                0xffffffffffffffff,
-                0xffffffffffffffff,
-                0xffffffffffffffff,
-                0xffffffffffffffff,
-            ]),
+            unk_b38: Array::new([0xffffffff; 12]),
             #[ver(V >= V13_0B4)]
             unk_c3c: 0x19,
             ..Default::default()
