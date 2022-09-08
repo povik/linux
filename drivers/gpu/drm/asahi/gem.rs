@@ -30,11 +30,11 @@ pub(crate) struct ObjectRef {
 }
 
 impl ObjectRef {
-    pub(crate) fn vmap(&mut self) -> Result<&shmem::VMap<DriverObject>> {
+    pub(crate) fn vmap(&mut self) -> Result<&mut shmem::VMap<DriverObject>> {
         if self.vmap.is_none() {
             self.vmap = Some(self.gem.vmap()?);
         }
-        Ok(self.vmap.as_ref().unwrap())
+        Ok(self.vmap.as_mut().unwrap())
     }
 
     pub(crate) fn map_into(
