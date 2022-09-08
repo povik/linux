@@ -28,9 +28,9 @@ const PPL_MAGIC: u64 = 0x4b1d000000000002;
 
 const UAT_NUM_CTX: usize = 64;
 
-const UAT_PGBIT: usize = 14;
-const UAT_PGSZ: usize = 1 << UAT_PGBIT;
-const UAT_PGMSK: usize = UAT_PGSZ - 1;
+pub(crate) const UAT_PGBIT: usize = 14;
+pub(crate) const UAT_PGSZ: usize = 1 << UAT_PGBIT;
+pub(crate) const UAT_PGMSK: usize = UAT_PGSZ - 1;
 
 type Pte = AtomicU64;
 const UAT_NPTE: usize = UAT_PGSZ / size_of::<Pte>();
