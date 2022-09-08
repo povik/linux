@@ -222,7 +222,7 @@ impl<'a> InitDataBuilder::ver<'a> {
             unk_880: 0x4,
             unk_894: const_f32!(1.0),
 
-            //unk_89c: const_f32!(1.6),
+            unk_89c: const_f32!(1.6),
             unk_8a8: const_f32!(65536.0),
             // gpu-fast-die0-proportional-gain?
             unk_8ac: const_f32!(5.0),
