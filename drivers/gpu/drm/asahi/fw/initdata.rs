@@ -794,7 +794,7 @@ pub(crate) mod raw {
     pub(crate) type BufferMgrCtl = Array<4, u32>;
 
     #[versions(AGX)]
-    #[repr(C)]
+    #[repr(C, packed)]
     pub(crate) struct RuntimePointers<'a> {
         pub(crate) pipes: Array<4, PipeChannels<'a>>,
 
