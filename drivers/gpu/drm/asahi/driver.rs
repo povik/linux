@@ -95,7 +95,7 @@ impl platform::Driver for AsahiDevice {
 
         dev_info!(dev, "Probing!\n");
 
-        pdev.set_dma_masks((1 << crate::mmu::UAT_OAS) - 1);
+        pdev.set_dma_masks((1 << mmu::UAT_OAS) - 1)?;
 
         // TODO: add device abstraction to ioremap by name
         // SAFETY: AGX does DMA via the UAT IOMMU (mostly)
