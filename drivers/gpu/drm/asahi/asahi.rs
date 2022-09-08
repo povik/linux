@@ -5,6 +5,7 @@
 
 mod alloc;
 mod driver;
+mod fw;
 mod gem;
 mod mmu;
 mod object;
