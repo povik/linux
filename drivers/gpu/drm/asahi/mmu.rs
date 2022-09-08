@@ -116,11 +116,6 @@ impl ContextInner {
         }
     }
 
-    fn map(&mut self, iova: usize, paddr: usize, size: usize, prot: u32) -> Result {
-        self.page_table
-            .map(self.map_iova(iova, size)?, paddr, size, prot)
-    }
-
     fn map_pages(
         &mut self,
         iova: usize,
@@ -136,10 +131,6 @@ impl ContextInner {
             pgcount,
             prot,
         )
-    }
-
-    fn unmap(&mut self, iova: usize, size: usize) -> Result<usize> {
-        Ok(self.page_table.unmap(self.map_iova(iova, size)?, size))
     }
 
     fn unmap_pages(&mut self, iova: usize, pgsize: usize, pgcount: usize) -> Result<usize> {
@@ -175,7 +166,16 @@ impl Mapping {
 impl Drop for Mapping {
     fn drop(&mut self) {
         let mut owner = self.0.owner.lock();
-        if owner.unmap(self.iova(), self.size()).is_err() {
+        dev_info!(
+            owner.dev,
+            "MMU: unmap {:#x}:{:#x}",
+            self.iova(),
+            self.size()
+        );
+        if owner
+            .unmap_pages(self.iova(), UAT_PGSZ, self.size() >> UAT_PGBIT)
+            .is_err()
+        {
             dev_err!(
                 owner.dev,
                 "MMU: unmap {:#x}:{:#x} failed",
@@ -332,7 +332,7 @@ impl Context {
             MappingInner {
                 owner: self.inner.clone(),
             },
-            size as u64,
+            (size + UAT_PGSZ) as u64, // Add guard page
         )?;
 
         let mut iova = node.start() as usize;
@@ -354,10 +354,11 @@ impl Context {
 
             dev_info!(inner.dev, "MMU: map: {:#x}:{:#x} -> {:#x}", addr, len, iova);
 
-            inner.map(
+            inner.map_pages(
                 iova,
                 addr,
-                len,
+                UAT_PGSZ,
+                len >> UAT_PGBIT,
                 prot::PRIV | prot::READ | prot::WRITE | prot::CACHE,
             )?;
 
@@ -426,7 +427,7 @@ impl Uat {
             Some(map) => Ok(UatRegion {
                 base: res.start,
                 size: rgn_size as usize,
-                map: map,
+                map,
             }),
         }
     }
