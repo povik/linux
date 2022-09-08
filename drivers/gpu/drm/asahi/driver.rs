@@ -4,17 +4,11 @@
 //! Driver for the Apple AGX GPUs found in Apple Silicon SoCs.
 
 use kernel::{
-    bindings, c_str, device, drm,
-    drm::{drv, gem, gem::shmem},
-    error::{to_result, Result},
-    io_mem::IoMem,
-    module_platform_driver, of, platform,
-    prelude::*,
-    soc::apple::rtkit,
-    sync::smutex::Mutex,
-    sync::{Arc, ArcBorrow},
-    PointerWrapper,
+    c_str, device, drm, drm::drv, error::Result, io_mem::IoMem, module_platform_driver, of,
+    platform, prelude::*, soc::apple::rtkit, sync::smutex::Mutex, sync::Arc, PointerWrapper,
 };
+
+use crate::{alloc, fw, gem, initdata, mmu};
 
 use kernel::macros::vtable;
 
@@ -58,18 +52,18 @@ impl AsahiDevice {
 #[vtable]
 impl rtkit::Operations for AsahiDevice {
     type Data = Arc<DeviceData>;
-    type Buffer = crate::gem::ObjectRef;
+    type Buffer = gem::ObjectRef;
 
     fn shmem_alloc(
         data: <Self::Data as PointerWrapper>::Borrowed<'_>,
         size: usize,
     ) -> Result<Self::Buffer> {
         let mut guard = data.registrations().ok_or(ENXIO)?;
-        let mut reg = guard.as_pinned_mut();
+        let reg = guard.as_pinned_mut();
         let dev = reg.device();
         dev_info!(dev, "shmem_alloc() {:#x} bytes\n", size);
 
-        let mut obj = crate::gem::new_object(dev, size)?;
+        let mut obj = gem::new_object(dev, size)?;
         obj.vmap()?;
         let map = obj.map_into(data.uat.kernel_context())?;
         dev_info!(dev, "shmem_alloc() -> VA {:#x}\n", map.iova());
@@ -80,7 +74,7 @@ impl rtkit::Operations for AsahiDevice {
 #[vtable]
 impl drv::Driver for AsahiDevice {
     type Data = ();
-    type Object = crate::gem::Object;
+    type Object = gem::Object;
 
     const INFO: drv::DriverInfo = INFO;
     const FEATURES: u32 = drv::FEAT_GEM | drv::FEAT_RENDER;
@@ -115,7 +109,7 @@ impl platform::Driver for AsahiDevice {
         // Start the coprocessor CPU, so UAT can initialize the handoff
         AsahiDevice::start_cpu(&mut res)?;
 
-        let uat = crate::mmu::Uat::new(&dev)?;
+        let uat = mmu::Uat::new(&dev)?;
         let reg = drm::drv::Registration::<AsahiDevice>::new(&dev)?;
 
         let data = kernel::new_device_data!(
@@ -133,8 +127,8 @@ impl platform::Driver for AsahiDevice {
 
         {
             let mut guard = data.registrations().ok_or(ENXIO)?;
-            let mut reg = guard.as_pinned_mut();
-            let mut dev = reg.device();
+            let reg = guard.as_pinned_mut();
+            let dev = reg.device();
             dev_info!(dev, "info through dev\n");
         }
 
