@@ -522,12 +522,12 @@ impl<'a> InitDataBuilder::ver<'a> {
     }
 
     #[inline(never)]
-    fn make_channel<T: GpuStruct + Default, U: Copy + Default>(
+    fn make_channel<T: GpuStruct + Debug + Default, U: Copy + Default>(
         &mut self,
         count: usize,
     ) -> Result<ChannelRing<T, U>>
     where
-        for<'b> <T as GpuStruct>::Raw<'b>: Default,
+        for<'b> <T as GpuStruct>::Raw<'b>: Default + Debug,
     {
         Ok(ChannelRing {
             state: self
@@ -571,7 +571,7 @@ impl<'a> InitDataBuilder::ver<'a> {
             dev_ctrl: self
                 .make_channel::<channels::ChannelState, channels::DeviceControlMsg>(0x100)?,
             event: self.make_channel::<channels::ChannelState, channels::EventMsg>(0x100)?,
-            fw_log: ChannelRing {
+            fw_log: ChannelRing::<channels::FwLogChannelState, channels::FwLogMsg> {
                 state: self.alloc.new(Default::default(), |_inner| {
                     Array::new([
                         Default::default(),

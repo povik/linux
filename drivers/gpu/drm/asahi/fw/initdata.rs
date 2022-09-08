@@ -11,7 +11,7 @@ pub(crate) mod raw {
 
     #[derive(Debug)]
     #[repr(C)]
-    pub(crate) struct ChannelRing<'a, T: GpuStruct + Default, U: Copy> {
+    pub(crate) struct ChannelRing<'a, T: GpuStruct + Debug + Default, U: Copy> {
         pub(crate) state: GpuPointer<'a, T>,
         pub(crate) ring: GpuPointer<'a, &'a [U]>,
     }
@@ -794,7 +794,6 @@ pub(crate) mod raw {
     pub(crate) type BufferMgrCtl = Array<4, u32>;
 
     #[versions(AGX)]
-    #[derive(Debug)]
     #[repr(C)]
     pub(crate) struct RuntimePointers<'a> {
         pub(crate) pipes: Array<4, PipeChannels<'a>>,
@@ -1036,7 +1035,6 @@ pub(crate) mod raw {
     }
 
     #[versions(AGX)]
-    #[derive(Debug)]
     #[repr(C)]
     pub(crate) struct InitData<'a> {
         #[ver(V >= V13_0B4)]
@@ -1058,12 +1056,18 @@ pub(crate) mod raw {
 }
 
 #[derive(Debug)]
-pub(crate) struct ChannelRing<T: GpuStruct + Default, U: Copy> {
+pub(crate) struct ChannelRing<T: GpuStruct + Debug + Default, U: Copy>
+where
+    for<'b> <T as GpuStruct>::Raw<'b>: Debug,
+{
     pub(crate) state: GpuObject<T>,
     pub(crate) ring: GpuArray<U>,
 }
 
-impl<T: GpuStruct + Default, U: Copy> ChannelRing<T, U> {
+impl<T: GpuStruct + Debug + Default, U: Copy> ChannelRing<T, U>
+where
+    for<'b> <T as GpuStruct>::Raw<'b>: Debug,
+{
     pub(crate) fn to_raw(&self) -> raw::ChannelRing<'_, T, U> {
         raw::ChannelRing {
             state: self.state.gpu_pointer(),
@@ -1179,7 +1183,6 @@ impl GpuStruct for Globals::ver {
 }
 
 #[versions(AGX)]
-#[derive(Debug)]
 pub(crate) struct InitData {
     pub(crate) unk_buf: GpuArray<u8>,
     pub(crate) runtime_pointers: GpuObject<RuntimePointers::ver>,

@@ -67,7 +67,7 @@ macro_rules! inner_ptr {
 }
 
 pub(crate) trait GpuStruct: 'static {
-    type Raw<'a>: Debug + Sized;
+    type Raw<'a>: Sized;
 }
 
 pub(crate) struct GpuObject<T: GpuStruct, U: Allocation<T>> {
@@ -137,7 +137,10 @@ impl<T: GpuStruct, U: Allocation<T>> GpuObject<T, U> {
         let raw = Box::into_raw(callback(&*inner)?);
         unsafe {
             p.copy_from(raw as *mut u8 as *mut _, 1);
-            alloc::alloc::dealloc(p as *mut u8, core::alloc::Layout::new::<T::Raw<'static>>());
+            alloc::alloc::dealloc(
+                raw as *mut u8,
+                core::alloc::Layout::new::<T::Raw<'static>>(),
+            );
         }
         mem::forget(raw);
         Ok(Self {
@@ -202,7 +205,10 @@ impl<T: GpuStruct, U: Allocation<T>> GpuObject<T, U> {
     }
 }
 
-impl<'a, T: GpuStruct + fmt::Debug, U: Allocation<T>> fmt::Debug for GpuObject<T, U> {
+impl<T: GpuStruct + Debug, U: Allocation<T>> Debug for GpuObject<T, U>
+where
+    <T as GpuStruct>::Raw<'static>: Debug,
+{
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.debug_struct(core::any::type_name::<T>())
             .field("raw", &format_args!("{:#X?}", unsafe { &*self.raw }))

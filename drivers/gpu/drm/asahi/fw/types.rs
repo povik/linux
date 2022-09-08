@@ -17,6 +17,7 @@ pub(crate) type GpuObject<T> = object::GpuObject<T, alloc::SimpleAllocation<T>>;
 pub(crate) type GpuArray<T> = object::GpuArray<T, alloc::SimpleAllocation<T>>;
 pub(crate) use crate::alloc::Allocator as _Allocator;
 pub(crate) type Allocator = alloc::SimpleAllocator;
+pub(crate) use core::fmt::Debug;
 pub(crate) use core::marker::PhantomData;
 
 #[derive(Default, Debug, Copy, Clone)]
