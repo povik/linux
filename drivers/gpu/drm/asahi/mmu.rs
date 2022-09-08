@@ -140,11 +140,8 @@ impl ContextInner {
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct Context {
-    is_kernel: bool,
-    min_va: usize,
-    max_va: usize,
-
     inner: Arc<Mutex<ContextInner>>,
 }
 
@@ -299,9 +296,6 @@ impl Context {
         let mm = mm::Allocator::new(min_va as u64, (max_va - min_va + 1) as u64)?;
 
         Ok(Context {
-            is_kernel,
-            min_va,
-            max_va,
             inner: Arc::try_new(Mutex::new(ContextInner {
                 dev: dev.clone(),
                 min_va,
@@ -315,14 +309,6 @@ impl Context {
 
     fn ttb(&self) -> u64 {
         self.inner.lock().page_table.cfg().ttbr
-    }
-
-    pub(crate) fn min_va(&self) -> usize {
-        self.min_va
-    }
-
-    pub(crate) fn max_va(&self) -> usize {
-        self.max_va
     }
 
     pub(crate) fn map(&self, size: usize, sgt: &mut shmem::SGTableIter<'_>) -> Result<Mapping> {
