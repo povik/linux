@@ -25,7 +25,7 @@ pub(crate) struct F32(u32);
 
 impl F32 {
     pub(crate) const fn new(v: f32) -> F32 {
-        F32(v.to_bits())
+        F32(unsafe { core::mem::transmute(v) })
     }
 }
 
