@@ -1059,6 +1059,10 @@ pub(crate) mod raw {
         pub(crate) uat_level_info: Array<0x3, UatLevelInfo>,
         pub(crate) __pad0: Pad<0x14>,
         pub(crate) host_mapped_fw_allocations: u32,
+        pub(crate) unk_ac: u32,
+        pub(crate) unk_b0: u32,
+        pub(crate) unk_b4: u32,
+        pub(crate) unk_b8: u32,
     }
 }
 

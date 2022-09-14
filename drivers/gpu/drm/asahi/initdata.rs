@@ -735,6 +735,10 @@ impl<'a> InitDataBuilder::ver<'a> {
                 ]),
                 __pad0: Default::default(),
                 host_mapped_fw_allocations: 1,
+                unk_ac: 0,
+                unk_b0: 0,
+                unk_b4: 0,
+                unk_b8: 0,
             })?)
         })
     }
