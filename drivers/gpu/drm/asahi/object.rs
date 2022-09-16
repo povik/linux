@@ -25,7 +25,7 @@ use crate::alloc::Allocation;
 #[repr(C, packed(4))]
 pub(crate) struct GpuPointer<'a, T: ?Sized>(NonZeroU64, PhantomData<&'a T>);
 
-impl<'a, T> fmt::Debug for GpuPointer<'a, T> {
+impl<'a, T: ?Sized> fmt::Debug for GpuPointer<'a, T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let val = self.0;
         f.write_fmt(format_args!("{:#x} ({})", val, core::any::type_name::<T>()))
