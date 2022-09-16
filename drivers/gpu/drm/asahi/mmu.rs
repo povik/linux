@@ -169,8 +169,9 @@ impl Drop for Mapping {
             self.iova(),
             self.size()
         );
+        // Do not try to unmap guard page (-1)
         if owner
-            .unmap_pages(self.iova(), UAT_PGSZ, self.size() >> UAT_PGBIT)
+            .unmap_pages(self.iova(), UAT_PGSZ, (self.size() >> UAT_PGBIT) - 1)
             .is_err()
         {
             dev_err!(
