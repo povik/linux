@@ -14,7 +14,7 @@ use kernel::{
 };
 
 use crate::fw::channels::DeviceControlMsg;
-use crate::{alloc, channel, fw, gem, hw, initdata, mmu};
+use crate::{alloc, channel, event, fw, gem, hw, initdata, mmu};
 
 const EP_FIRMWARE: u8 = 0x20;
 const EP_DOORBELL: u8 = 0x21;
@@ -66,6 +66,7 @@ pub(crate) struct GpuManager {
     rx_channels: Mutex<RxChannels::ver>,
     tx_channels: Mutex<TxChannels>,
     pipes: Vec<PipeChannels>,
+    event_manager: Arc<event::EventManager>,
 }
 
 pub(crate) trait GpuManager: Send + Sync {
@@ -157,6 +158,7 @@ impl GpuManager::ver {
                 device_control: channel::DeviceControlChannel::new(&mut alloc)?,
             }),
             pipes,
+            event_manager: Arc::try_new(event::EventManager::new(&mut alloc)?)?,
             alloc: Mutex::new(alloc),
         })?;
 
