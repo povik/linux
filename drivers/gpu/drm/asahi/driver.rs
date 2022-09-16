@@ -4,11 +4,10 @@
 //! Driver for the Apple AGX GPUs found in Apple Silicon SoCs.
 
 use kernel::{
-    c_str, device, drm, drm::drv, error::Result, io_mem::IoMem, module_platform_driver, of,
-    platform, prelude::*, soc::apple::rtkit, sync::smutex::Mutex, sync::Arc, PointerWrapper,
+    c_str, device, drm, drm::drv, error::Result, io_mem::IoMem, of, platform, prelude::*, sync::Arc,
 };
 
-use crate::{alloc, fw, gem, initdata, mmu};
+use crate::{gem, gpu, hw, mmu};
 
 use kernel::macros::vtable;
 
@@ -27,9 +26,7 @@ const INFO: drv::DriverInfo = drv::DriverInfo {
 
 pub(crate) struct AsahiData {
     dev: device::Device,
-    uat: crate::mmu::Uat,
-    rtkit: Mutex<Option<rtkit::RTKit<AsahiDevice>>>,
-    initdata: Mutex<fw::types::GpuObject<fw::initdata::InitDataG13GV13_0B4>>,
+    gpu: Arc<dyn gpu::GpuManager>,
 }
 
 pub(crate) struct AsahiResources {
@@ -47,28 +44,6 @@ impl AsahiDevice {
         res.asc.writel_relaxed(val | CPU_RUN, CPU_CONTROL);
 
         Ok(())
-    }
-}
-
-#[vtable]
-impl rtkit::Operations for AsahiDevice {
-    type Data = Arc<DeviceData>;
-    type Buffer = gem::ObjectRef;
-
-    fn shmem_alloc(
-        data: <Self::Data as PointerWrapper>::Borrowed<'_>,
-        size: usize,
-    ) -> Result<Self::Buffer> {
-        let mut guard = data.registrations().ok_or(ENXIO)?;
-        let reg = guard.as_pinned_mut();
-        let dev = reg.device();
-        dev_info!(dev, "shmem_alloc() {:#x} bytes\n", size);
-
-        let mut obj = gem::new_object(dev, size)?;
-        obj.vmap()?;
-        let map = obj.map_into(data.uat.kernel_context())?;
-        dev_info!(dev, "shmem_alloc() -> VA {:#x}\n", map.iova());
-        Ok(obj)
     }
 }
 
@@ -110,39 +85,15 @@ impl platform::Driver for AsahiDevice {
         // Start the coprocessor CPU, so UAT can initialize the handoff
         AsahiDevice::start_cpu(&mut res)?;
 
-        let uat = mmu::Uat::new(&dev)?;
         let reg = drm::drv::Registration::<AsahiDevice>::new(&dev)?;
+        let gpu = gpu::GpuManagerG13GV13_0B4::new(&reg.device(), &hw::t8103::HWCONFIG)?;
 
-        let mut allocator = alloc::SimpleAllocator::new(reg.device(), uat.kernel_context(), 0x20);
-        let mut builder = initdata::InitDataBuilderG13GV13_0B4::new(&mut allocator);
-        let initdata = builder.build(&initdata::HWCONFIG_T8103)?;
-
-        let data = kernel::new_device_data!(
-            reg,
-            res,
-            AsahiData {
-                uat,
-                dev,
-                rtkit: Mutex::new(None),
-                initdata: Mutex::new(initdata),
-            },
-            "Asahi::Registrations"
-        )?;
+        let data =
+            kernel::new_device_data!(reg, res, AsahiData { dev, gpu }, "Asahi::Registrations")?;
 
         let data = Arc::<DeviceData>::from(data);
 
-        {
-            let mut guard = data.registrations().ok_or(ENXIO)?;
-            let reg = guard.as_pinned_mut();
-            let dev = reg.device();
-            dev_info!(dev, "info through dev\n");
-        }
-
-        let mut rtkit =
-            unsafe { rtkit::RTKit::<AsahiDevice>::new(&data.dev, None, 0, data.clone()) }?;
-
-        rtkit.boot()?;
-        *data.rtkit.lock() = Some(rtkit);
+        data.gpu.init()?;
 
         kernel::drm_device_register!(data.registrations().ok_or(ENXIO)?.as_pinned_mut(), (), 0)?;
 

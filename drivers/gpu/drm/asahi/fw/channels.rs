@@ -4,6 +4,7 @@
 //! GPU communication channels (ring buffers)
 
 use super::types::*;
+use core::sync::atomic::Ordering;
 
 pub(crate) mod raw {
     use super::*;
@@ -29,11 +30,26 @@ pub(crate) mod raw {
     }
 }
 
+pub(crate) trait RxChannelState: GpuStruct + Debug + Default {
+    fn wptr<'a>(raw: &Self::Raw<'a>) -> u32;
+    fn set_rptr<'a>(raw: &Self::Raw<'a>, rptr: u32);
+}
+
 #[derive(Debug, Default)]
 pub(crate) struct ChannelState {}
 
 impl GpuStruct for ChannelState {
     type Raw<'a> = raw::ChannelState<'a>;
+}
+
+impl RxChannelState for ChannelState {
+    fn wptr<'a>(raw: &Self::Raw<'a>) -> u32 {
+        raw.write_ptr.load(Ordering::Acquire)
+    }
+
+    fn set_rptr<'a>(raw: &Self::Raw<'a>, rptr: u32) {
+        raw.read_ptr.store(rptr, Ordering::Release);
+    }
 }
 
 #[derive(Debug, Default)]

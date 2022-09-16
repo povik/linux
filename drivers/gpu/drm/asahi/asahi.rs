@@ -5,9 +5,12 @@
 //! Driver for the Apple AGX GPUs found in Apple Silicon SoCs.
 
 mod alloc;
+mod channel;
 mod driver;
 mod fw;
 mod gem;
+mod gpu;
+mod hw;
 mod initdata;
 mod mmu;
 mod object;
