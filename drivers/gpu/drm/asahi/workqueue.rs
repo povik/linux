@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only OR MIT
 #![allow(missing_docs)]
 #![allow(unused_imports)]
+#![allow(dead_code)]
 
 //! Asahi GPU work queues
 
@@ -8,28 +9,32 @@ use crate::fw::channels::{PipeType, RunWorkQueueMsg};
 use crate::fw::event::NotifierList;
 use crate::fw::types::*;
 use crate::fw::workqueue::*;
-use crate::{alloc, channel, gpu, object};
+use crate::{alloc, channel, event, gpu, object};
 use crate::{box_in_place, inner_ptr, place};
+use core::mem;
 use core::sync::atomic::Ordering;
 use core::time::Duration;
 use kernel::{
     dbg,
     prelude::*,
-    sync::{Arc, CondVar, Mutex, UniqueArc},
+    sync::{Arc, CondVar, Guard, Mutex, UniqueArc},
 };
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct WorkToken(u64);
 
 struct WorkQueueInner {
+    event_manager: Arc<event::EventManager>,
     info: GpuObject<QueueInfo>,
     new: bool,
     pipe_type: PipeType,
     size: u32,
     wptr: u32,
     cur_token: WorkToken,
-    oldest_token: WorkToken,
     pending: Vec<Box<dyn object::OpaqueGpuObject>>,
+    batches: Vec<(event::EventValue, usize)>,
+    last_slot: u32,
+    event: Option<(event::Event, event::EventValue)>,
 }
 
 pub(crate) struct WorkQueue {
@@ -47,9 +52,16 @@ impl WorkQueueInner {
     }
 }
 
+pub(crate) struct WorkQueueBatch<'a> {
+    queue: &'a WorkQueue,
+    inner: Guard<'a, Mutex<WorkQueueInner>>,
+    commands: usize,
+}
+
 impl WorkQueue {
     pub(crate) fn new(
         alloc: &mut gpu::KernelAllocators,
+        event_manager: Arc<event::EventManager>,
         pipe_type: PipeType,
     ) -> Result<Arc<WorkQueue>> {
         let mut info = box_in_place!(QueueInfo {
@@ -70,6 +82,7 @@ impl WorkQueue {
         });
 
         let inner = WorkQueueInner {
+            event_manager,
             info: alloc.private.new_boxed(info, |inner, ptr| {
                 Ok(place!(
                     ptr,
@@ -106,8 +119,10 @@ impl WorkQueue {
             size: WQ_SIZE,
             wptr: 0,
             cur_token: Default::default(),
-            oldest_token: Default::default(),
             pending: Vec::new(),
+            batches: Vec::new(),
+            last_slot: 0,
+            event: None,
         };
 
         let mut queue = Pin::from(UniqueArc::try_new(Self {
@@ -128,14 +143,61 @@ impl WorkQueue {
         Ok(queue.into())
     }
 
-    pub(crate) fn submit<T: Command>(&self, command: Box<GpuObject<T>>) -> Result<WorkToken> {
+    pub(crate) fn begin_batch<'a>(&'a self) -> Result<WorkQueueBatch<'a>> {
         let mut inner = self.inner.lock();
+
+        if inner.event.is_none() {
+            let event = inner.event_manager.get(inner.last_slot)?;
+            let cur = event.current();
+            inner.event = Some((event, cur));
+        }
+
+        Ok(WorkQueueBatch {
+            queue: self,
+            inner,
+            commands: 0,
+        })
+    }
+
+    pub(crate) fn poll_complete(&self) -> bool {
+        let mut inner = self.inner.lock();
+        let event = inner.event.as_ref();
+        let cur_value = match event {
+            None => {
+                pr_err!("WorkQueue: poll_complete() called but no event?");
+                return true;
+            }
+            Some(event) => event.0.current(),
+        };
+
+        let mut completed_commands: usize = 0;
+        let mut batches: usize = 0;
+
+        for (value, commands) in inner.batches.iter() {
+            if value <= &cur_value {
+                completed_commands += commands;
+                batches += 1;
+            } else {
+                break;
+            }
+        }
+
+        inner.batches.drain(..batches);
+        inner.pending.drain(..completed_commands);
+        self.cond.notify_all();
+        inner.batches.is_empty()
+    }
+}
+
+impl<'a> WorkQueueBatch<'a> {
+    pub(crate) fn add<T: Command>(&'a mut self, command: Box<GpuObject<T>>) -> Result<WorkToken> {
+        let inner = &mut self.inner;
 
         let next_wptr = (inner.wptr + 1) % inner.size;
         if inner.doneptr() == next_wptr {
             pr_err!("Work queue ring buffer is full! Waiting...");
             while inner.doneptr() == next_wptr {
-                if self.cond.wait(&mut inner) {
+                if self.queue.cond.wait(inner) {
                     return Err(ERESTARTSYS);
                 }
             }
@@ -156,45 +218,42 @@ impl WorkQueue {
             .try_push(command)
             .expect("try_push() failed after try_reserve(1)");
         inner.cur_token = WorkToken(inner.cur_token.0 + 1);
+
+        self.commands += 1;
         Ok(inner.cur_token)
     }
 
-    pub(crate) fn run(&self, channel: &mut channel::PipeChannel, stamp_index: u32) -> Result {
-        let mut inner = self.inner.lock();
+    pub(crate) fn commit(&mut self) -> Result<event::EventValue> {
+        let inner = &mut self.inner;
+        let event = inner.event.as_mut().expect("WorkQueueBatch lost its event");
 
+        if self.commands == 0 {
+            return Ok(event.1);
+        }
+
+        event.1.increment();
+        let event_value = event.1;
+
+        inner.batches.try_push((event_value, self.commands))?;
+        self.commands = 0;
+        Ok(event_value)
+    }
+
+    pub(crate) fn submit(mut self, channel: &mut channel::PipeChannel) -> Result {
+        self.commit()?;
+
+        let inner = &mut self.inner;
+        let event = inner.event.as_ref().expect("WorkQueueBatch lost its event");
         let msg = RunWorkQueueMsg {
             pipe_type: inner.pipe_type,
-            work_queue: inner.info.weak_pointer(),
+            work_queue: Some(inner.info.weak_pointer()),
             wptr: inner.wptr,
-            stamp_index,
+            event_slot: event.0.slot(),
             is_new: inner.new,
             __pad: Default::default(),
         };
         channel.send(&msg);
         inner.new = false;
         Ok(())
-    }
-
-    pub(crate) fn complete_until(&self, token: WorkToken) -> Result {
-        let mut inner = self.inner.lock();
-
-        if token == inner.oldest_token {
-            Ok(())
-        } else if token < inner.oldest_token || token > inner.cur_token {
-            pr_err!(
-                "WorkQueue: completion token {:?} out of order ({:?}..{:?})",
-                token,
-                inner.oldest_token,
-                inner.cur_token
-            );
-            Err(EINVAL)
-        } else {
-            let count = (token.0 - inner.oldest_token.0) as usize;
-            // TODO: .drain() has bad performance, maybe get VecDeque into the kernel?
-            inner.pending.drain(..count);
-            inner.oldest_token = token;
-            self.cond.notify_all();
-            Ok(())
-        }
     }
 }
