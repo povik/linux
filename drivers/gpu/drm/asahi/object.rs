@@ -216,6 +216,16 @@ impl<T: GpuStruct, U: Allocation<T>> GpuObject<T, U> {
         GpuWeakPointer(self.gpu_ptr.0, PhantomData)
     }
 
+    /* FIXME: unsound
+    pub(crate) fn raw_ref(&self) -> &<T as GpuStruct>::Raw<'_> {
+        unsafe { &*(self.raw as *mut u8 as *mut <T as GpuStruct>::Raw<'_>) }
+    }
+
+    pub(crate) fn raw_mut(&mut self) -> &mut <T as GpuStruct>::Raw<'_> {
+        unsafe { &mut *(self.raw as *mut u8 as *mut <T as GpuStruct>::Raw<'_>) }
+    }
+    */
+
     pub(crate) fn with_mut<RetVal>(
         &mut self,
         callback: impl for<'a> FnOnce(&'a mut <T as GpuStruct>::Raw<'a>, &'a mut T) -> RetVal,
