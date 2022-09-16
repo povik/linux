@@ -112,21 +112,23 @@ impl<const N: usize> fmt::Debug for Pad<N> {
 
 #[derive(Copy, Clone)]
 #[repr(C)]
-pub(crate) struct Array<const N: usize, T: Sized>([T; N]);
+pub(crate) struct Array<const N: usize, T>([T; N]);
 
-impl<const N: usize, T: Sized> Array<N, T> {
+impl<const N: usize, T> Array<N, T> {
     pub(crate) fn new(data: [T; N]) -> Self {
         Self(data)
     }
 }
 
-impl<const N: usize, T: Sized + Default + Copy> Default for Array<N, T> {
+unsafe impl<const N: usize, T: Zeroed> Zeroed for Array<N, T> {}
+
+impl<const N: usize, T: Default> Default for Array<N, T> {
     fn default() -> Self {
-        Array([Default::default(); N])
+        Self(core::array::from_fn(|_i| Default::default()))
     }
 }
 
-impl<const N: usize, T: Sized> Index<usize> for Array<N, T> {
+impl<const N: usize, T> Index<usize> for Array<N, T> {
     type Output = T;
 
     fn index(&self, index: usize) -> &Self::Output {
@@ -134,13 +136,13 @@ impl<const N: usize, T: Sized> Index<usize> for Array<N, T> {
     }
 }
 
-impl<const N: usize, T: Sized> IndexMut<usize> for Array<N, T> {
+impl<const N: usize, T> IndexMut<usize> for Array<N, T> {
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
         &mut self.0[index]
     }
 }
 
-impl<const N: usize, T: Sized> Deref for Array<N, T> {
+impl<const N: usize, T> Deref for Array<N, T> {
     type Target = [T; N];
 
     fn deref(&self) -> &Self::Target {
@@ -148,7 +150,7 @@ impl<const N: usize, T: Sized> Deref for Array<N, T> {
     }
 }
 
-impl<const N: usize, T: Sized> DerefMut for Array<N, T> {
+impl<const N: usize, T> DerefMut for Array<N, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
