@@ -21,6 +21,12 @@ const EP_DOORBELL: u8 = 0x21;
 const MSG_INIT: u64 = 0x81 << 48;
 const INIT_DATA_MASK: u64 = (1 << 44) - 1;
 
+const MSG_TX_DOORBELL: u64 = 0x83 << 48;
+const MSG_FWCTL: u64 = 0x84 << 48;
+const MSG_HALT: u64 = 0x85 << 48;
+
+const MSG_RX_DOORBELL: u64 = 0x42 << 48;
+
 pub(crate) struct KernelAllocators {
     pub(crate) private: alloc::SimpleAllocator,
     pub(crate) shared: alloc::SimpleAllocator,
@@ -28,6 +34,9 @@ pub(crate) struct KernelAllocators {
 }
 
 struct RxChannels {
+    event: channel::EventChannel,
+    fw_log: channel::FwLogChannel,
+    ktrace: channel::KTraceChannel,
     stats: channel::StatsChannel,
 }
 
@@ -58,8 +67,17 @@ impl rtkit::Operations for GpuManager::ver {
         let dev = &data.dev;
         dev_info!(dev, "RTKit message: {:#x}:{:#x}\n", ep, msg);
 
+        if ep != EP_FIRMWARE || msg != MSG_RX_DOORBELL {
+            dev_err!(dev, "Unknown message: {:#x}:{:#x}\n", ep, msg);
+            return;
+        }
+
         let mut ch = data.rx_channels.lock();
+
+        ch.fw_log.poll();
+        ch.ktrace.poll();
         ch.stats.poll();
+        ch.event.poll();
     }
 
     fn shmem_alloc(
@@ -105,15 +123,29 @@ impl GpuManager::ver {
             io_mappings: Vec::new(),
             rtkit: Mutex::new(None),
             rx_channels: Mutex::new(RxChannels {
+                event: channel::EventChannel::new(&mut alloc)?,
+                fw_log: channel::FwLogChannel::new(&mut alloc)?,
+                ktrace: channel::KTraceChannel::new(&mut alloc)?,
                 stats: channel::StatsChannel::new(&mut alloc)?,
             }),
             alloc,
         })?;
 
-        let p_stats = mgr.rx_channels.lock().stats.to_raw();
-        mgr.initdata.runtime_pointers.with_mut(|raw, _| {
-            raw.stats = p_stats;
-        });
+        {
+            let rxc = mgr.rx_channels.lock();
+            let p_event = rxc.event.to_raw();
+            let p_fw_log = rxc.fw_log.to_raw();
+            let p_ktrace = rxc.ktrace.to_raw();
+            let p_stats = rxc.stats.to_raw();
+            mem::drop(rxc);
+
+            mgr.initdata.runtime_pointers.with_mut(|raw, _inner| {
+                raw.event = p_event;
+                raw.fw_log = p_fw_log;
+                raw.ktrace = p_ktrace;
+                raw.stats = p_stats;
+            });
+        }
 
         for (i, map) in cfg.io_mappings.iter().enumerate() {
             if let Some(map) = map.as_ref() {

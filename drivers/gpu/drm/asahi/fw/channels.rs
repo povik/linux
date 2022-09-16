@@ -1,15 +1,17 @@
 // SPDX-License-Identifier: GPL-2.0-only OR MIT
 #![allow(missing_docs)]
+#![allow(dead_code)]
 
 //! GPU communication channels (ring buffers)
 
 use super::types::*;
+use crate::default_zeroed;
 use core::sync::atomic::Ordering;
 
 pub(crate) mod raw {
     use super::*;
 
-    #[derive(Debug, Default)]
+    #[derive(Debug)]
     #[repr(C)]
     pub(crate) struct ChannelState<'a> {
         pub(crate) read_ptr: AtomicU32,
@@ -18,8 +20,9 @@ pub(crate) mod raw {
         __pad1: Pad<0xc>,
         _p: PhantomData<&'a ()>,
     }
+    default_zeroed!(<'a>, ChannelState<'a>);
 
-    #[derive(Debug, Default)]
+    #[derive(Debug)]
     #[repr(C)]
     pub(crate) struct FwCtlChannelState<'a> {
         pub(crate) read_ptr: AtomicU32,
@@ -28,11 +31,15 @@ pub(crate) mod raw {
         __pad1: Pad<0xc>,
         _p: PhantomData<&'a ()>,
     }
+
+    default_zeroed!(<'a>, FwCtlChannelState<'a>);
 }
 
 pub(crate) trait RxChannelState: GpuStruct + Debug + Default {
-    fn wptr<'a>(raw: &Self::Raw<'a>) -> u32;
-    fn set_rptr<'a>(raw: &Self::Raw<'a>, rptr: u32);
+    const SUB_CHANNELS: usize;
+
+    fn wptr(raw: &Self::Raw<'_>, index: usize) -> u32;
+    fn set_rptr(raw: &Self::Raw<'_>, index: usize, rptr: u32);
 }
 
 #[derive(Debug, Default)]
@@ -43,11 +50,13 @@ impl GpuStruct for ChannelState {
 }
 
 impl RxChannelState for ChannelState {
-    fn wptr<'a>(raw: &Self::Raw<'a>) -> u32 {
+    const SUB_CHANNELS: usize = 1;
+
+    fn wptr(raw: &Self::Raw<'_>, _index: usize) -> u32 {
         raw.write_ptr.load(Ordering::Acquire)
     }
 
-    fn set_rptr<'a>(raw: &Self::Raw<'a>, rptr: u32) {
+    fn set_rptr(raw: &Self::Raw<'_>, _index: usize, rptr: u32) {
         raw.read_ptr.store(rptr, Ordering::Release);
     }
 }
@@ -55,12 +64,20 @@ impl RxChannelState for ChannelState {
 #[derive(Debug, Default)]
 pub(crate) struct FwLogChannelState {}
 
-impl FwLogChannelState {
-    const SUB_CHANNELS: usize = 6;
-}
-
 impl GpuStruct for FwLogChannelState {
     type Raw<'a> = Array<{ Self::SUB_CHANNELS }, raw::ChannelState<'a>>;
+}
+
+impl RxChannelState for FwLogChannelState {
+    const SUB_CHANNELS: usize = 6;
+
+    fn wptr(raw: &Self::Raw<'_>, index: usize) -> u32 {
+        raw[index].write_ptr.load(Ordering::Acquire)
+    }
+
+    fn set_rptr(raw: &Self::Raw<'_>, index: usize, rptr: u32) {
+        raw[index].read_ptr.store(rptr, Ordering::Release);
+    }
 }
 
 #[derive(Debug, Default)]
@@ -72,8 +89,111 @@ impl GpuStruct for FwCtlChannelState {
 
 pub(crate) type RunCmdQueueMsg = Array<0x30, u8>;
 pub(crate) type DeviceControlMsg = Array<0x30, u8>;
-pub(crate) type EventMsg = Array<0x38, u8>;
-pub(crate) type FwLogMsg = Array<0xd8, u8>;
-pub(crate) type KTraceMsg = Array<0x38, u8>;
-pub(crate) type StatsMsg = Array<0x60, u8>;
+pub(crate) type RawEventMsg = Array<0x38, u8>;
+pub(crate) type RawFwLogMsg = Array<0xd8, u8>;
 pub(crate) type FwCtlMsg = Array<0x14, u8>;
+
+#[derive(Debug, Copy, Clone, Default)]
+#[repr(C)]
+pub(crate) struct RawKTraceMsg {
+    msg_type: u32,
+    timestamp: U64,
+    args: Array<4, U64>,
+    code: u8,
+    channel: u8,
+    __pad: Pad<1>,
+    thread: u8,
+    unk_flag: U64,
+}
+
+pub(crate) const STATS_SZ: usize = 0x34;
+
+#[derive(Debug, Copy, Clone)]
+#[repr(C, u32)]
+pub(crate) enum StatsMsg {
+    Power {
+        // 0x00
+        __pad: Pad<0x18>,
+        power: U64,
+    },
+    Unk1(Array<STATS_SZ, u8>),
+    PowerOn {
+        // 0x02
+        off_time: U64,
+    },
+    PowerOff {
+        // 0x03
+        on_time: U64,
+    },
+    Utilization {
+        // 0x04
+        timestamp: U64,
+        util1: u32,
+        util2: u32,
+        util3: u32,
+        util4: u32,
+    },
+    Unk5(Array<STATS_SZ, u8>),
+    Unk6(Array<STATS_SZ, u8>),
+    Unk7(Array<STATS_SZ, u8>),
+    Unk8(Array<STATS_SZ, u8>),
+    AvgPower {
+        // 0x09
+        active_cs: U64,
+        unk2: u32,
+        unk3: u32,
+        unk4: u32,
+        avg_power: u32,
+    },
+    Temperature {
+        // 0x0a
+        __pad: Pad<0x8>,
+        raw_value: u32,
+        scale: u32,
+        tmin: u32,
+        tmax: u32,
+    },
+    PowerState {
+        // 0x0b
+        timestamp: U64,
+        last_busy_ts: U64,
+        active: u32,
+        poweroff: u32,
+        unk1: u32,
+        pstate: u32,
+        unk2: u32,
+        unk3: u32,
+    },
+    FwBusy {
+        // 0x0c
+        timestamp: U64,
+        busy: u32,
+    },
+    PState {
+        // 0x0d
+        __pad: Pad<0x8>,
+        ps_min: u32,
+        unk1: u32,
+        ps_max: u32,
+        unk2: u32,
+    },
+    TempSensor {
+        // 0x0e
+        __pad: Pad<0x4>,
+        sensor_id: u32,
+        raw_value: u32,
+        scale: u32,
+        tmin: u32,
+        tmax: u32,
+    }, // Max discriminant: 0xe
+}
+
+pub(crate) const STATS_MAX: u32 = 0xe;
+
+#[derive(Copy, Clone)]
+pub(crate) union RawStatsMsg {
+    pub(crate) raw: (u32, Array<STATS_SZ, u8>),
+    pub(crate) msg: StatsMsg,
+}
+
+default_zeroed!(RawStatsMsg);

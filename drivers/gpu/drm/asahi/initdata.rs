@@ -556,23 +556,6 @@ impl<'a> InitDataBuilder::ver<'a> {
                 dev_ctrl: self.make_channel::<channels::ChannelState, channels::DeviceControlMsg>(
                     0x100, false
                 )?,
-                event: self
-                    .make_channel::<channels::ChannelState, channels::EventMsg>(0x100, true)?,
-                fw_log: ChannelRing::<channels::FwLogChannelState, channels::FwLogMsg> {
-                    state: self.alloc.shared.new(Default::default(), |_inner| {
-                        Array::new([
-                            Default::default(),
-                            Default::default(),
-                            Default::default(),
-                            Default::default(),
-                            Default::default(),
-                            Default::default(),
-                        ])
-                    })?,
-                    ring: self.alloc.shared.array_empty(0x600)?,
-                },
-                ktrace: self
-                    .make_channel::<channels::ChannelState, channels::KTraceMsg>(0x200, true)?,
             },
             stats: Stats::ver {
                 vtx: self.alloc.shared.new_default::<GpuGlobalStatsVtx::ver>()?,
@@ -614,9 +597,9 @@ impl<'a> InitDataBuilder::ver<'a> {
                 raw::RuntimePointers::ver {
                     pipes: Array::new(Self::map_pipes(&inner.pipes)),
                     dev_ctrl: inner.channels.dev_ctrl.to_raw(),
-                    event: inner.channels.event.to_raw(),
-                    fw_log: inner.channels.fw_log.to_raw(),
-                    ktrace: inner.channels.ktrace.to_raw(),
+                    event: Default::default(),
+                    fw_log: Default::default(),
+                    ktrace: Default::default(),
                     stats: Default::default(),
 
                     stats_vtx: inner.stats.vtx.gpu_pointer(),
