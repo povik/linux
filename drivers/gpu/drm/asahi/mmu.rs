@@ -354,6 +354,48 @@ impl Context {
 
         Ok(Mapping(node))
     }
+
+    pub(crate) fn map_io(&self, phys: usize, size: usize) -> Result<Mapping> {
+        let mut inner = self.inner.lock();
+
+        let node = inner.mm.insert_node(
+            MappingInner {
+                owner: self.inner.clone(),
+            },
+            (size + UAT_PGSZ) as u64, // Add guard page
+        )?;
+
+        let iova = node.start() as usize;
+
+        if (phys | size | iova) & UAT_PGMSK != 0 {
+            dev_err!(
+                inner.dev,
+                "MMU: Mapping {:#x}:{:#x} -> {:#x} is not page-aligned",
+                phys,
+                size,
+                iova
+            );
+            return Err(EINVAL);
+        }
+
+        dev_info!(
+            inner.dev,
+            "MMU: IO map: {:#x}:{:#x} -> {:#x}",
+            phys,
+            size,
+            iova
+        );
+
+        inner.map_pages(
+            iova,
+            phys,
+            UAT_PGSZ,
+            size >> UAT_PGBIT,
+            prot::PRIV | prot::READ | prot::WRITE | prot::CACHE | prot::MMIO,
+        )?;
+
+        Ok(Mapping(node))
+    }
 }
 
 impl Uat {
