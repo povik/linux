@@ -40,6 +40,18 @@ struct RxChannels {
     stats: channel::StatsChannel,
 }
 
+struct PipeChannels {
+    pub(crate) vtx: Mutex<channel::PipeChannel>,
+    pub(crate) frag: Mutex<channel::PipeChannel>,
+    pub(crate) comp: Mutex<channel::PipeChannel>,
+}
+
+struct TxChannels {
+    pub(crate) device_control: channel::DeviceControlChannel,
+}
+
+const NUM_PIPES: usize = 4;
+
 #[versions(AGX)]
 pub(crate) struct GpuManager {
     dev: drm::device::Device,
@@ -50,6 +62,8 @@ pub(crate) struct GpuManager {
     io_mappings: Vec<mmu::Mapping>,
     rtkit: Mutex<Option<rtkit::RTKit<GpuManager::ver>>>,
     rx_channels: Mutex<RxChannels>,
+    tx_channels: Mutex<TxChannels>,
+    pipes: Vec<PipeChannels>,
 }
 
 pub(crate) trait GpuManager: Send + Sync {
@@ -115,6 +129,16 @@ impl GpuManager::ver {
         let mut builder = initdata::InitDataBuilder::ver::new(&mut alloc, cfg, &dyncfg);
         let initdata = builder.build()?;
 
+        let mut pipes: Vec<PipeChannels> = Vec::new();
+
+        for _i in 0..=NUM_PIPES - 1 {
+            pipes.try_push(PipeChannels {
+                vtx: Mutex::new(channel::PipeChannel::new(&mut alloc)?),
+                frag: Mutex::new(channel::PipeChannel::new(&mut alloc)?),
+                comp: Mutex::new(channel::PipeChannel::new(&mut alloc)?),
+            })?;
+        }
+
         let mut mgr = UniqueArc::try_new(GpuManager::ver {
             dev: dev.clone(),
             initialized: false,
@@ -128,10 +152,18 @@ impl GpuManager::ver {
                 ktrace: channel::KTraceChannel::new(&mut alloc)?,
                 stats: channel::StatsChannel::new(&mut alloc)?,
             }),
+            tx_channels: Mutex::new(TxChannels {
+                device_control: channel::DeviceControlChannel::new(&mut alloc)?,
+            }),
+            pipes,
             alloc,
         })?;
 
         {
+            let txc = mgr.tx_channels.lock();
+            let p_device_control = txc.device_control.to_raw();
+            mem::drop(txc);
+
             let rxc = mgr.rx_channels.lock();
             let p_event = rxc.event.to_raw();
             let p_fw_log = rxc.fw_log.to_raw();
@@ -140,12 +172,31 @@ impl GpuManager::ver {
             mem::drop(rxc);
 
             mgr.initdata.runtime_pointers.with_mut(|raw, _inner| {
+                raw.device_control = p_device_control;
                 raw.event = p_event;
                 raw.fw_log = p_fw_log;
                 raw.ktrace = p_ktrace;
                 raw.stats = p_stats;
             });
         }
+
+        let mut p_pipes: Vec<fw::initdata::raw::PipeChannels> = Vec::new();
+
+        for p in &mgr.pipes {
+            p_pipes.try_push(fw::initdata::raw::PipeChannels {
+                vtx: p.vtx.lock().to_raw(),
+                frag: p.frag.lock().to_raw(),
+                comp: p.comp.lock().to_raw(),
+            })?;
+        }
+
+        mgr.initdata.runtime_pointers.with_mut(|raw, _inner| {
+            for (i, p) in p_pipes.into_iter().enumerate() {
+                raw.pipes[i].vtx = p.vtx;
+                raw.pipes[i].frag = p.frag;
+                raw.pipes[i].comp = p.comp;
+            }
+        });
 
         for (i, map) in cfg.io_mappings.iter().enumerate() {
             if let Some(map) = map.as_ref() {

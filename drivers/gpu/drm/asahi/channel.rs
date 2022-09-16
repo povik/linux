@@ -8,8 +8,8 @@ use crate::fw::channels::*;
 use crate::fw::initdata::{raw, ChannelRing};
 use crate::fw::types::*;
 use crate::gpu;
-use crate::object::GpuStruct;
-use kernel::{dbg, prelude::*};
+use core::time::Duration;
+use kernel::{dbg, delay::coarse_sleep, prelude::*};
 
 pub(crate) struct RxChannel<T: RxChannelState, U: Copy + Default>
 where
@@ -50,6 +50,88 @@ where
                 Some(msg)
             }
         })
+    }
+}
+
+pub(crate) struct TxChannel<T: TxChannelState, U: Copy + Default>
+where
+    for<'a> <T as GpuStruct>::Raw<'a>: Debug + Default,
+{
+    ring: ChannelRing<T, U>,
+    wptr: u32,
+    count: u32,
+}
+
+impl<T: TxChannelState, U: Copy + Default> TxChannel<T, U>
+where
+    for<'a> <T as GpuStruct>::Raw<'a>: Debug + Default,
+{
+    pub(crate) fn new(alloc: &mut gpu::KernelAllocators, count: usize) -> Result<TxChannel<T, U>> {
+        Ok(TxChannel {
+            ring: ChannelRing {
+                state: alloc.shared.new_default()?,
+                ring: alloc.private.array_empty(count)?,
+            },
+            wptr: 0,
+            count: count as u32,
+        })
+    }
+
+    pub(crate) fn put(&mut self, msg: &U) {
+        self.ring.state.with(|raw, _inner| {
+            let next_wptr = (self.wptr + 1) % self.count;
+            let mut rptr = T::rptr(raw);
+            if next_wptr == rptr {
+                pr_err!("TX ring buffer is full! Waiting...");
+                // TODO: block properly on incoming messages?
+                while next_wptr == rptr {
+                    coarse_sleep(Duration::from_millis(8));
+                    rptr = T::rptr(raw);
+                }
+            }
+            self.ring.ring.as_mut_slice()[self.wptr as usize] = *msg;
+            T::set_wptr(raw, next_wptr);
+        })
+    }
+}
+
+pub(crate) struct DeviceControlChannel {
+    ch: TxChannel<ChannelState, DeviceControlMsg>,
+}
+
+impl DeviceControlChannel {
+    pub(crate) fn new(alloc: &mut gpu::KernelAllocators) -> Result<DeviceControlChannel> {
+        Ok(DeviceControlChannel {
+            ch: TxChannel::<ChannelState, DeviceControlMsg>::new(alloc, 0x100)?,
+        })
+    }
+
+    pub(crate) fn to_raw(&self) -> raw::ChannelRing<ChannelState, DeviceControlMsg> {
+        self.ch.ring.to_raw()
+    }
+
+    pub(crate) fn send(&mut self, msg: &DeviceControlMsg) {
+        self.ch.put(msg);
+    }
+}
+
+pub(crate) struct PipeChannel {
+    ch: TxChannel<ChannelState, PipeMsg>,
+}
+
+impl PipeChannel {
+    pub(crate) fn new(alloc: &mut gpu::KernelAllocators) -> Result<PipeChannel> {
+        Ok(PipeChannel {
+            ch: TxChannel::<ChannelState, PipeMsg>::new(alloc, 0x100)?,
+        })
+    }
+
+    pub(crate) fn to_raw(&self) -> raw::ChannelRing<ChannelState, PipeMsg> {
+        self.ch.ring.to_raw()
+    }
+
+    pub(crate) fn send(&mut self, msg: &PipeMsg) {
+        self.ch.put(msg);
     }
 }
 

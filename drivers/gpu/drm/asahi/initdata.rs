@@ -508,55 +508,11 @@ impl<'a> InitDataBuilder::ver<'a> {
     }
 
     #[inline(never)]
-    fn make_pipe(&mut self) -> Result<Box<PipeChannels>> {
-        Ok(box_in_place!(PipeChannels {
-            vtx: self
-                .make_channel::<channels::ChannelState, channels::RunCmdQueueMsg>(0x100, false)?,
-            frag: self
-                .make_channel::<channels::ChannelState, channels::RunCmdQueueMsg>(0x100, false)?,
-            comp: self
-                .make_channel::<channels::ChannelState, channels::RunCmdQueueMsg>(0x100, false)?,
-        })?)
-    }
-
-    #[inline(never)]
-    fn map_pipe(pipe: &PipeChannels) -> raw::PipeChannels {
-        raw::PipeChannels {
-            vtx: pipe.vtx.to_raw(),
-            frag: pipe.frag.to_raw(),
-            comp: pipe.comp.to_raw(),
-        }
-    }
-
-    #[inline(never)]
-    fn map_pipes(pipes: &[Box<PipeChannels>; 4]) -> [raw::PipeChannels; 4] {
-        [
-            Self::map_pipe(&pipes[0]),
-            Self::map_pipe(&pipes[1]),
-            Self::map_pipe(&pipes[2]),
-            Self::map_pipe(&pipes[3]),
-        ]
-    }
-
-    #[inline(never)]
     fn runtime_pointers(&mut self) -> Result<GpuObject<RuntimePointers::ver>> {
-        let pipes = [
-            self.make_pipe()?,
-            self.make_pipe()?,
-            self.make_pipe()?,
-            self.make_pipe()?,
-        ];
-
         let hwa = self.hwdata_a()?;
         let hwb = self.hwdata_b()?;
 
         let pointers: Box<RuntimePointers::ver> = box_in_place!(RuntimePointers::ver {
-            pipes: pipes,
-            channels: GlobalChannels {
-                dev_ctrl: self.make_channel::<channels::ChannelState, channels::DeviceControlMsg>(
-                    0x100, false
-                )?,
-            },
             stats: Stats::ver {
                 vtx: self.alloc.shared.new_default::<GpuGlobalStatsVtx::ver>()?,
                 frag: self.alloc.shared.new_inplace(
@@ -595,8 +551,8 @@ impl<'a> InitDataBuilder::ver<'a> {
             Ok(place!(
                 ptr,
                 raw::RuntimePointers::ver {
-                    pipes: Array::new(Self::map_pipes(&inner.pipes)),
-                    dev_ctrl: inner.channels.dev_ctrl.to_raw(),
+                    pipes: Default::default(),
+                    device_control: Default::default(),
                     event: Default::default(),
                     fw_log: Default::default(),
                     ktrace: Default::default(),

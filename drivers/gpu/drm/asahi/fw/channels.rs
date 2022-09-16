@@ -87,8 +87,70 @@ impl GpuStruct for FwCtlChannelState {
     type Raw<'a> = raw::FwCtlChannelState<'a>;
 }
 
-pub(crate) type RunCmdQueueMsg = Array<0x30, u8>;
-pub(crate) type DeviceControlMsg = Array<0x30, u8>;
+pub(crate) trait TxChannelState: GpuStruct + Debug + Default {
+    fn rptr(raw: &Self::Raw<'_>) -> u32;
+    fn set_wptr(raw: &Self::Raw<'_>, wptr: u32);
+}
+
+impl TxChannelState for ChannelState {
+    fn rptr(raw: &Self::Raw<'_>) -> u32 {
+        raw.read_ptr.load(Ordering::Acquire)
+    }
+
+    fn set_wptr(raw: &Self::Raw<'_>, wptr: u32) {
+        raw.write_ptr.store(wptr, Ordering::Release);
+    }
+}
+
+impl TxChannelState for FwCtlChannelState {
+    fn rptr(raw: &Self::Raw<'_>) -> u32 {
+        raw.read_ptr.load(Ordering::Acquire)
+    }
+
+    fn set_wptr(raw: &Self::Raw<'_>, wptr: u32) {
+        raw.write_ptr.store(wptr, Ordering::Release);
+    }
+}
+
+pub(crate) type PipeMsg = Array<0x30, u8>;
+
+pub(crate) const DEVICECONTROL_SZ: usize = 0x30;
+
+// TODO: clean up when arbitrary_enum_discriminant is stable
+// https://github.com/rust-lang/rust/issues/60553
+
+#[derive(Debug, Copy, Clone)]
+#[repr(C, u32)]
+pub(crate) enum DeviceControlMsg {
+    Unk00(Array<DEVICECONTROL_SZ, u8>),
+    Unk01(Array<DEVICECONTROL_SZ, u8>),
+    Unk02(Array<DEVICECONTROL_SZ, u8>),
+    Unk03(Array<DEVICECONTROL_SZ, u8>),
+    Unk04(Array<DEVICECONTROL_SZ, u8>),
+    Unk05(Array<DEVICECONTROL_SZ, u8>),
+    Unk06(Array<DEVICECONTROL_SZ, u8>),
+    Unk07(Array<DEVICECONTROL_SZ, u8>),
+    Unk08(Array<DEVICECONTROL_SZ, u8>),
+    Unk09(Array<DEVICECONTROL_SZ, u8>),
+    Unk0a(Array<DEVICECONTROL_SZ, u8>),
+    Unk0b(Array<DEVICECONTROL_SZ, u8>),
+    Unk0c(Array<DEVICECONTROL_SZ, u8>),
+    Unk0d(Array<DEVICECONTROL_SZ, u8>),
+    Unk0e(Array<DEVICECONTROL_SZ, u8>),
+    Unk0f(Array<DEVICECONTROL_SZ, u8>),
+    Unk10(Array<DEVICECONTROL_SZ, u8>),
+    Unk11(Array<DEVICECONTROL_SZ, u8>),
+    Unk12(Array<DEVICECONTROL_SZ, u8>),
+    Unk13(Array<DEVICECONTROL_SZ, u8>),
+    Unk14(Array<DEVICECONTROL_SZ, u8>),
+    Unk15(Array<DEVICECONTROL_SZ, u8>),
+    Unk16(Array<DEVICECONTROL_SZ, u8>),
+    Unk17(Array<DEVICECONTROL_SZ, u8>),
+    Unk18(Array<DEVICECONTROL_SZ, u8>),
+    Initialize,
+}
+default_zeroed!(DeviceControlMsg);
+
 pub(crate) type RawEventMsg = Array<0x38, u8>;
 pub(crate) type RawFwLogMsg = Array<0xd8, u8>;
 pub(crate) type FwCtlMsg = Array<0x14, u8>;

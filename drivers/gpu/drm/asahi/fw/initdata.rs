@@ -17,12 +17,12 @@ pub(crate) mod raw {
         pub(crate) ring: Option<GpuWeakPointer<[U]>>,
     }
 
-    #[derive(Debug)]
+    #[derive(Debug, Default)]
     #[repr(C)]
     pub(crate) struct PipeChannels {
-        pub(crate) vtx: ChannelRing<channels::ChannelState, channels::RunCmdQueueMsg>,
-        pub(crate) frag: ChannelRing<channels::ChannelState, channels::RunCmdQueueMsg>,
-        pub(crate) comp: ChannelRing<channels::ChannelState, channels::RunCmdQueueMsg>,
+        pub(crate) vtx: ChannelRing<channels::ChannelState, channels::PipeMsg>,
+        pub(crate) frag: ChannelRing<channels::ChannelState, channels::PipeMsg>,
+        pub(crate) comp: ChannelRing<channels::ChannelState, channels::PipeMsg>,
     }
 
     #[derive(Debug, Default)]
@@ -801,7 +801,7 @@ pub(crate) mod raw {
     pub(crate) struct RuntimePointers<'a> {
         pub(crate) pipes: Array<4, PipeChannels>,
 
-        pub(crate) dev_ctrl: ChannelRing<channels::ChannelState, channels::DeviceControlMsg>,
+        pub(crate) device_control: ChannelRing<channels::ChannelState, channels::DeviceControlMsg>,
         pub(crate) event: ChannelRing<channels::ChannelState, channels::RawEventMsg>,
         pub(crate) fw_log: ChannelRing<channels::FwLogChannelState, channels::RawFwLogMsg>,
         pub(crate) ktrace: ChannelRing<channels::ChannelState, channels::RawKTraceMsg>,
@@ -1131,18 +1131,6 @@ impl GpuStruct for HwDataB::ver {
     type Raw<'a> = raw::HwDataB::ver;
 }
 
-#[derive(Debug)]
-pub(crate) struct PipeChannels {
-    pub(crate) vtx: ChannelRing<channels::ChannelState, channels::RunCmdQueueMsg>,
-    pub(crate) frag: ChannelRing<channels::ChannelState, channels::RunCmdQueueMsg>,
-    pub(crate) comp: ChannelRing<channels::ChannelState, channels::RunCmdQueueMsg>,
-}
-
-#[derive(Debug)]
-pub(crate) struct GlobalChannels {
-    pub(crate) dev_ctrl: ChannelRing<channels::ChannelState, channels::DeviceControlMsg>,
-}
-
 #[versions(AGX)]
 #[derive(Debug)]
 pub(crate) struct Stats {
@@ -1154,10 +1142,6 @@ pub(crate) struct Stats {
 #[versions(AGX)]
 #[derive(Debug)]
 pub(crate) struct RuntimePointers {
-    pub(crate) pipes: [Box<PipeChannels>; 4],
-
-    pub(crate) channels: GlobalChannels,
-
     pub(crate) stats: Stats::ver,
 
     pub(crate) hwdata_a: GpuObject<HwDataA::ver>,
