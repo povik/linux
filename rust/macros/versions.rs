@@ -86,7 +86,7 @@ fn check_version(
             let rhs = config.enums[key]
                 .iter()
                 .position(|&r| r == rhs_name)
-                .unwrap_or_else(|| panic!("Unknown field {}", ident));
+                .unwrap_or_else(|| panic!("Unknown value for {}:{}", ident, rhs_name));
             let lhs = ver[key];
 
             match operator.as_str() {
@@ -133,6 +133,7 @@ fn filter_versions(
     let mut it = tree.into_iter();
 
     while let Some(token) = it.next() {
+        let mut tail: Option<TokenTree> = None;
         match &token {
             TokenTree::Punct(punct) if punct.to_string() == "#" => {
                 let group = expect_group(&mut it);
@@ -158,45 +159,51 @@ fn filter_versions(
                         out.push(TokenTree::Group(group.clone()));
                     }
                 }
+                continue;
             }
             TokenTree::Punct(punct) if punct.to_string() == ":" => {
                 let next = it.next();
                 match next {
-                    Some(TokenTree::Punct(punct)) if punct.to_string() == ":" => (),
+                    Some(TokenTree::Punct(punct)) if punct.to_string() == ":" => {
+                        let next = it.next();
+                        match next {
+                            Some(TokenTree::Ident(idtag)) if idtag.to_string() == "ver" => {
+                                let ident = match out.pop() {
+                                    Some(TokenTree::Ident(ident)) => ident,
+                                    a => panic!("$ver not following ident: {:?}", a),
+                                };
+                                let name = ident.to_string() + tag;
+                                let new_ident = Ident::new(name.as_str(), ident.span());
+                                out.push(TokenTree::Ident(new_ident));
+                                continue;
+                            }
+                            Some(a) => {
+                                out.push(token.clone());
+                                out.push(token.clone());
+                                tail = Some(a);
+                            }
+                            None => {
+                                out.push(token.clone());
+                                out.push(token.clone());
+                            }
+                        }
+                    }
                     Some(a) => {
                         out.push(token.clone());
-                        out.push(a.clone());
-                        continue;
+                        tail = Some(a);
                     }
                     None => {
                         out.push(token.clone());
                         continue;
-                    }
-                }
-
-                let next = it.next();
-                match next {
-                    Some(TokenTree::Ident(idtag)) if idtag.to_string() == "ver" => {
-                        let ident = match out.pop() {
-                            Some(TokenTree::Ident(ident)) => ident,
-                            a => panic!("$ver not following ident: {:?}", a),
-                        };
-                        let name = ident.to_string() + tag;
-                        let new_ident = Ident::new(name.as_str(), ident.span());
-                        out.push(TokenTree::Ident(new_ident));
-                    }
-                    Some(a) => {
-                        out.push(token.clone());
-                        out.push(token.clone());
-                        out.push(a.clone());
-                    }
-                    None => {
-                        out.push(token.clone());
-                        out.push(token.clone());
                     }
                 }
             }
-            TokenTree::Group(group) => {
+            _ => {
+                tail = Some(token);
+            }
+        }
+        match &tail {
+            Some(TokenTree::Group(group)) => {
                 let new_body =
                     filter_versions(config, tag, ver, &mut group.stream().into_iter(), is_struct);
                 let mut stream = TokenStream::new();
@@ -205,9 +212,10 @@ fn filter_versions(
                 filtered_group.set_span(group.span());
                 out.push(TokenTree::Group(filtered_group));
             }
-            _ => {
+            Some(token) => {
                 out.push(token.clone());
             }
+            None => {}
         }
     }
 
@@ -231,14 +239,16 @@ pub(crate) fn versions(attr: TokenStream, item: TokenStream) -> TokenStream {
                 body.push(TokenTree::Punct(punct));
                 body.push(it.next().unwrap());
             }
-            TokenTree::Ident(ident) if ident.to_string() == "struct" => {
+            TokenTree::Ident(ident)
+                if ["struct", "enum", "union", "const"].contains(&ident.to_string().as_str()) =>
+            {
+                is_struct = ident.to_string() != "const";
                 body.push(TokenTree::Ident(ident));
                 body.push(it.next().unwrap());
                 // This isn't valid syntax in a struct definition, so add it for the user
                 body.push(TokenTree::Punct(Punct::new(':', Spacing::Joint)));
                 body.push(TokenTree::Punct(Punct::new(':', Spacing::Alone)));
                 body.push(TokenTree::Ident(Ident::new("ver", Span::call_site())));
-                is_struct = true;
                 break;
             }
             TokenTree::Ident(ident) if ident.to_string() == "impl" => {
