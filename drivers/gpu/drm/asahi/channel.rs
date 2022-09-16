@@ -203,18 +203,20 @@ impl KTraceChannel {
     }
 }
 
+#[versions(AGX)]
 pub(crate) struct StatsChannel {
-    ch: RxChannel<ChannelState, RawStatsMsg>,
+    ch: RxChannel<ChannelState, RawStatsMsg::ver>,
 }
 
-impl StatsChannel {
-    pub(crate) fn new(alloc: &mut gpu::KernelAllocators) -> Result<StatsChannel> {
-        Ok(StatsChannel {
-            ch: RxChannel::<ChannelState, RawStatsMsg>::new(alloc, 0x100)?,
+#[versions(AGX)]
+impl StatsChannel::ver {
+    pub(crate) fn new(alloc: &mut gpu::KernelAllocators) -> Result<StatsChannel::ver> {
+        Ok(StatsChannel::ver {
+            ch: RxChannel::<ChannelState, RawStatsMsg::ver>::new(alloc, 0x100)?,
         })
     }
 
-    pub(crate) fn to_raw(&self) -> raw::ChannelRing<ChannelState, RawStatsMsg> {
+    pub(crate) fn to_raw(&self) -> raw::ChannelRing<ChannelState, RawStatsMsg::ver> {
         self.ch.ring.to_raw()
     }
 
@@ -222,7 +224,7 @@ impl StatsChannel {
         while let Some(msg) = self.ch.get(0) {
             let tag = unsafe { msg.raw.0 };
             match tag {
-                0..=STATS_MAX => {
+                0..=STATS_MAX::ver => {
                     let msg = unsafe { msg.msg };
                     pr_info!("Stats: {:?}", msg);
                 }

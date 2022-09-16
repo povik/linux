@@ -33,11 +33,12 @@ pub(crate) struct KernelAllocators {
     pub(crate) gpu: alloc::SimpleAllocator,
 }
 
+#[versions(AGX)]
 struct RxChannels {
     event: channel::EventChannel,
     fw_log: channel::FwLogChannel,
     ktrace: channel::KTraceChannel,
-    stats: channel::StatsChannel,
+    stats: channel::StatsChannel::ver,
 }
 
 struct PipeChannels {
@@ -61,7 +62,7 @@ pub(crate) struct GpuManager {
     alloc: KernelAllocators,
     io_mappings: Vec<mmu::Mapping>,
     rtkit: Mutex<Option<rtkit::RTKit<GpuManager::ver>>>,
-    rx_channels: Mutex<RxChannels>,
+    rx_channels: Mutex<RxChannels::ver>,
     tx_channels: Mutex<TxChannels>,
     pipes: Vec<PipeChannels>,
 }
@@ -146,11 +147,11 @@ impl GpuManager::ver {
             uat,
             io_mappings: Vec::new(),
             rtkit: Mutex::new(None),
-            rx_channels: Mutex::new(RxChannels {
+            rx_channels: Mutex::new(RxChannels::ver {
                 event: channel::EventChannel::new(&mut alloc)?,
                 fw_log: channel::FwLogChannel::new(&mut alloc)?,
                 ktrace: channel::KTraceChannel::new(&mut alloc)?,
-                stats: channel::StatsChannel::new(&mut alloc)?,
+                stats: channel::StatsChannel::ver::new(&mut alloc)?,
             }),
             tx_channels: Mutex::new(TxChannels {
                 device_control: channel::DeviceControlChannel::new(&mut alloc)?,

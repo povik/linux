@@ -805,7 +805,7 @@ pub(crate) mod raw {
         pub(crate) event: ChannelRing<channels::ChannelState, channels::RawEventMsg>,
         pub(crate) fw_log: ChannelRing<channels::FwLogChannelState, channels::RawFwLogMsg>,
         pub(crate) ktrace: ChannelRing<channels::ChannelState, channels::RawKTraceMsg>,
-        pub(crate) stats: ChannelRing<channels::ChannelState, channels::RawStatsMsg>,
+        pub(crate) stats: ChannelRing<channels::ChannelState, channels::RawStatsMsg::ver>,
 
         pub(crate) __pad0: Pad<0x50>,
         pub(crate) unk_160: u64,

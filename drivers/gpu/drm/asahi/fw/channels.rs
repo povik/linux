@@ -168,8 +168,19 @@ pub(crate) struct RawKTraceMsg {
     unk_flag: U64,
 }
 
-pub(crate) const STATS_SZ: usize = 0x34;
+#[versions(AGX)]
+pub(crate) const STATS_SZ: usize = {
+    #[ver(V < V13_0B4)]
+    {
+        0x2c
+    }
+    #[ver(V >= V13_0B4)]
+    {
+        0x3c
+    }
+};
 
+#[versions(AGX)]
 #[derive(Debug, Copy, Clone)]
 #[repr(C, u32)]
 pub(crate) enum StatsMsg {
@@ -178,7 +189,7 @@ pub(crate) enum StatsMsg {
         __pad: Pad<0x18>,
         power: U64,
     },
-    Unk1(Array<STATS_SZ, u8>),
+    Unk1(Array<{ STATS_SZ::ver }, u8>),
     PowerOn {
         // 0x02
         off_time: U64,
@@ -195,10 +206,10 @@ pub(crate) enum StatsMsg {
         util3: u32,
         util4: u32,
     },
-    Unk5(Array<STATS_SZ, u8>),
-    Unk6(Array<STATS_SZ, u8>),
-    Unk7(Array<STATS_SZ, u8>),
-    Unk8(Array<STATS_SZ, u8>),
+    Unk5(Array<{ STATS_SZ::ver }, u8>),
+    Unk6(Array<{ STATS_SZ::ver }, u8>),
+    Unk7(Array<{ STATS_SZ::ver }, u8>),
+    Unk8(Array<{ STATS_SZ::ver }, u8>),
     AvgPower {
         // 0x09
         active_cs: U64,
@@ -250,12 +261,15 @@ pub(crate) enum StatsMsg {
     }, // Max discriminant: 0xe
 }
 
+#[versions(AGX)]
 pub(crate) const STATS_MAX: u32 = 0xe;
 
+#[versions(AGX)]
 #[derive(Copy, Clone)]
 pub(crate) union RawStatsMsg {
-    pub(crate) raw: (u32, Array<STATS_SZ, u8>),
-    pub(crate) msg: StatsMsg,
+    pub(crate) raw: (u32, Array<{ STATS_SZ::ver }, u8>),
+    pub(crate) msg: StatsMsg::ver,
 }
 
-default_zeroed!(RawStatsMsg);
+#[versions(AGX)]
+default_zeroed!(RawStatsMsg::ver);
