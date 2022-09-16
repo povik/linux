@@ -13,6 +13,7 @@ use kernel::{
     PointerWrapper,
 };
 
+use crate::fw::channels::DeviceControlMsg;
 use crate::{alloc, channel, fw, gem, hw, initdata, mmu};
 
 const EP_FIRMWARE: u8 = 0x20;
@@ -246,6 +247,11 @@ impl GpuManager for GpuManager::ver {
         rtk.start_endpoint(EP_FIRMWARE)?;
         rtk.start_endpoint(EP_DOORBELL)?;
         rtk.send_message(EP_FIRMWARE, MSG_INIT | (initdata & INIT_DATA_MASK))?;
+
+        self.tx_channels
+            .lock()
+            .device_control
+            .send(&DeviceControlMsg::Initialize);
 
         Ok(())
     }
