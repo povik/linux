@@ -7,6 +7,7 @@
 mod alloc;
 mod channel;
 mod driver;
+mod event;
 mod fw;
 mod gem;
 mod gpu;
