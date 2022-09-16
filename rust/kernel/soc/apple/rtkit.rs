@@ -213,6 +213,16 @@ impl<T: Operations> RTKit<T> {
     pub fn boot(&mut self) -> Result {
         to_result(unsafe { bindings::apple_rtkit_boot(self.rtk) })
     }
+
+    pub fn start_endpoint(&mut self, endpoint: u8) -> Result {
+        to_result(unsafe { bindings::apple_rtkit_start_ep(self.rtk, endpoint) })
+    }
+
+    pub fn send_message(&mut self, endpoint: u8, message: u64) -> Result {
+        to_result(unsafe {
+            bindings::apple_rtkit_send_message(self.rtk, endpoint, message, ptr::null_mut(), false)
+        })
+    }
 }
 
 // SAFETY: `RTKit` operations require a mutable reference
