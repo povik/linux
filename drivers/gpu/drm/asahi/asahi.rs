@@ -12,3 +12,11 @@ mod initdata;
 mod mmu;
 mod object;
 mod place;
+
+use kernel::module_platform_driver;
+
+module_platform_driver! {
+    type: driver::AsahiDevice,
+    name: "asahi",
+    license: "Dual MIT/GPL",
+}

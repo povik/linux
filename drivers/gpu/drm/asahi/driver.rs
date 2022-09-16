@@ -150,9 +150,3 @@ impl platform::Driver for AsahiDevice {
         Ok(data)
     }
 }
-
-module_platform_driver! {
-    type: AsahiDevice,
-    name: "asahi",
-    license: "Dual MIT/GPL",
-}
