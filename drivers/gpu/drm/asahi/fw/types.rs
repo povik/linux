@@ -12,7 +12,9 @@ pub(crate) use ::alloc::boxed::Box;
 use core::fmt;
 use core::ops::{Deref, DerefMut, Index, IndexMut};
 use core::sync::atomic;
-pub(crate) use core::sync::atomic::{AtomicU16, AtomicU32, AtomicU64, AtomicU8};
+pub(crate) use core::sync::atomic::{
+    AtomicI16, AtomicI32, AtomicI64, AtomicI8, AtomicU16, AtomicU32, AtomicU64, AtomicU8,
+};
 pub(crate) type GpuObject<T> = object::GpuObject<T, alloc::SimpleAllocation<T>>;
 pub(crate) type GpuArray<T> = object::GpuArray<T, alloc::SimpleAllocation<T>>;
 pub(crate) use crate::alloc::Allocator as _Allocator;
