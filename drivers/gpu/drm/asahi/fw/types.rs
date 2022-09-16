@@ -37,6 +37,19 @@ macro_rules! const_f32 {
     }};
 }
 
+#[derive(Copy, Clone, Default)]
+#[repr(C, packed(4))]
+pub(crate) struct U64(pub(crate) u64);
+
+unsafe impl Zeroed for U64 {}
+
+impl fmt::Debug for U64 {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let v = self.0;
+        f.write_fmt(format_args!("{:#x}", v))
+    }
+}
+
 #[macro_export]
 macro_rules! no_debug {
     ($type:ty) => {
