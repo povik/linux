@@ -204,6 +204,10 @@ impl<T: GpuStruct, U: Allocation<T>> GpuObject<T, U> {
         })
     }
 
+    pub(crate) fn gpu_va(&self) -> NonZeroU64 {
+        self.gpu_ptr.0
+    }
+
     pub(crate) fn gpu_pointer(&self) -> GpuPointer<'_, T> {
         GpuPointer(self.gpu_ptr.0, PhantomData)
     }
