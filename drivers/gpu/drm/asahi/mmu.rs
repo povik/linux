@@ -271,9 +271,9 @@ impl io_pgtable::FlushOps for Uat {
 }
 
 impl Context {
-    fn new(dev: &device::Device, is_kernel: bool) -> Result<Context> {
+    fn new(dev: device::Device, is_kernel: bool) -> Result<Context> {
         let page_table = AppleUAT::new(
-            dev,
+            &dev,
             io_pgtable::Config {
                 pgsize_bitmap: UAT_PGSZ,
                 ias: if is_kernel { UAT_IAS_KERN } else { UAT_IAS },
@@ -298,7 +298,7 @@ impl Context {
 
         Ok(Context {
             inner: Arc::try_new(Mutex::new(ContextInner {
-                dev: dev.clone(),
+                dev,
                 min_va,
                 max_va,
                 is_kernel,
@@ -357,8 +357,8 @@ impl Context {
 }
 
 impl Uat {
-    fn map_region(dev: &device::Device, name: &CStr, size: usize) -> Result<UatRegion> {
-        let rdev = (dev as &dyn device::RawDevice).raw_device();
+    fn map_region(dev: &dyn device::RawDevice, name: &CStr, size: usize) -> Result<UatRegion> {
+        let rdev = dev.raw_device();
 
         let mut res = core::mem::MaybeUninit::<bindings::resource>::uninit();
 
@@ -439,7 +439,7 @@ impl Uat {
         &self.kernel_context
     }
 
-    pub(crate) fn new(dev: &device::Device) -> Result<Self> {
+    pub(crate) fn new(dev: &dyn device::RawDevice) -> Result<Self> {
         dev_info!(dev, "MMU: Initializing...\n");
 
         let handoff_rgn = Self::map_region(dev, c_str!("handoff"), HANDOFF_SIZE)?;
@@ -448,7 +448,7 @@ impl Uat {
 
         dev_info!(dev, "MMU: Initializing kernel page table\n");
 
-        let kernel_context = Context::new(dev, true)?;
+        let kernel_context = Context::new(device::Device::from_dev(dev), true)?;
 
         let ttb1 = kernel_context.ttb();
 
