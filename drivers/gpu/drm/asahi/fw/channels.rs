@@ -112,7 +112,27 @@ impl TxChannelState for FwCtlChannelState {
     }
 }
 
-pub(crate) type PipeMsg = Array<0x30, u8>;
+#[derive(Debug, Copy, Clone, Default)]
+#[repr(u32)]
+pub(crate) enum PipeType {
+    #[default]
+    Vertex = 0,
+    Fragment = 1,
+    Compute = 2,
+}
+
+#[derive(Debug, Copy, Clone, Default)]
+#[repr(C)]
+pub(crate) struct RunWorkQueueMsg {
+    pub(crate) pipe_type: PipeType,
+    pub(crate) work_queue: Option<GpuWeakPointer<super::workqueue::QueueInfo>>,
+    pub(crate) wptr: u32,
+    pub(crate) event_slot: u32,
+    pub(crate) is_new: bool,
+    pub(crate) __pad: Pad<0x1b>,
+}
+
+pub(crate) type PipeMsg = RunWorkQueueMsg;
 
 pub(crate) const DEVICECONTROL_SZ: usize = 0x30;
 

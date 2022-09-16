@@ -15,6 +15,7 @@ mod initdata;
 mod mmu;
 mod object;
 mod place;
+mod workqueue;
 
 use kernel::module_platform_driver;
 

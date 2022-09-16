@@ -4,5 +4,7 @@
 //! Firmware structures for Apple AGX GPUs
 
 pub(crate) mod channels;
+pub(crate) mod event;
 pub(crate) mod initdata;
 pub(crate) mod types;
+pub(crate) mod workqueue;
