@@ -48,6 +48,16 @@ impl<T: ?Sized> GpuWeakPointer<T> {
     }
 }
 
+impl<T: ?Sized> fmt::Debug for GpuWeakPointer<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.write_fmt(format_args!(
+            "{:#x} ({})",
+            self.0,
+            core::any::type_name::<T>()
+        ))
+    }
+}
+
 #[repr(transparent)]
 pub(crate) struct GpuRawPointer(NonZeroU64);
 
