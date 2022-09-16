@@ -243,6 +243,23 @@ impl<T: GpuStruct, U: Allocation<T>> GpuObject<T, U> {
     }
 }
 
+pub(crate) trait OpaqueGpuObject {}
+impl<T: GpuStruct, U: Allocation<T>> OpaqueGpuObject for GpuObject<T, U> {}
+
+impl<T: GpuStruct, U: Allocation<T>> Deref for GpuObject<T, U> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &*self.inner
+    }
+}
+
+impl<T: GpuStruct, U: Allocation<T>> DerefMut for GpuObject<T, U> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut *self.inner
+    }
+}
+
 impl<T: GpuStruct + Debug, U: Allocation<T>> Debug for GpuObject<T, U>
 where
     <T as GpuStruct>::Raw<'static>: Debug,
