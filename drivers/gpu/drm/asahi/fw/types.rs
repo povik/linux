@@ -48,6 +48,39 @@ macro_rules! no_debug {
     };
 }
 
+/// Types which can be safely initialized with an all-zero bit pattern
+/// See: https://github.com/rust-lang/rfcs/issues/2626
+///
+/// # Safety
+/// This trait must only be implemented if a type only contains primitive types
+/// which can be zero-initialized, FFI structs, intended to be zero-initialized,
+/// or other types which impl Zeroed.
+pub(crate) unsafe trait Zeroed: Default {
+    fn zeroed() -> Self {
+        unsafe { core::mem::zeroed() }
+    }
+}
+
+#[macro_export]
+macro_rules! default_zeroed {
+    (<$($lt:lifetime),*>, $type:ty) => {
+        impl<$($lt),*> Default for $type {
+            fn default() -> $type {
+                Zeroed::zeroed()
+            }
+        }
+        unsafe impl<$($lt),*> Zeroed for $type {}
+    };
+    ($type:ty) => {
+        impl Default for $type {
+            fn default() -> $type {
+                Zeroed::zeroed()
+            }
+        }
+        unsafe impl Zeroed for $type {}
+    };
+}
+
 #[derive(Copy, Clone)]
 #[repr(C, packed)]
 pub(crate) struct Pad<const N: usize>([u8; N]);
