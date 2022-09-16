@@ -71,6 +71,7 @@ pub(crate) struct GpuManager {
 
 pub(crate) trait GpuManager: Send + Sync {
     fn init(&self) -> Result;
+    fn test(&self) -> Result;
 }
 
 #[versions(AGX)]
@@ -257,6 +258,10 @@ impl GpuManager for GpuManager::ver {
             .lock()
             .device_control
             .send(&DeviceControlMsg::Initialize);
+        Ok(())
+    }
+
+    fn test(&self) -> Result {
         Ok(())
     }
 }
