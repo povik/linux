@@ -35,6 +35,14 @@ impl<'a, T: ?Sized> fmt::Debug for GpuPointer<'a, T> {
 #[repr(C, packed(4))]
 pub(crate) struct GpuWeakPointer<T: ?Sized>(NonZeroU64, PhantomData<*const T>);
 
+impl<T: ?Sized> Copy for GpuWeakPointer<T> {}
+
+impl<T: ?Sized> Clone for GpuWeakPointer<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
 impl<T: ?Sized> GpuWeakPointer<T> {
     // The third argument is a type inference hack
     pub(crate) unsafe fn offset<U>(&self, off: usize, _: *const U) -> GpuWeakPointer<U> {
