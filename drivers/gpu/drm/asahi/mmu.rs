@@ -481,6 +481,10 @@ impl Uat {
         &self.kernel_context
     }
 
+    pub(crate) fn context_table_base(&self) -> u64 {
+        self.contexts_rgn.base as u64
+    }
+
     pub(crate) fn new(dev: &dyn device::RawDevice) -> Result<Self> {
         dev_info!(dev, "MMU: Initializing...\n");
 
