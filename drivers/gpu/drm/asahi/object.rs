@@ -321,6 +321,10 @@ impl<T: Sized, U: Allocation<T>> GpuArray<T, U> {
         GpuPointer(self.gpu_ptr, PhantomData)
     }
 
+    pub(crate) fn weak_pointer(&self) -> GpuWeakPointer<[T]> {
+        GpuWeakPointer(self.gpu_ptr, PhantomData)
+    }
+
     pub(crate) fn len(&self) -> usize {
         self.len
     }
