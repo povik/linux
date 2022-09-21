@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only OR MIT
 #![allow(missing_docs)]
 #![allow(unused_imports)]
+#![allow(dead_code)]
 
 //! Common types for firmware structure definitions
 
