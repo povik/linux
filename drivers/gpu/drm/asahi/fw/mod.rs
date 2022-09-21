@@ -7,6 +7,7 @@ pub(crate) mod buffer;
 pub(crate) mod channels;
 pub(crate) mod event;
 pub(crate) mod initdata;
+pub(crate) mod microseq;
 pub(crate) mod types;
 pub(crate) mod vertex;
 pub(crate) mod workqueue;
