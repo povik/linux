@@ -30,6 +30,9 @@ pub(crate) struct BufferInner {
     blocks: Vec<GpuArray<u8>>,
     max_blocks: usize,
     mgr: BufferManager,
+    active_scenes: usize,
+    active_slot: Option<slotalloc::Guard<SlotInner>>,
+    last_token: Option<slotalloc::SlotToken>,
 }
 
 #[versions(AGX)]
@@ -38,13 +41,20 @@ pub(crate) struct Buffer {
 }
 
 #[versions(AGX)]
-pub(crate) struct Scene(GpuObject<buffer::Scene::ver>);
+#[derive(Debug)]
+pub(crate) struct Scene {
+    object: GpuObject<buffer::Scene::ver>,
+    slot: u32,
+    rebind: bool,
+}
 
 pub(crate) struct SlotInner();
 
 impl slotalloc::SlotItem for SlotInner {
     type Owner = ();
 }
+
+pub(crate) struct BufferManager(slotalloc::SlotAllocator<SlotInner>);
 
 #[versions(AGX)]
 impl Buffer::ver {
@@ -111,6 +121,9 @@ impl Buffer::ver {
                 blocks: Vec::new(),
                 max_blocks,
                 mgr: mgr.clone(),
+                active_scenes: 0,
+                active_slot: None,
+                last_token: None,
             }))?,
         })
     }
@@ -165,7 +178,7 @@ impl Buffer::ver {
     }
 
     pub(crate) fn new_scene(&self, alloc: &mut gpu::KernelAllocators) -> Result<Scene::ver> {
-        let inner = self.inner.lock();
+        let mut inner = self.inner.lock();
 
         // TODO: what is this exactly?
         let user_buffer = inner.ualloc.lock().array_empty(0x80)?;
@@ -192,7 +205,24 @@ impl Buffer::ver {
             ))
         })?;
 
-        Ok(Scene::ver(scene))
+        let mut rebind = false;
+
+        if inner.active_slot.is_none() {
+            assert_eq!(inner.active_scenes, 0);
+
+            let slot = inner.mgr.0.get(inner.last_token)?;
+            rebind = slot.changed();
+            inner.last_token = Some(slot.token());
+            inner.active_slot = Some(slot);
+        }
+
+        inner.active_scenes += 1;
+
+        Ok(Scene::ver {
+            object: scene,
+            slot: inner.active_slot.as_ref().unwrap().slot(),
+            rebind,
+        })
     }
 }
 
@@ -205,7 +235,18 @@ impl Clone for Buffer::ver {
     }
 }
 
-pub(crate) struct BufferManager(slotalloc::SlotAllocator<SlotInner>);
+#[versions(AGX)]
+impl Drop for Scene::ver {
+    fn drop(&mut self) {
+        let mut inner = self.object.buffer.lock();
+        assert_ne!(inner.active_scenes, 0);
+        inner.active_scenes -= 1;
+
+        if inner.active_scenes == 0 {
+            inner.active_slot = None;
+        }
+    }
+}
 
 impl BufferManager {
     pub(crate) fn new() -> Result<BufferManager> {
