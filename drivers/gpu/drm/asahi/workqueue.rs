@@ -204,7 +204,7 @@ impl<'a> WorkQueueBatch<'a> {
         inner.pending.try_reserve(1)?;
 
         let wptr = inner.wptr;
-        inner.info.ring.as_mut_slice()[wptr as usize] = command.gpu_va().get();
+        inner.info.ring[wptr as usize] = command.gpu_va().get();
 
         inner
             .info

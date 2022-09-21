@@ -44,7 +44,7 @@ where
             if wptr == *rptr {
                 None
             } else {
-                let msg = self.ring.ring.as_slice()[*rptr as usize];
+                let msg = self.ring.ring[*rptr as usize];
                 *rptr = (*rptr + 1) % self.count;
                 T::set_rptr(raw, index, *rptr);
                 Some(msg)
@@ -89,7 +89,7 @@ where
                     rptr = T::rptr(raw);
                 }
             }
-            self.ring.ring.as_mut_slice()[self.wptr as usize] = *msg;
+            self.ring.ring[self.wptr as usize] = *msg;
             T::set_wptr(raw, next_wptr);
         })
     }
