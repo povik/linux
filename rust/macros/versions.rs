@@ -50,10 +50,10 @@ static AGX_VERSIONS: VersionConfig = VersionConfig {
     enums: &[&["G13G", "G13X", "G14G"], &["V12_3", "V13_0B4"]],
     versions: &[
         &["G13G", "V12_3"],
-        &["G13G", "V13_0B4"],
-        &["G13X", "V12_3"],
-        &["G13X", "V13_0B4"],
-        &["G14G", "V13_0B4"],
+        // &["G13G", "V13_0B4"],
+        // &["G13X", "V12_3"],
+        // &["G13X", "V13_0B4"],
+        // &["G14G", "V13_0B4"],
     ],
 };
 
