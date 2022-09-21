@@ -24,6 +24,12 @@ pub(crate) struct SlotToken {
     slot: u32,
 }
 
+impl SlotToken {
+    pub(crate) fn last_slot(&self) -> u32 {
+        self.slot
+    }
+}
+
 pub(crate) struct Guard<T: SlotItem> {
     item: Option<T>,
     changed: bool,

@@ -24,9 +24,13 @@ use kernel::{
     PointerWrapper,
 };
 
+use crate::slotalloc;
+
 const PPL_MAGIC: u64 = 0x4b1d000000000002;
 
 const UAT_NUM_CTX: usize = 64;
+const UAT_USER_CTX_START: usize = 1;
+const UAT_USER_CTX: usize = UAT_NUM_CTX - UAT_USER_CTX_START;
 
 pub(crate) const UAT_PGBIT: usize = 14;
 pub(crate) const UAT_PGSZ: usize = 1 << UAT_PGBIT;
@@ -103,9 +107,17 @@ struct VmInner {
     max_va: usize,
     page_table: IOPagetable<Uat, AppleUATCfg>,
     mm: mm::Allocator<MappingInner>,
+    uat_inner: Arc<Mutex<UatInner>>,
+    active_users: usize,
+    binding: Option<slotalloc::Guard<SlotInner>>,
+    bind_token: Option<slotalloc::SlotToken>,
 }
 
 impl VmInner {
+    fn ttb(&self) -> u64 {
+        self.page_table.cfg().ttbr
+    }
+
     fn map_iova(&self, iova: usize, size: usize) -> Result<usize> {
         if iova < self.min_va || (iova + size - 1) > self.max_va {
             Err(EINVAL)
@@ -143,6 +155,32 @@ impl VmInner {
 #[derive(Clone)]
 pub(crate) struct Vm {
     inner: Arc<Mutex<VmInner>>,
+}
+
+pub(crate) struct SlotInner();
+
+impl slotalloc::SlotItem for SlotInner {
+    type Owner = ();
+}
+
+pub(crate) struct VmBind(Vm, u32);
+
+impl VmBind {
+    fn slot(&self) -> u32 {
+        self.1
+    }
+}
+
+impl Drop for VmBind {
+    fn drop(&mut self) {
+        let mut inner = self.0.inner.lock();
+
+        assert_ne!(inner.active_users, 0);
+        inner.active_users -= 1;
+        if inner.active_users == 0 {
+            inner.binding = None;
+        }
+    }
 }
 
 pub(crate) struct MappingInner {
@@ -184,10 +222,28 @@ impl Drop for Mapping {
     }
 }
 
-pub(crate) struct Uat {
+struct UatInner {
     handoff_rgn: UatRegion,
+    ttbs_rgn: UatRegion,
+}
+
+impl UatInner {
+    fn handoff(&self) -> &Handoff {
+        // SAFETY: pointer is non-null per the type invariant
+        unsafe { (self.handoff_rgn.map.as_ptr() as *mut Handoff).as_ref() }.unwrap()
+    }
+
+    fn ttbs(&self) -> &[SlotTTBS; UAT_NUM_CTX] {
+        // SAFETY: pointer is non-null per the type invariant
+        unsafe { (self.ttbs_rgn.map.as_ptr() as *mut [SlotTTBS; UAT_NUM_CTX]).as_ref() }.unwrap()
+    }
+}
+
+pub(crate) struct Uat {
     pagetables_rgn: UatRegion,
-    contexts_rgn: UatRegion,
+
+    inner: Arc<Mutex<UatInner>>,
+    slots: slotalloc::SlotAllocator<SlotInner>,
 
     kernel_vm: Vm,
 }
@@ -271,7 +327,7 @@ impl io_pgtable::FlushOps for Uat {
 }
 
 impl Vm {
-    fn new(dev: device::Device, is_kernel: bool) -> Result<Vm> {
+    fn new(dev: device::Device, uat_inner: Arc<Mutex<UatInner>>, is_kernel: bool) -> Result<Vm> {
         let page_table = AppleUAT::new(
             &dev,
             io_pgtable::Config {
@@ -304,12 +360,16 @@ impl Vm {
                 is_kernel,
                 page_table,
                 mm,
+                uat_inner,
+                binding: None,
+                bind_token: None,
+                active_users: 0,
             }))?,
         })
     }
 
     fn ttb(&self) -> u64 {
-        self.inner.lock().page_table.cfg().ttbr
+        self.inner.lock().ttb()
     }
 
     pub(crate) fn map(&self, size: usize, sgt: &mut shmem::SGTableIter<'_>) -> Result<Mapping> {
@@ -398,6 +458,36 @@ impl Vm {
     }
 }
 
+impl Drop for Vm {
+    fn drop(&mut self) {
+        let mut inner = self.inner.lock();
+
+        assert_eq!(inner.active_users, 0);
+
+        // Make sure this VM is not mapped to a TTB if it was
+        if let Some(token) = inner.bind_token.take() {
+            let idx = (token.last_slot() as usize) + UAT_USER_CTX_START;
+            let ttb = inner.ttb() | TTBR_VALID | (idx as u64) << TTBR_ASID_SHIFT;
+
+            let uat_inner = inner.uat_inner.lock();
+            uat_inner.handoff().lock();
+            let inval = uat_inner.ttbs()[idx]
+                .ttb0
+                .compare_exchange(ttb, 0, Ordering::SeqCst, Ordering::Relaxed)
+                .is_ok();
+            uat_inner.handoff().unlock();
+            core::mem::drop(uat_inner);
+
+            if inval {
+                // TODO: invalidate ASID only
+                unsafe {
+                    asm!(".arch armv8.4-a\ntlbi vmalle1os");
+                }
+            }
+        }
+    }
+}
+
 impl Uat {
     fn map_region(dev: &dyn device::RawDevice, name: &CStr, size: usize) -> Result<UatRegion> {
         let rdev = dev.raw_device();
@@ -461,17 +551,6 @@ impl Uat {
         }
     }
 
-    fn handoff(&self) -> &Handoff {
-        // SAFETY: pointer is non-null per the type invariant
-        unsafe { (self.handoff_rgn.map.as_ptr() as *mut Handoff).as_ref() }.unwrap()
-    }
-
-    fn ttbs(&self) -> &[SlotTTBS; UAT_NUM_CTX] {
-        // SAFETY: pointer is non-null per the type invariant
-        unsafe { (self.contexts_rgn.map.as_ptr() as *mut [SlotTTBS; UAT_NUM_CTX]).as_ref() }
-            .unwrap()
-    }
-
     fn kpt0(&self) -> &[Pte; UAT_NPTE] {
         // SAFETY: pointer is non-null per the type invariant
         unsafe { (self.pagetables_rgn.map.as_ptr() as *mut [Pte; UAT_NPTE]).as_ref() }.unwrap()
@@ -482,37 +561,77 @@ impl Uat {
     }
 
     pub(crate) fn context_table_base(&self) -> u64 {
-        self.contexts_rgn.base as u64
+        let inner = self.inner.lock();
+
+        inner.ttbs_rgn.base as u64
+    }
+
+    pub(crate) fn bind(&self, vm: &Vm) -> Result<VmBind> {
+        let mut inner = vm.inner.lock();
+
+        if inner.binding.is_none() {
+            assert_eq!(inner.active_users, 0);
+
+            let slot = self.slots.get(inner.bind_token)?;
+            if slot.changed() {
+                let idx = (slot.slot() as usize) + UAT_USER_CTX_START;
+                let ttb = inner.ttb() | TTBR_VALID | (idx as u64) << TTBR_ASID_SHIFT;
+
+                let uat_inner = self.inner.lock();
+                let ttbs = uat_inner.ttbs();
+                uat_inner.handoff().lock();
+                ttbs[idx].ttb0.store(ttb, Ordering::Relaxed);
+                ttbs[idx].ttb1.store(0, Ordering::Relaxed);
+                uat_inner.handoff().unlock();
+            }
+
+            inner.bind_token = Some(slot.token());
+            inner.binding = Some(slot);
+        }
+
+        inner.active_users += 1;
+
+        Ok(VmBind(
+            vm.clone(),
+            inner.binding.as_ref().unwrap().slot() + UAT_USER_CTX_START as u32,
+        ))
     }
 
     pub(crate) fn new(dev: &dyn device::RawDevice) -> Result<Self> {
         dev_info!(dev, "MMU: Initializing...\n");
 
         let handoff_rgn = Self::map_region(dev, c_str!("handoff"), HANDOFF_SIZE)?;
-        let contexts_rgn = Self::map_region(dev, c_str!("contexts"), SLOTS_SIZE)?;
+        let ttbs_rgn = Self::map_region(dev, c_str!("ttbs"), SLOTS_SIZE)?;
         let pagetables_rgn = Self::map_region(dev, c_str!("pagetables"), PAGETABLES_SIZE)?;
 
         dev_info!(dev, "MMU: Initializing kernel page table\n");
 
-        let kernel_vm = Vm::new(device::Device::from_dev(dev), true)?;
+        let inner = Arc::try_new(Mutex::new(UatInner {
+            handoff_rgn,
+            ttbs_rgn,
+        }))?;
 
+        let kernel_vm = Vm::new(device::Device::from_dev(dev), inner.clone(), true)?;
         let ttb1 = kernel_vm.ttb();
 
         let uat = Self {
-            handoff_rgn,
             pagetables_rgn,
-            contexts_rgn,
             kernel_vm,
+            inner,
+            slots: slotalloc::SlotAllocator::new(UAT_USER_CTX as u32, (), |_inner, _slot| {
+                SlotInner()
+            })?,
         };
 
-        dev_info!(dev, "MMU: Initializing handoff\n");
-        uat.handoff().init();
+        let inner = uat.inner.lock();
+
+        inner.handoff().init();
 
         dev_info!(dev, "MMU: Initializing TTBs\n");
 
-        uat.handoff().lock();
+        inner.handoff().lock();
 
-        let ttbs = uat.ttbs();
+        let ttbs = inner.ttbs();
 
         ttbs[0].ttb0.store(0, Ordering::Relaxed);
         ttbs[0]
@@ -524,7 +643,9 @@ impl Uat {
             ctx.ttb1.store(0, Ordering::Relaxed);
         }
 
-        uat.handoff().unlock();
+        inner.handoff().unlock();
+
+        core::mem::drop(inner);
 
         uat.kpt0()[2].store(ttb1 | PTE_TABLE, Ordering::Relaxed);
 
@@ -536,13 +657,6 @@ impl Uat {
 
 impl Drop for Uat {
     fn drop(&mut self) {
-        // Disable all contexts. Don't bother locking, since
-        // something might have gone horribly wrong with the firmware.
-        for ctx in self.ttbs() {
-            ctx.ttb0.store(0, Ordering::Relaxed);
-            ctx.ttb1.store(0, Ordering::Relaxed);
-        }
-
         // Unmap what we mapped
         self.kpt0()[2].store(0, Ordering::Relaxed);
 
