@@ -18,10 +18,31 @@ pub(crate) trait SlotItem {
     fn release(&mut self) {}
 }
 
+#[derive(Copy, Clone, Debug)]
+pub(crate) struct SlotToken {
+    time: u64,
+    slot: u32,
+}
+
 pub(crate) struct Guard<T: SlotItem> {
     item: Option<T>,
-    slot: u32,
+    changed: bool,
+    token: SlotToken,
     alloc: Arc<SlotAllocatorOuter<T>>,
+}
+
+impl<T: SlotItem> Guard<T> {
+    pub(crate) fn slot(&self) -> u32 {
+        self.token.slot
+    }
+
+    pub(crate) fn changed(&self) -> bool {
+        self.changed
+    }
+
+    pub(crate) fn token(&self) -> SlotToken {
+        self.token
+    }
 }
 
 impl<T: SlotItem> Deref for Guard<T> {
@@ -38,10 +59,17 @@ impl<T: SlotItem> DerefMut for Guard<T> {
     }
 }
 
+struct Entry<T: SlotItem> {
+    item: T,
+    get_time: u64,
+    drop_time: u64,
+}
+
 struct SlotAllocatorInner<T: SlotItem> {
     owner: T::Owner,
-    slots: Vec<(Option<T>, u64)>,
-    now: u64,
+    slots: Vec<Option<Entry<T>>>,
+    get_count: u64,
+    drop_count: u64,
 }
 
 pub(crate) struct SlotAllocatorOuter<T: SlotItem> {
@@ -61,14 +89,19 @@ impl<T: SlotItem> SlotAllocator<T> {
 
         for i in 0..num_slots {
             slots
-                .try_push((Some(constructor(&mut owner, i)), 0))
+                .try_push(Some(Entry {
+                    item: constructor(&mut owner, i),
+                    get_time: 0,
+                    drop_time: 0,
+                }))
                 .expect("try_push() failed after reservation");
         }
 
         let inner = SlotAllocatorInner {
             owner,
             slots,
-            now: 0,
+            get_count: 0,
+            drop_count: 0,
         };
 
         let mut alloc = Pin::from(UniqueArc::try_new(SlotAllocatorOuter {
@@ -89,19 +122,21 @@ impl<T: SlotItem> SlotAllocator<T> {
         Ok(SlotAllocator(alloc.into()))
     }
 
-    pub(crate) fn get(&self, hint: u32) -> Result<(u32, Guard<T>)> {
+    pub(crate) fn get(&self, token: Option<SlotToken>) -> Result<Guard<T>> {
         let mut inner = self.0.inner.lock();
 
-        if (hint as usize) < inner.slots.len() {
-            if let Some(item) = inner.slots[hint as usize].0.take() {
-                return Ok((
-                    hint,
-                    Guard {
-                        item: Some(item),
-                        slot: hint,
+        if let Some(token) = token {
+            let slot = &mut inner.slots[token.slot as usize];
+            if slot.is_some() {
+                let count = slot.as_ref().unwrap().get_time;
+                if count == token.time {
+                    return Ok(Guard {
+                        item: Some(slot.take().unwrap().item),
+                        token,
+                        changed: false,
                         alloc: self.0.clone(),
-                    },
-                ));
+                    });
+                }
             }
         }
 
@@ -111,9 +146,11 @@ impl<T: SlotItem> SlotAllocator<T> {
             let mut oldest_slot = 0u32;
 
             for (i, slot) in inner.slots.iter().enumerate() {
-                if slot.0.is_some() && slot.1 < oldest_time {
-                    oldest_slot = i as u32;
-                    oldest_time = slot.1;
+                if let Some(slot) = slot.as_ref() {
+                    if slot.drop_time < oldest_time {
+                        oldest_slot = i as u32;
+                        oldest_time = slot.drop_time;
+                    }
                 }
             }
 
@@ -130,18 +167,21 @@ impl<T: SlotItem> SlotAllocator<T> {
             }
         };
 
+        inner.get_count += 1;
+
         let item = inner.slots[slot as usize]
-            .0
             .take()
-            .expect("Someone stole our slot?");
-        Ok((
-            slot,
-            Guard {
-                item: Some(item),
+            .expect("Someone stole our slot?")
+            .item;
+        Ok(Guard {
+            item: Some(item),
+            changed: true,
+            token: SlotToken {
+                time: inner.get_count,
                 slot,
-                alloc: self.0.clone(),
             },
-        ))
+            alloc: self.0.clone(),
+        })
     }
 }
 
@@ -154,15 +194,19 @@ impl<T: SlotItem> Clone for SlotAllocator<T> {
 impl<T: SlotItem> Drop for Guard<T> {
     fn drop(&mut self) {
         let mut inner = self.alloc.inner.lock();
-        if inner.slots[self.slot as usize].0.is_some() {
+        if inner.slots[self.token.slot as usize].is_some() {
             pr_crit!(
                 "{}: tried to return an item into a full slot ({})",
                 core::any::type_name::<Self>(),
-                self.slot
+                self.token.slot
             );
         } else {
-            inner.now += 1;
-            inner.slots[self.slot as usize] = (self.item.take(), inner.now);
+            inner.drop_count += 1;
+            inner.slots[self.token.slot as usize] = Some(Entry {
+                item: self.item.take().expect("Guard lost its item"),
+                get_time: self.token.time,
+                drop_time: inner.drop_count,
+            });
             self.alloc.cond.notify_one();
         }
     }

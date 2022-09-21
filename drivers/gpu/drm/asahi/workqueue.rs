@@ -30,10 +30,9 @@ struct WorkQueueInner {
     pipe_type: PipeType,
     size: u32,
     wptr: u32,
-    cur_token: WorkToken,
     pending: Vec<Box<dyn object::OpaqueGpuObject>>,
     batches: Vec<(event::EventValue, usize)>,
-    last_slot: u32,
+    last_token: Option<event::Token>,
     event: Option<(event::Event, event::EventValue)>,
 }
 
@@ -118,10 +117,9 @@ impl WorkQueue {
             pipe_type,
             size: WQ_SIZE,
             wptr: 0,
-            cur_token: Default::default(),
             pending: Vec::new(),
             batches: Vec::new(),
-            last_slot: 0,
+            last_token: None,
             event: None,
         };
 
@@ -147,8 +145,9 @@ impl WorkQueue {
         let mut inner = self.inner.lock();
 
         if inner.event.is_none() {
-            let event = inner.event_manager.get(inner.last_slot)?;
+            let event = inner.event_manager.get(inner.last_token)?;
             let cur = event.current();
+            inner.last_token = Some(event.token());
             inner.event = Some((event, cur));
         }
 
@@ -190,7 +189,7 @@ impl WorkQueue {
 }
 
 impl<'a> WorkQueueBatch<'a> {
-    pub(crate) fn add<T: Command>(&'a mut self, command: Box<GpuObject<T>>) -> Result<WorkToken> {
+    pub(crate) fn add<T: Command>(&'a mut self, command: Box<GpuObject<T>>) -> Result {
         let inner = &mut self.inner;
 
         let next_wptr = (inner.wptr + 1) % inner.size;
@@ -217,10 +216,8 @@ impl<'a> WorkQueueBatch<'a> {
             .pending
             .try_push(command)
             .expect("try_push() failed after try_reserve(1)");
-        inner.cur_token = WorkToken(inner.cur_token.0 + 1);
-
         self.commands += 1;
-        Ok(inner.cur_token)
+        Ok(())
     }
 
     pub(crate) fn commit(&mut self) -> Result<event::EventValue> {

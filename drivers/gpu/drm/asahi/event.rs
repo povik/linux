@@ -17,11 +17,11 @@ use kernel::{dbg, prelude::*};
 const NUM_EVENTS: u32 = 128;
 
 pub(crate) struct EventInner {
-    slot: u32,
     stamp: *const AtomicU32,
     owner: Option<Arc<workqueue::WorkQueue>>,
 }
 
+pub(crate) type Token = slotalloc::SlotToken;
 pub(crate) type Event = slotalloc::Guard<EventInner>;
 
 #[derive(Eq, PartialEq, Copy, Clone)]
@@ -62,10 +62,6 @@ impl Ord for EventValue {
 }
 
 impl EventInner {
-    pub(crate) fn slot(&self) -> u32 {
-        self.slot
-    }
-
     pub(crate) fn current(&self) -> EventValue {
         // SAFETY: The pointer is always valid as constructed in
         // EventManager below, and outside users cannot construct
@@ -103,14 +99,13 @@ impl EventManager {
             NUM_EVENTS,
             inner,
             |inner: &mut EventManagerInner, slot| EventInner {
-                slot,
                 stamp: &inner.stamps.as_slice()[slot as usize],
                 owner: None,
             },
         )?))
     }
 
-    pub(crate) fn get(&self, hint: u32) -> Result<Event> {
-        Ok(self.0.get(hint)?.1)
+    pub(crate) fn get(&self, token: Option<Token>) -> Result<Event> {
+        Ok(self.0.get(token)?)
     }
 }
