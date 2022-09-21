@@ -145,6 +145,12 @@ impl<T: SlotItem> SlotAllocator<T> {
     }
 }
 
+impl<T: SlotItem> Clone for SlotAllocator<T> {
+    fn clone(&self) -> Self {
+        SlotAllocator(self.0.clone())
+    }
+}
+
 impl<T: SlotItem> Drop for Guard<T> {
     fn drop(&mut self) {
         let mut inner = self.alloc.inner.lock();
