@@ -5,7 +5,6 @@
 use core::mem;
 
 use kernel::{
-    drm,
     macros::versions,
     prelude::*,
     soc::apple::rtkit,
@@ -13,6 +12,7 @@ use kernel::{
     PointerWrapper,
 };
 
+use crate::driver::AsahiDevice;
 use crate::fw::channels::DeviceControlMsg;
 use crate::{alloc, channel, event, fw, gem, hw, initdata, mmu};
 
@@ -56,7 +56,7 @@ const NUM_PIPES: usize = 4;
 
 #[versions(AGX)]
 pub(crate) struct GpuManager {
-    dev: drm::device::Device,
+    dev: AsahiDevice,
     initialized: bool,
     initdata: fw::types::GpuObject<fw::initdata::InitData::ver>,
     uat: mmu::Uat,
@@ -114,10 +114,7 @@ impl rtkit::Operations for GpuManager::ver {
 
 #[versions(AGX)]
 impl GpuManager::ver {
-    pub(crate) fn new(
-        dev: &drm::device::Device,
-        cfg: &hw::HwConfig,
-    ) -> Result<Arc<GpuManager::ver>> {
+    pub(crate) fn new(dev: &AsahiDevice, cfg: &hw::HwConfig) -> Result<Arc<GpuManager::ver>> {
         let uat = mmu::Uat::new(dev)?;
         let mut alloc = KernelAllocators {
             private: alloc::SimpleAllocator::new(dev, uat.kernel_vm(), 0x20),

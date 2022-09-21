@@ -24,7 +24,7 @@ mod workqueue;
 use kernel::module_platform_driver;
 
 module_platform_driver! {
-    type: driver::AsahiDevice,
+    type: driver::AsahiDriver,
     name: "asahi",
     license: "Dual MIT/GPL",
 }

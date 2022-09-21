@@ -11,6 +11,7 @@ use kernel::{
     prelude::*,
 };
 
+use crate::driver::AsahiDevice;
 use crate::object::{GpuArray, GpuObject, GpuStruct};
 
 use alloc::fmt;
@@ -23,7 +24,7 @@ pub(crate) trait Allocation<T>: Debug {
     fn gpu_ptr(&self) -> u64;
     fn size(&self) -> usize;
 
-    fn device(&self) -> &device::Device;
+    fn device(&self) -> &AsahiDevice;
 }
 
 pub(crate) trait Allocator {
@@ -58,11 +59,11 @@ pub(crate) trait Allocator {
         count: usize,
     ) -> Result<GpuArray<T, Self::Allocation<T>>>;
 
-    fn device(&self) -> &device::Device;
+    fn device(&self) -> &AsahiDevice;
 }
 
 pub(crate) struct SimpleAllocation<T> {
-    dev: device::Device,
+    dev: AsahiDevice,
     ptr: *mut T,
     gpu_ptr: u64,
     size: usize,
@@ -90,23 +91,19 @@ impl<T> Allocation<T> for SimpleAllocation<T> {
         self.size
     }
 
-    fn device(&self) -> &device::Device {
+    fn device(&self) -> &AsahiDevice {
         &self.dev
     }
 }
 
 pub(crate) struct SimpleAllocator {
-    dev: device::Device,
+    dev: AsahiDevice,
     vm: crate::mmu::Vm,
     min_align: usize,
 }
 
 impl SimpleAllocator {
-    pub(crate) fn new(
-        dev: &device::Device,
-        vm: &crate::mmu::Vm,
-        min_align: usize,
-    ) -> SimpleAllocator {
+    pub(crate) fn new(dev: &AsahiDevice, vm: &crate::mmu::Vm, min_align: usize) -> SimpleAllocator {
         SimpleAllocator {
             dev: dev.clone(),
             vm: vm.clone(),
@@ -242,7 +239,7 @@ impl Allocator for SimpleAllocator {
         GpuArray::<T, Self::Allocation<T>>::empty(alloc, count)
     }
 
-    fn device(&self) -> &device::Device {
+    fn device(&self) -> &AsahiDevice {
         &self.dev
     }
 }

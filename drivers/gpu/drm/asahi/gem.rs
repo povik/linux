@@ -19,6 +19,8 @@ use kernel::{
 
 use kernel::drm::gem::BaseObject;
 
+use crate::driver::AsahiDevice;
+
 pub(crate) struct DriverObject {}
 
 pub(crate) type Object = shmem::Object<DriverObject>;
@@ -50,7 +52,7 @@ impl ObjectRef {
     }
 }
 
-pub(crate) fn new_object(dev: &device::Device, size: usize) -> Result<ObjectRef> {
+pub(crate) fn new_object(dev: &AsahiDevice, size: usize) -> Result<ObjectRef> {
     let private = DriverObject {};
     Ok(ObjectRef {
         gem: shmem::Object::new(dev, private, size)?,
@@ -70,7 +72,7 @@ impl gem::BaseDriverObject<Object> for DriverObject {
 }
 
 impl shmem::DriverObject for DriverObject {
-    type Driver = crate::driver::AsahiDevice;
+    type Driver = crate::driver::AsahiDriver;
 }
 
 impl rtkit::Buffer for ObjectRef {

@@ -33,11 +33,13 @@ pub(crate) struct AsahiResources {
     asc: IoMem<ASC_CTL_SIZE>,
 }
 
-type DeviceData = device::Data<drv::Registration<AsahiDevice>, AsahiResources, AsahiData>;
+type DeviceData = device::Data<drv::Registration<AsahiDriver>, AsahiResources, AsahiData>;
 
-pub(crate) struct AsahiDevice;
+pub(crate) struct AsahiDriver;
 
-impl AsahiDevice {
+pub(crate) type AsahiDevice = kernel::drm::device::Device<AsahiDriver>;
+
+impl AsahiDriver {
     fn start_cpu(res: &mut AsahiResources) -> Result {
         let val = res.asc.readl_relaxed(CPU_CONTROL);
 
@@ -48,15 +50,15 @@ impl AsahiDevice {
 }
 
 #[vtable]
-impl drv::Driver for AsahiDevice {
-    type Data = ();
+impl drv::Driver for AsahiDriver {
+    type Data = Arc<DeviceData>;
     type Object = gem::Object;
 
     const INFO: drv::DriverInfo = INFO;
     const FEATURES: u32 = drv::FEAT_GEM | drv::FEAT_RENDER;
 }
 
-impl platform::Driver for AsahiDevice {
+impl platform::Driver for AsahiDriver {
     type Data = Arc<DeviceData>;
 
     kernel::define_of_id_table! {(), [
@@ -83,10 +85,11 @@ impl platform::Driver for AsahiDevice {
         };
 
         // Start the coprocessor CPU, so UAT can initialize the handoff
-        AsahiDevice::start_cpu(&mut res)?;
+        AsahiDriver::start_cpu(&mut res)?;
 
-        let reg = drm::drv::Registration::<AsahiDevice>::new(&dev)?;
-        let gpu = gpu::GpuManagerG13GV13_0B4::new(&reg.device(), &hw::t8103::HWCONFIG)?;
+        let reg = drm::drv::Registration::<AsahiDriver>::new(&dev)?;
+        //let gpu = gpu::GpuManagerG13GV13_0B4::new(&reg.device(), &hw::t8103::HWCONFIG)?;
+        let gpu = gpu::GpuManagerG13GV12_3::new(reg.device(), &hw::t8103::HWCONFIG)?;
 
         let data =
             kernel::new_device_data!(reg, res, AsahiData { dev, gpu }, "Asahi::Registrations")?;
@@ -96,7 +99,11 @@ impl platform::Driver for AsahiDevice {
         data.gpu.init()?;
         data.gpu.test()?;
 
-        kernel::drm_device_register!(data.registrations().ok_or(ENXIO)?.as_pinned_mut(), (), 0)?;
+        kernel::drm_device_register!(
+            data.registrations().ok_or(ENXIO)?.as_pinned_mut(),
+            data.clone(),
+            0
+        )?;
 
         dev_info!(data.dev, "probed!\n");
         Ok(data)
