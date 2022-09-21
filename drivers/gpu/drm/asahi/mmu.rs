@@ -86,17 +86,17 @@ struct Handoff {
 const HANDOFF_SIZE: usize = size_of::<Handoff>();
 
 #[repr(C)]
-struct ContextTTBS {
+struct SlotTTBS {
     ttb0: AtomicU64,
     ttb1: AtomicU64,
 }
 
-const CONTEXTS_SIZE: usize = UAT_NUM_CTX * size_of::<ContextTTBS>();
+const SLOTS_SIZE: usize = UAT_NUM_CTX * size_of::<SlotTTBS>();
 
 // We need at least page 0 (ttb0)
 const PAGETABLES_SIZE: usize = UAT_PGSZ;
 
-struct ContextInner {
+struct VmInner {
     dev: device::Device,
     is_kernel: bool,
     min_va: usize,
@@ -105,7 +105,7 @@ struct ContextInner {
     mm: mm::Allocator<MappingInner>,
 }
 
-impl ContextInner {
+impl VmInner {
     fn map_iova(&self, iova: usize, size: usize) -> Result<usize> {
         if iova < self.min_va || (iova + size - 1) > self.max_va {
             Err(EINVAL)
@@ -141,12 +141,12 @@ impl ContextInner {
 }
 
 #[derive(Clone)]
-pub(crate) struct Context {
-    inner: Arc<Mutex<ContextInner>>,
+pub(crate) struct Vm {
+    inner: Arc<Mutex<VmInner>>,
 }
 
 pub(crate) struct MappingInner {
-    owner: Arc<Mutex<ContextInner>>,
+    owner: Arc<Mutex<VmInner>>,
 }
 
 pub(crate) struct Mapping(mm::Node<MappingInner>);
@@ -189,7 +189,7 @@ pub(crate) struct Uat {
     pagetables_rgn: UatRegion,
     contexts_rgn: UatRegion,
 
-    kernel_context: Context,
+    kernel_vm: Vm,
 }
 
 impl Drop for UatRegion {
@@ -270,8 +270,8 @@ impl io_pgtable::FlushOps for Uat {
     }
 }
 
-impl Context {
-    fn new(dev: device::Device, is_kernel: bool) -> Result<Context> {
+impl Vm {
+    fn new(dev: device::Device, is_kernel: bool) -> Result<Vm> {
         let page_table = AppleUAT::new(
             &dev,
             io_pgtable::Config {
@@ -296,8 +296,8 @@ impl Context {
 
         let mm = mm::Allocator::new(min_va as u64, (max_va - min_va + 1) as u64)?;
 
-        Ok(Context {
-            inner: Arc::try_new(Mutex::new(ContextInner {
+        Ok(Vm {
+            inner: Arc::try_new(Mutex::new(VmInner {
                 dev,
                 min_va,
                 max_va,
@@ -466,9 +466,9 @@ impl Uat {
         unsafe { (self.handoff_rgn.map.as_ptr() as *mut Handoff).as_ref() }.unwrap()
     }
 
-    fn ttbs(&self) -> &[ContextTTBS; UAT_NUM_CTX] {
+    fn ttbs(&self) -> &[SlotTTBS; UAT_NUM_CTX] {
         // SAFETY: pointer is non-null per the type invariant
-        unsafe { (self.contexts_rgn.map.as_ptr() as *mut [ContextTTBS; UAT_NUM_CTX]).as_ref() }
+        unsafe { (self.contexts_rgn.map.as_ptr() as *mut [SlotTTBS; UAT_NUM_CTX]).as_ref() }
             .unwrap()
     }
 
@@ -477,8 +477,8 @@ impl Uat {
         unsafe { (self.pagetables_rgn.map.as_ptr() as *mut [Pte; UAT_NPTE]).as_ref() }.unwrap()
     }
 
-    pub(crate) fn kernel_context(&self) -> &Context {
-        &self.kernel_context
+    pub(crate) fn kernel_vm(&self) -> &Vm {
+        &self.kernel_vm
     }
 
     pub(crate) fn context_table_base(&self) -> u64 {
@@ -489,20 +489,20 @@ impl Uat {
         dev_info!(dev, "MMU: Initializing...\n");
 
         let handoff_rgn = Self::map_region(dev, c_str!("handoff"), HANDOFF_SIZE)?;
-        let contexts_rgn = Self::map_region(dev, c_str!("contexts"), CONTEXTS_SIZE)?;
+        let contexts_rgn = Self::map_region(dev, c_str!("contexts"), SLOTS_SIZE)?;
         let pagetables_rgn = Self::map_region(dev, c_str!("pagetables"), PAGETABLES_SIZE)?;
 
         dev_info!(dev, "MMU: Initializing kernel page table\n");
 
-        let kernel_context = Context::new(device::Device::from_dev(dev), true)?;
+        let kernel_vm = Vm::new(device::Device::from_dev(dev), true)?;
 
-        let ttb1 = kernel_context.ttb();
+        let ttb1 = kernel_vm.ttb();
 
         let uat = Self {
             handoff_rgn,
             pagetables_rgn,
             contexts_rgn,
-            kernel_context,
+            kernel_vm,
         };
 
         dev_info!(dev, "MMU: Initializing handoff\n");

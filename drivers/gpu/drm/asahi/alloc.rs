@@ -66,7 +66,7 @@ pub(crate) struct SimpleAllocation<T> {
     ptr: *mut T,
     gpu_ptr: u64,
     size: usize,
-    context: crate::mmu::Context,
+    vm: crate::mmu::Vm,
     obj: crate::gem::ObjectRef,
 }
 
@@ -97,19 +97,19 @@ impl<T> Allocation<T> for SimpleAllocation<T> {
 
 pub(crate) struct SimpleAllocator {
     dev: device::Device,
-    context: crate::mmu::Context,
+    vm: crate::mmu::Vm,
     min_align: usize,
 }
 
 impl SimpleAllocator {
     pub(crate) fn new(
         dev: &device::Device,
-        context: &crate::mmu::Context,
+        vm: &crate::mmu::Vm,
         min_align: usize,
     ) -> SimpleAllocator {
         SimpleAllocator {
             dev: dev.clone(),
-            context: context.clone(),
+            vm: vm.clone(),
             min_align,
         }
     }
@@ -132,7 +132,7 @@ impl SimpleAllocator {
 
         let mut obj = crate::gem::new_object(&self.dev, size_aligned)?;
         let p = obj.vmap()?.as_mut_ptr() as *mut u8;
-        let map = obj.map_into(&self.context)?;
+        let map = obj.map_into(&self.vm)?;
 
         let ptr = unsafe { p.add(offset) } as *mut T;
         let gpu_ptr = (map.iova() + offset) as u64;
@@ -151,7 +151,7 @@ impl SimpleAllocator {
             ptr,
             gpu_ptr,
             size,
-            context: self.context.clone(),
+            vm: self.vm.clone(),
             obj,
         })
     }
@@ -218,7 +218,7 @@ impl Allocator for SimpleAllocator {
         let mut obj = crate::gem::new_object(&self.dev, size_aligned)?;
         let p = obj.vmap()?.as_mut_ptr() as *mut u8;
         let ptr = unsafe { p.add(offset) } as *mut T;
-        let map = obj.map_into(&self.context)?;
+        let map = obj.map_into(&self.vm)?;
         let gpu_ptr = (map.iova() + offset) as u64;
 
         dev_info!(
@@ -235,7 +235,7 @@ impl Allocator for SimpleAllocator {
             ptr,
             gpu_ptr,
             size,
-            context: self.context.clone(),
+            vm: self.vm.clone(),
             obj,
         };
 

@@ -106,7 +106,7 @@ impl rtkit::Operations for GpuManager::ver {
 
         let mut obj = gem::new_object(dev, size)?;
         obj.vmap()?;
-        let map = obj.map_into(data.uat.kernel_context())?;
+        let map = obj.map_into(data.uat.kernel_vm())?;
         dev_info!(dev, "shmem_alloc() -> VA {:#x}\n", map.iova());
         Ok(obj)
     }
@@ -120,9 +120,9 @@ impl GpuManager::ver {
     ) -> Result<Arc<GpuManager::ver>> {
         let uat = mmu::Uat::new(dev)?;
         let mut alloc = KernelAllocators {
-            private: alloc::SimpleAllocator::new(dev, uat.kernel_context(), 0x20),
-            shared: alloc::SimpleAllocator::new(dev, uat.kernel_context(), 0x20),
-            gpu: alloc::SimpleAllocator::new(dev, uat.kernel_context(), 0x20),
+            private: alloc::SimpleAllocator::new(dev, uat.kernel_vm(), 0x20),
+            shared: alloc::SimpleAllocator::new(dev, uat.kernel_vm(), 0x20),
+            gpu: alloc::SimpleAllocator::new(dev, uat.kernel_vm(), 0x20),
         };
 
         let dyncfg = hw::HwDynConfig {
@@ -221,7 +221,7 @@ impl GpuManager::ver {
         let off = map.base & mmu::UAT_PGMSK;
         let base = map.base - off;
         let end = (map.base + map.size + mmu::UAT_PGMSK) & !mmu::UAT_PGMSK;
-        let mapping = self.uat.kernel_context().map_io(base, end - base)?;
+        let mapping = self.uat.kernel_vm().map_io(base, end - base)?;
 
         self.initdata.runtime_pointers.hwdata_b.with_mut(|raw, _| {
             raw.io_mappings[index] = fw::initdata::raw::IOMapping {

@@ -37,10 +37,7 @@ impl ObjectRef {
         Ok(self.vmap.as_mut().unwrap())
     }
 
-    pub(crate) fn map_into(
-        &mut self,
-        context: &crate::mmu::Context,
-    ) -> Result<&crate::mmu::Mapping> {
+    pub(crate) fn map_into(&mut self, context: &crate::mmu::Vm) -> Result<&crate::mmu::Mapping> {
         if self.mapping.is_some() {
             Err(EBUSY)
         } else {
