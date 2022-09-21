@@ -8,7 +8,7 @@ use crate::fw::microseq;
 use crate::fw::types::*;
 use kernel::prelude::*;
 
-type MicroSequence = GpuArray<u8>;
+pub(crate) type MicroSequence = GpuArray<u8>;
 
 struct Builder {
     ops: Vec<u8>,
