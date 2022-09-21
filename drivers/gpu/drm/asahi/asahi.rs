@@ -14,6 +14,7 @@ mod gem;
 mod gpu;
 mod hw;
 mod initdata;
+mod microseq;
 mod mmu;
 mod object;
 mod place;
