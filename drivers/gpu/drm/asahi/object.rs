@@ -346,6 +346,10 @@ impl<T: Sized + Default, U: Allocation<T>> GpuArray<T, U> {
 }
 
 impl<T: Sized, U: Allocation<T>> GpuArray<T, U> {
+    pub(crate) fn gpu_va(&self) -> NonZeroU64 {
+        self.gpu_ptr
+    }
+
     pub(crate) fn gpu_pointer(&self) -> GpuPointer<'_, &'_ [T]> {
         GpuPointer(self.gpu_ptr, PhantomData)
     }
@@ -364,6 +368,26 @@ impl<T: Sized, U: Allocation<T>> GpuArray<T, U> {
 
     pub(crate) fn as_mut_slice(&mut self) -> &mut [T] {
         unsafe { slice::from_raw_parts_mut(self.raw, self.len) }
+    }
+}
+
+impl<T: Sized, U: Allocation<T>> Index<usize> for GpuArray<T, U> {
+    type Output = T;
+
+    fn index(&self, index: usize) -> &T {
+        if index >= self.len {
+            panic!("Index {} out of bounds (len: {})", index, self.len);
+        }
+        unsafe { &*(self.raw.add(index)) }
+    }
+}
+
+impl<T: Sized, U: Allocation<T>> IndexMut<usize> for GpuArray<T, U> {
+    fn index_mut(&mut self, index: usize) -> &mut T {
+        if index >= self.len {
+            panic!("Index {} out of bounds (len: {})", index, self.len);
+        }
+        unsafe { &mut *(self.raw.add(index)) }
     }
 }
 
