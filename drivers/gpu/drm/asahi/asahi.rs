@@ -9,6 +9,7 @@ mod buffer;
 mod channel;
 mod driver;
 mod event;
+mod file;
 mod fw;
 mod gem;
 mod gpu;

@@ -7,7 +7,7 @@ use kernel::{
     c_str, device, drm, drm::drv, error::Result, io_mem::IoMem, of, platform, prelude::*, sync::Arc,
 };
 
-use crate::{gem, gpu, hw, mmu};
+use crate::{file, gem, gpu, hw, mmu};
 
 use kernel::macros::vtable;
 
@@ -52,6 +52,7 @@ impl AsahiDriver {
 #[vtable]
 impl drv::Driver for AsahiDriver {
     type Data = Arc<DeviceData>;
+    type File = file::File;
     type Object = gem::Object;
 
     const INFO: drv::DriverInfo = INFO;
