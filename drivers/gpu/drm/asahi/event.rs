@@ -18,6 +18,8 @@ const NUM_EVENTS: u32 = 128;
 
 pub(crate) struct EventInner {
     stamp: *const AtomicU32,
+    gpu_stamp: GpuWeakPointer<Stamp>,
+    gpu_fw_stamp: GpuWeakPointer<FwStamp>,
     owner: Option<Arc<workqueue::WorkQueue>>,
 }
 
@@ -62,6 +64,14 @@ impl Ord for EventValue {
 }
 
 impl EventInner {
+    pub(crate) fn stamp_pointer(&self) -> GpuWeakPointer<Stamp> {
+        self.gpu_stamp
+    }
+
+    pub(crate) fn fw_stamp_pointer(&self) -> GpuWeakPointer<FwStamp> {
+        self.gpu_fw_stamp
+    }
+
     pub(crate) fn current(&self) -> EventValue {
         // SAFETY: The pointer is always valid as constructed in
         // EventManager below, and outside users cannot construct
@@ -82,8 +92,8 @@ impl slotalloc::SlotItem for EventInner {
 }
 
 pub(crate) struct EventManagerInner {
-    stamps: GpuArray<AtomicU32>,
-    fw_stamps: GpuArray<u32>,
+    stamps: GpuArray<Stamp>,
+    fw_stamps: GpuArray<FwStamp>,
 }
 
 pub(crate) struct EventManager(slotalloc::SlotAllocator<EventInner>);
@@ -99,7 +109,9 @@ impl EventManager {
             NUM_EVENTS,
             inner,
             |inner: &mut EventManagerInner, slot| EventInner {
-                stamp: &inner.stamps.as_slice()[slot as usize],
+                stamp: &inner.stamps[slot as usize].0,
+                gpu_stamp: inner.stamps.weak_item_pointer(slot as usize),
+                gpu_fw_stamp: inner.fw_stamps.weak_item_pointer(slot as usize),
                 owner: None,
             },
         )?))

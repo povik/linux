@@ -23,6 +23,12 @@ pub(crate) type Allocator = alloc::SimpleAllocator;
 pub(crate) use core::fmt::Debug;
 pub(crate) use core::marker::PhantomData;
 
+#[derive(Debug, Default)]
+pub(crate) struct Stamp(pub(crate) AtomicU32);
+
+#[derive(Debug, Default)]
+pub(crate) struct FwStamp(pub(crate) AtomicU32);
+
 #[derive(Default, Debug, Copy, Clone)]
 pub(crate) struct F32(u32);
 
