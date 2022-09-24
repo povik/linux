@@ -16,7 +16,7 @@ use kernel::{
 use crate::driver::AsahiDevice;
 use crate::fw::channels::DeviceControlMsg;
 use crate::fw::channels::PipeType;
-use crate::{alloc, buffer, channel, event, fw, gem, hw, initdata, mmu, workqueue};
+use crate::{alloc, buffer, channel, event, fw, gem, hw, initdata, mmu, render, workqueue};
 
 const EP_FIRMWARE: u8 = 0x20;
 const EP_DOORBELL: u8 = 0x21;
@@ -82,6 +82,10 @@ pub(crate) trait GpuManager: Send + Sync {
     fn alloc(&self) -> Guard<'_, Mutex<KernelAllocators>>;
     fn new_vm(&self) -> Result<mmu::Vm>;
     fn bind_vm(&self, vm: &mmu::Vm) -> Result<mmu::VmBind>;
+    fn new_renderer(
+        &self,
+        ualloc: Arc<Mutex<alloc::SimpleAllocator>>,
+    ) -> Result<Box<dyn render::Renderer>>;
     fn submit_batch(&self, batch: workqueue::WorkQueueBatch<'_>) -> Result;
 }
 
@@ -313,6 +317,19 @@ impl GpuManager for GpuManager::ver {
 
     fn bind_vm(&self, vm: &mmu::Vm) -> Result<mmu::VmBind> {
         self.uat.bind(vm)
+    }
+
+    fn new_renderer(
+        &self,
+        ualloc: Arc<Mutex<alloc::SimpleAllocator>>,
+    ) -> Result<Box<dyn render::Renderer>> {
+        let mut kalloc = self.alloc();
+        Ok(Box::try_new(render::Renderer::ver::new(
+            &mut *kalloc,
+            ualloc,
+            self.event_manager.clone(),
+            &self.buffer_mgr,
+        )?)?)
     }
 
     fn submit_batch(&self, batch: workqueue::WorkQueueBatch<'_>) -> Result {
