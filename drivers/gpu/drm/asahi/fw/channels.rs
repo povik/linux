@@ -171,7 +171,34 @@ pub(crate) enum DeviceControlMsg {
 }
 default_zeroed!(DeviceControlMsg);
 
-pub(crate) type RawEventMsg = Array<0x38, u8>;
+pub(crate) const EVENT_SZ: usize = 0x34;
+
+#[derive(Debug, Copy, Clone)]
+#[repr(C, u32)]
+pub(crate) enum EventMsg {
+    Fault,
+    Flag {
+        firing: [u32; 4],
+        unk_14: u16,
+    },
+    Unk3(Array<EVENT_SZ, u8>),
+    Timeout {
+        counter: u32,
+        unk_8: u32,
+        stamp_index: i32,
+    }, // Max discriminant: 0x4
+}
+
+pub(crate) const EVENT_MAX: u32 = 0x4;
+
+#[derive(Copy, Clone)]
+pub(crate) union RawEventMsg {
+    pub(crate) raw: (u32, Array<EVENT_SZ, u8>),
+    pub(crate) msg: EventMsg,
+}
+
+default_zeroed!(RawEventMsg);
+
 pub(crate) type RawFwLogMsg = Array<0xd8, u8>;
 pub(crate) type FwCtlMsg = Array<0x14, u8>;
 

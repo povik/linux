@@ -150,6 +150,8 @@ impl GpuManager::ver {
             })?;
         }
 
+        let event_manager = Arc::try_new(event::EventManager::new(&mut alloc)?)?;
+
         let mut mgr = UniqueArc::try_new(GpuManager::ver {
             dev: dev.clone(),
             initialized: false,
@@ -158,7 +160,7 @@ impl GpuManager::ver {
             io_mappings: Vec::new(),
             rtkit: Mutex::new(None),
             rx_channels: Mutex::new(RxChannels::ver {
-                event: channel::EventChannel::new(&mut alloc)?,
+                event: channel::EventChannel::new(&mut alloc, event_manager.clone())?,
                 fw_log: channel::FwLogChannel::new(&mut alloc)?,
                 ktrace: channel::KTraceChannel::new(&mut alloc)?,
                 stats: channel::StatsChannel::ver::new(&mut alloc)?,
@@ -167,7 +169,7 @@ impl GpuManager::ver {
                 device_control: channel::DeviceControlChannel::new(&mut alloc)?,
             }),
             pipes,
-            event_manager: Arc::try_new(event::EventManager::new(&mut alloc)?)?,
+            event_manager,
             alloc: Mutex::new(alloc),
         })?;
 
