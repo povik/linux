@@ -25,8 +25,8 @@ const INFO: drv::DriverInfo = drv::DriverInfo {
 };
 
 pub(crate) struct AsahiData {
-    dev: device::Device,
-    gpu: Arc<dyn gpu::GpuManager>,
+    pub(crate) dev: device::Device,
+    pub(crate) gpu: Arc<dyn gpu::GpuManager>,
 }
 
 pub(crate) struct AsahiResources {
