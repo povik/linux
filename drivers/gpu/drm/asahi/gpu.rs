@@ -30,6 +30,9 @@ const MSG_HALT: u64 = 0x85 << 48;
 
 const MSG_RX_DOORBELL: u64 = 0x42 << 48;
 
+const DOORBELL_KICKFW: u64 = 0x10;
+const DOORBELL_DEVCTRL: u64 = 0x11;
+
 pub(crate) struct KernelAllocators {
     pub(crate) private: alloc::SimpleAllocator,
     pub(crate) shared: alloc::SimpleAllocator,
@@ -291,6 +294,8 @@ impl GpuManager for GpuManager::ver {
             .lock()
             .device_control
             .send(&DeviceControlMsg::Initialize);
+
+        rtk.send_message(EP_DOORBELL, MSG_TX_DOORBELL | DOORBELL_DEVCTRL)?;
         Ok(())
     }
 
