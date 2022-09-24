@@ -6,6 +6,7 @@
 //! Apple AGX UAT (MMU) support
 
 use core::arch::asm;
+use core::fmt::Debug;
 use core::mem::{size_of, ManuallyDrop};
 use core::ops::Deref;
 use core::ptr::NonNull;
@@ -24,6 +25,7 @@ use kernel::{
     PointerWrapper,
 };
 
+use crate::no_debug;
 use crate::slotalloc;
 
 const PPL_MAGIC: u64 = 0x4b1d000000000002;
@@ -166,6 +168,7 @@ impl VmInner {
 pub(crate) struct Vm {
     inner: Arc<Mutex<VmInner>>,
 }
+no_debug!(Vm);
 
 pub(crate) struct SlotInner();
 
@@ -173,10 +176,11 @@ impl slotalloc::SlotItem for SlotInner {
     type Owner = ();
 }
 
+#[derive(Debug)]
 pub(crate) struct VmBind(Vm, u32);
 
 impl VmBind {
-    fn slot(&self) -> u32 {
+    pub(crate) fn slot(&self) -> u32 {
         self.1
     }
 }
@@ -190,6 +194,15 @@ impl Drop for VmBind {
         if inner.active_users == 0 {
             inner.binding = None;
         }
+    }
+}
+
+impl Clone for VmBind {
+    fn clone(&self) -> VmBind {
+        let mut inner = self.0.inner.lock();
+
+        inner.active_users += 1;
+        VmBind(self.0.clone(), self.1)
     }
 }
 
@@ -248,6 +261,8 @@ impl UatInner {
         unsafe { (self.ttbs_rgn.map.as_ptr() as *mut [SlotTTBS; UAT_NUM_CTX]).as_ref() }.unwrap()
     }
 }
+
+unsafe impl Send for UatInner {}
 
 pub(crate) struct Uat {
     pagetables_rgn: UatRegion,
