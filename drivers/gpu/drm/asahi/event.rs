@@ -86,7 +86,7 @@ impl EventInner {
 impl slotalloc::SlotItem for EventInner {
     type Owner = EventManagerInner;
 
-    fn release(&mut self) {
+    fn release(&mut self, _owner: &mut Self::Owner, _slot: u32) {
         self.owner = None;
     }
 }
