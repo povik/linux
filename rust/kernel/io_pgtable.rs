@@ -183,6 +183,9 @@ impl<T: FlushOps, U> Drop for IOPagetable<T, U> {
     }
 }
 
+unsafe impl<T: FlushOps, U> Send for IOPagetable<T, U> {}
+unsafe impl<T: FlushOps, U> Sync for IOPagetable<T, U> {}
+
 unsafe extern "C" fn tlb_flush_all_callback<T: FlushOps>(cookie: *mut core::ffi::c_void) {
     T::tlb_flush_all(unsafe { T::Data::borrow(cookie) });
 }
