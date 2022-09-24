@@ -33,6 +33,8 @@ pub(crate) struct BufferInner {
     active_scenes: usize,
     active_slot: Option<slotalloc::Guard<SlotInner>>,
     last_token: Option<slotalloc::SlotToken>,
+    tvb_something: GpuArray<u8>,
+    kernel_buffer: GpuArray<u8>,
 }
 
 #[versions(AGX)]
@@ -46,6 +48,45 @@ pub(crate) struct Scene {
     object: GpuObject<buffer::Scene::ver>,
     slot: u32,
     rebind: bool,
+}
+
+#[versions(AGX)]
+impl Scene::ver {
+    pub(crate) fn slot(&self) -> u32 {
+        self.slot
+    }
+
+    pub(crate) fn gpu_pointer(&self) -> GpuPointer<'_, buffer::Scene::ver> {
+        self.object.gpu_pointer()
+    }
+
+    pub(crate) fn weak_pointer(&self) -> GpuWeakPointer<buffer::Scene::ver> {
+        self.object.weak_pointer()
+    }
+
+    pub(crate) fn kernel_buffer_pointer(&self) -> GpuWeakPointer<[u8]> {
+        self.object.buffer.lock().kernel_buffer.weak_pointer()
+    }
+
+    pub(crate) fn buffer_pointer(&self) -> GpuWeakPointer<buffer::Info::ver> {
+        self.object.buffer.lock().info.weak_pointer()
+    }
+
+    pub(crate) fn tvb_heapmeta_pointer(&self) -> GpuPointer<'_, &'_ [u8]> {
+        self.object.tvb_heapmeta.gpu_pointer()
+    }
+
+    pub(crate) fn tvb_tilemap_pointer(&self) -> GpuPointer<'_, &'_ [u8]> {
+        self.object.tvb_tilemap.gpu_pointer()
+    }
+
+    pub(crate) fn preempt_buf_pointer(&self) -> GpuPointer<'_, buffer::PreemptBuffer> {
+        self.object.preempt_buf.gpu_pointer()
+    }
+
+    pub(crate) fn seq_buf_pointer(&self) -> GpuPointer<'_, &'_ [u64]> {
+        self.object.seq_buf.gpu_pointer()
+    }
 }
 
 pub(crate) struct SlotInner();
@@ -69,8 +110,8 @@ impl Buffer::ver {
         let inner = box_in_place!(buffer::Info::ver {
             block_ctl: alloc.shared.new_default::<buffer::BlockControl>()?,
             counter: alloc.shared.new_default::<buffer::Counter>()?,
-            page_list: alloc.shared.array_empty(max_pages)?,
-            block_list: alloc.shared.array_empty(max_blocks)?,
+            page_list: ualloc.lock().array_empty(max_pages)?,
+            block_list: ualloc.lock().array_empty(max_blocks)?,
         })?;
 
         let info = alloc.shared.new_boxed(inner, |inner, ptr| {
@@ -114,6 +155,9 @@ impl Buffer::ver {
             ))
         })?;
 
+        let tvb_something = ualloc.lock().array_empty(0x10000)?;
+        let kernel_buffer = alloc.private.array_empty(0x40)?;
+
         Ok(Buffer::ver {
             inner: Arc::try_new(Mutex::new(BufferInner::ver {
                 info,
@@ -124,6 +168,8 @@ impl Buffer::ver {
                 active_scenes: 0,
                 active_slot: None,
                 last_token: None,
+                tvb_something,
+                kernel_buffer,
             }))?,
         })
     }
@@ -158,7 +204,9 @@ impl Buffer::ver {
                 .try_push(block)
                 .expect("try_push() failed after try_reserve()");
             inner.info.block_list[cur_count + i] = page_num;
-            inner.info.page_list[(cur_count + i) * PAGES_PER_BLOCK] = page_num;
+            for j in 0..PAGES_PER_BLOCK {
+                inner.info.page_list[(cur_count + i) * PAGES_PER_BLOCK + j] = page_num + j as u32;
+            }
         }
 
         inner.info.block_ctl.with(|raw, _inner| {
@@ -177,15 +225,38 @@ impl Buffer::ver {
         Ok(())
     }
 
-    pub(crate) fn new_scene(&self, alloc: &mut gpu::KernelAllocators) -> Result<Scene::ver> {
+    pub(crate) fn new_scene(
+        &self,
+        alloc: &mut gpu::KernelAllocators,
+        tile_blocks: u32,
+    ) -> Result<Scene::ver> {
         let mut inner = self.inner.lock();
 
         // TODO: what is this exactly?
         let user_buffer = inner.ualloc.lock().array_empty(0x80)?;
+        let tvb_heapmeta = inner.ualloc.lock().array_empty(0x200)?;
+        let tvb_tilemap = inner
+            .ualloc
+            .lock()
+            .array_empty(0x800 * tile_blocks as usize)?;
+        let preempt_buf = inner.ualloc.lock().new_default::<buffer::PreemptBuffer>()?;
+        let mut seq_buf = inner.ualloc.lock().array_empty(0x800)?;
+        for i in 1..0x400 {
+            seq_buf[i] = (i + 1) as u64;
+        }
         let scene_inner = box_in_place!(buffer::Scene::ver {
             user_buffer: user_buffer,
-            stats: alloc.shared.new_default::<buffer::Stats>()?,
+            stats: alloc.shared.new_object(Default::default(), |_inner| {
+                buffer::raw::Stats {
+                    cpu_flag: AtomicU32::from(1),
+                    ..Default::default()
+                }
+            })?,
             buffer: self.inner.clone(),
+            tvb_heapmeta: tvb_heapmeta,
+            tvb_tilemap: tvb_tilemap,
+            preempt_buf: preempt_buf,
+            seq_buf: seq_buf,
         })?;
 
         let scene = alloc.private.new_boxed(scene_inner, |inner, ptr| {
@@ -223,6 +294,21 @@ impl Buffer::ver {
             slot: inner.active_slot.as_ref().unwrap().slot(),
             rebind,
         })
+    }
+
+    pub(crate) fn tvb_something_pointer(&self) -> GpuWeakPointer<[u8]> {
+        self.inner.lock().tvb_something.weak_pointer()
+    }
+
+    pub(crate) fn info_pointer(&self) -> GpuWeakPointer<buffer::Info::ver> {
+        self.inner.lock().info.weak_pointer()
+    }
+
+    pub(crate) fn increment(&self) {
+        let inner = self.inner.lock();
+        inner.info.counter.with(|raw, _inner| {
+            raw.count.fetch_add(1, Ordering::Relaxed);
+        });
     }
 }
 

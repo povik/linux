@@ -35,9 +35,9 @@ pub(crate) mod raw {
         pub(crate) gpu_4: AtomicU32,
         pub(crate) gpu_8: AtomicU32,
         pub(crate) gpu_c: AtomicU32,
-        __pad0: Pad<0x10>,
+        pub(crate) __pad0: Pad<0x10>,
         pub(crate) cpu_flag: AtomicU32,
-        __pad1: Pad<0x1c>,
+        pub(crate) __pad1: Pad<0x1c>,
     }
 
     #[versions(AGX)]
@@ -81,6 +81,14 @@ pub(crate) mod raw {
         pub(crate) unk_90: Array<0x30, u8>,
     }
 
+    #[derive(Debug, Default)]
+    #[repr(C)]
+    pub(crate) struct PreemptBuffer {
+        pub(crate) part_3: Array<0x20, u8>,
+        pub(crate) part_2: Array<0x280, u8>,
+        pub(crate) part_1: Array<0x540, u8>,
+    }
+
     #[derive(Debug)]
     #[repr(C)]
     pub(crate) struct Scene<'a> {
@@ -112,6 +120,7 @@ pub(crate) mod raw {
 trivial_gpustruct!(BlockControl);
 trivial_gpustruct!(Counter);
 trivial_gpustruct!(Stats);
+trivial_gpustruct!(PreemptBuffer);
 
 #[versions(AGX)]
 #[derive(Debug)]
@@ -132,6 +141,10 @@ pub(crate) struct Scene {
     pub(crate) user_buffer: GpuArray<u8>,
     pub(crate) stats: GpuObject<Stats>,
     pub(crate) buffer: Arc<Mutex<crate::buffer::BufferInner::ver>>,
+    pub(crate) tvb_heapmeta: GpuArray<u8>,
+    pub(crate) tvb_tilemap: GpuArray<u8>,
+    pub(crate) preempt_buf: GpuObject<PreemptBuffer>,
+    pub(crate) seq_buf: GpuArray<u64>,
 }
 
 #[versions(AGX)]
