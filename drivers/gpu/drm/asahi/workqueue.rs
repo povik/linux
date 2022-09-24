@@ -73,7 +73,7 @@ impl WorkQueue {
 
         let self_ptr = info.notifier_list.weak_pointer();
         info.notifier_list.with_mut(|raw, _inner| {
-            raw.list_head.next = Some(inner_ptr!(&self_ptr, list_head));
+            raw.list_head.next = Some(inner_ptr!(self_ptr, list_head));
         });
 
         info.state.with_mut(|raw, _inner| {

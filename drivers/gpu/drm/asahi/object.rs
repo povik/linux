@@ -25,6 +25,20 @@ use crate::alloc::Allocation;
 #[repr(C, packed(4))]
 pub(crate) struct GpuPointer<'a, T: ?Sized>(NonZeroU64, PhantomData<&'a T>);
 
+impl<'a, T: ?Sized> GpuPointer<'a, T> {
+    pub(crate) fn or(&self, other: u64) -> GpuPointer<'a, T> {
+        GpuPointer(self.0 | other, PhantomData)
+    }
+
+    // The third argument is a type inference hack
+    pub(crate) unsafe fn offset<U>(&self, off: usize, _: *const U) -> GpuPointer<'a, U> {
+        GpuPointer::<'a, U>(
+            NonZeroU64::new(self.0.get() + (off as u64)).unwrap(),
+            PhantomData,
+        )
+    }
+}
+
 impl<'a, T: ?Sized> fmt::Debug for GpuPointer<'a, T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let val = self.0;
@@ -44,6 +58,10 @@ impl<T: ?Sized> Clone for GpuWeakPointer<T> {
 }
 
 impl<T: ?Sized> GpuWeakPointer<T> {
+    pub(crate) fn or(&self, other: u64) -> GpuWeakPointer<T> {
+        GpuWeakPointer(self.0 | other, PhantomData)
+    }
+
     // The third argument is a type inference hack
     pub(crate) unsafe fn offset<U>(&self, off: usize, _: *const U) -> GpuWeakPointer<U> {
         GpuWeakPointer::<U>(
@@ -66,7 +84,22 @@ pub(crate) struct GpuRawPointer(NonZeroU64);
 #[macro_export]
 macro_rules! inner_ptr {
     ($gpuva:expr, $($f:tt)*) => ({
-        fn uninit_from<T: GpuStruct>(_: &GpuWeakPointer<T>) -> core::mem::MaybeUninit<T::Raw<'static>> {
+        fn uninit_from<'a, T: GpuStruct>(_: GpuPointer<'a, T>) -> core::mem::MaybeUninit<T::Raw<'static>> {
+            core::mem::MaybeUninit::uninit()
+        }
+        let tmp = uninit_from($gpuva);
+        let outer = tmp.as_ptr();
+        let p: *const _ = unsafe { core::ptr::addr_of!((*outer).$($f)*) };
+        let inner = p as *const u8;
+        let off = unsafe { inner.offset_from(outer as *const u8) };
+        unsafe { $gpuva.offset(off.try_into().unwrap(), p) }
+    })
+}
+
+#[macro_export]
+macro_rules! inner_weak_ptr {
+    ($gpuva:expr, $($f:tt)*) => ({
+        fn uninit_from<T: GpuStruct>(_: GpuWeakPointer<T>) -> core::mem::MaybeUninit<T::Raw<'static>> {
             core::mem::MaybeUninit::uninit()
         }
         let tmp = uninit_from($gpuva);
@@ -173,7 +206,7 @@ impl<T: GpuStruct, U: Allocation<T>> GpuObject<T, U> {
 
     pub(crate) fn new_prealloc(
         alloc: U,
-        inner_cb: impl FnOnce(&GpuWeakPointer<T>) -> Result<Box<T>>,
+        inner_cb: impl FnOnce(GpuWeakPointer<T>) -> Result<Box<T>>,
         raw_cb: impl for<'a> FnOnce(&'a T, *mut MaybeUninit<T::Raw<'a>>) -> Result<&'a mut T::Raw<'a>>,
     ) -> Result<Self> {
         if alloc.size() < mem::size_of::<T::Raw<'static>>() {
@@ -187,7 +220,7 @@ impl<T: GpuStruct, U: Allocation<T>> GpuObject<T, U> {
             core::any::type_name::<T>(),
             alloc.gpu_ptr()
         );
-        let inner = inner_cb(&gpu_ptr)?;
+        let inner = inner_cb(gpu_ptr)?;
         let p = alloc.ptr() as *mut MaybeUninit<T::Raw<'_>>;
         let raw = raw_cb(&*inner, p)? as *mut _ as *mut MaybeUninit<T::Raw<'_>>;
         if p != raw {
