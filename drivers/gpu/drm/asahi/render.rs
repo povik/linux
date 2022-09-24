@@ -146,7 +146,7 @@ impl Renderer::ver {
             params: fw::vertex::raw::TilingParameters {
                 size1: 0x14 * tile_blocks,
                 unk_4: 0x88,
-                unk_8: 0x202,
+                unk_8: 0x203, // bit 0: GL clip mode
                 x_max: (width - 1) as u16,
                 y_max: (height - 1) as u16,
                 tile_count: ((tiles_y - 1) << 12) | (tiles_x - 1),
