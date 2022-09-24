@@ -57,13 +57,19 @@ macro_rules! simple_op {
 pub(crate) mod op {
     use super::*;
 
-    simple_op!(RetireStamp);
     simple_op!(StartVertex);
     simple_op!(FinalizeVertex);
     simple_op!(StartFragment);
     simple_op!(FinalizeFragment);
     simple_op!(StartCompute);
     simple_op!(FinalizeCompute);
+
+    #[derive(Debug, Copy, Clone)]
+    pub(crate) struct RetireStamp(OpHeader);
+    impl RetireStamp {
+        pub(crate) const HEADER: RetireStamp =
+            RetireStamp(OpHeader::with_args(OpCode::RetireStamp, 0x40000000));
+    }
 
     #[derive(Debug, Copy, Clone)]
     pub(crate) struct WaitForIdle(OpHeader);
@@ -82,35 +88,52 @@ pub(crate) mod op {
     }
 }
 
+#[derive(Debug)]
+#[repr(C)]
+pub(crate) struct WaitForIdle {
+    pub(crate) header: op::WaitForIdle,
+}
+
+impl Operation for WaitForIdle {}
+
+#[derive(Debug)]
+#[repr(C)]
+pub(crate) struct RetireStamp {
+    pub(crate) header: op::RetireStamp,
+}
+
+impl Operation for RetireStamp {}
+
 #[versions(AGX)]
 #[derive(Debug)]
 #[repr(C)]
-struct StartVertex<'a> {
+pub(crate) struct StartVertex<'a> {
     pub(crate) header: op::StartVertex,
     pub(crate) tiling_params: GpuWeakPointer<vertex::raw::TilingParameters>,
-    pub(crate) job_params: GpuWeakPointer<vertex::raw::JobParameters1<'a>>,
+    pub(crate) job_params1: GpuWeakPointer<vertex::raw::JobParameters1<'a>>,
     pub(crate) buffer: GpuWeakPointer<buffer::Info::ver>,
     pub(crate) scene: GpuWeakPointer<buffer::Scene::ver>,
-    pub(crate) stats_ptr: GpuWeakPointer<initdata::raw::GpuStatsVtx::ver>,
+    pub(crate) stats: GpuWeakPointer<initdata::raw::GpuStatsVtx::ver>,
     pub(crate) work_queue: GpuWeakPointer<workqueue::QueueInfo>,
     pub(crate) vm_slot: u32,
     pub(crate) unk_38: u32,
     pub(crate) event_generation: u32,
-    pub(crate) buffer_slot: u64,
-    pub(crate) unk_48: u64,
+    pub(crate) buffer_slot: u32,
+    pub(crate) unk_44: u32,
+    pub(crate) unk_48: U64,
     pub(crate) unk_50: u32,
     pub(crate) unk_pointer: GpuWeakPointer<u32>,
-    pub(crate) unk_job_buf: GpuWeakPointer<Array<0x18, u8>>,
+    pub(crate) unk_job_buf: GpuWeakPointer<U64>,
     pub(crate) unk_64: u32,
     pub(crate) unk_68: u32,
     pub(crate) uuid: u32,
     pub(crate) unk_70: u32,
-    pub(crate) unk_74: Array<0x1d, u64>,
+    pub(crate) unk_74: Array<0x1d, U64>,
     pub(crate) unk_15c: u32,
-    pub(crate) unk_160: u64,
+    pub(crate) unk_160: U64,
     pub(crate) unk_168: u32,
     pub(crate) unk_16c: u32,
-    pub(crate) unk_170: u64,
+    pub(crate) unk_170: U64,
     pub(crate) unk_178: u32,
 
     #[ver(V >= V13_0B4)]
@@ -129,11 +152,11 @@ impl<'a> Operation for StartVertex::ver<'a> {}
 #[versions(AGX)]
 #[derive(Debug)]
 #[repr(C)]
-struct FinalizeVertex {
-    pub(crate) opcode: op::FinalizeVertex,
+pub(crate) struct FinalizeVertex {
+    pub(crate) header: op::FinalizeVertex,
     pub(crate) scene: GpuWeakPointer<buffer::Scene::ver>,
     pub(crate) buffer: GpuWeakPointer<buffer::Info::ver>,
-    pub(crate) stats_ptr: GpuWeakPointer<initdata::raw::GpuStatsVtx::ver>,
+    pub(crate) stats: GpuWeakPointer<initdata::raw::GpuStatsVtx::ver>,
     pub(crate) work_queue: GpuWeakPointer<workqueue::QueueInfo>,
     pub(crate) vm_slot: u32,
     pub(crate) unk_28: u32,
@@ -141,8 +164,8 @@ struct FinalizeVertex {
     pub(crate) unk_34: u32,
     pub(crate) uuid: u32,
     pub(crate) fw_stamp: GpuWeakPointer<FwStamp>,
-    pub(crate) stamp_value: u32,
-    pub(crate) unk_48: u64,
+    pub(crate) stamp_value: EventValue,
+    pub(crate) unk_48: U64,
     pub(crate) unk_50: u32,
     pub(crate) unk_54: u32,
     pub(crate) unk_58: U64,
@@ -159,7 +182,7 @@ struct FinalizeVertex {
 #[versions(AGX)]
 impl Operation for FinalizeVertex::ver {}
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 #[repr(C)]
 pub(crate) struct Attachment {
     pub(crate) address: U64,
@@ -171,26 +194,26 @@ pub(crate) struct Attachment {
 #[versions(AGX)]
 #[derive(Debug)]
 #[repr(C)]
-struct StartFragment<'a> {
-    pub(crate) opcode: op::StartFragment,
-    pub(crate) job_params2: U64,
-    pub(crate) job_params1: U64,
+pub(crate) struct StartFragment<'a> {
+    pub(crate) header: op::StartFragment,
+    pub(crate) job_params2: GpuWeakPointer<fragment::raw::JobParameters2>,
+    pub(crate) job_params1: GpuWeakPointer<fragment::raw::JobParameters1::ver<'a>>,
     pub(crate) scene: GpuPointer<'a, buffer::Scene::ver>,
-    pub(crate) stats_ptr: U64,
-    pub(crate) busy_flag_ptr: GpuWeakPointer<u32>,
+    pub(crate) stats: GpuWeakPointer<initdata::raw::GpuStatsFrag::ver>,
+    pub(crate) busy_flag: GpuWeakPointer<u32>,
     pub(crate) tvb_overflow_count: GpuWeakPointer<u32>,
     pub(crate) unk_pointer: GpuWeakPointer<u32>,
-    pub(crate) cmdqueue_ptr: U64,
-    pub(crate) workitem_ptr: U64,
-    pub(crate) context_id: u32,
+    pub(crate) work_queue: GpuWeakPointer<workqueue::QueueInfo>,
+    pub(crate) work_item: GpuWeakPointer<fragment::RunFragment::ver>,
+    pub(crate) vm_slot: u32,
     pub(crate) unk_50: u32,
     pub(crate) event_generation: u32,
-    pub(crate) buffer_mgr_slot: u32,
+    pub(crate) buffer_slot: u32,
     pub(crate) unk_5c: u32,
     pub(crate) prev_stamp_value: U64,
     pub(crate) unk_68: u32,
-    pub(crate) unk_buf_ptr: U64,
-    pub(crate) unk_buf2_ptr: U64,
+    pub(crate) unk_758_flag: GpuWeakPointer<u32>,
+    pub(crate) unk_job_buf: GpuWeakPointer<U64>,
     pub(crate) unk_7c: u32,
     pub(crate) unk_80: u32,
     pub(crate) unk_84: u32,
@@ -203,7 +226,7 @@ struct StartFragment<'a> {
     pub(crate) unk_194: U64,
 
     #[ver(V >= V13_0B4)]
-    pub(crate) unkptr_19c: U64,
+    pub(crate) notifier_buf: GpuWeakPointer<Array<0x8, u8>>,
 }
 
 #[versions(AGX)]
@@ -212,23 +235,24 @@ impl<'a> Operation for StartFragment::ver<'a> {}
 #[versions(AGX)]
 #[derive(Debug)]
 #[repr(C)]
-struct FinalizeFragment {
-    pub(crate) opcode: op::FinalizeFragment,
+pub(crate) struct FinalizeFragment {
+    pub(crate) header: op::FinalizeFragment,
     pub(crate) uuid: u32,
     pub(crate) unk_8: u32,
     pub(crate) fw_stamp: GpuWeakPointer<FwStamp>,
-    pub(crate) stamp_value: u32,
+    pub(crate) stamp_value: EventValue,
     pub(crate) unk_18: u32,
     pub(crate) scene: GpuWeakPointer<buffer::Scene::ver>,
     pub(crate) buffer: GpuWeakPointer<buffer::Info::ver>,
     pub(crate) unk_2c: U64,
-    pub(crate) stats_ptr: GpuWeakPointer<initdata::raw::GpuStatsFrag::ver>,
+    pub(crate) stats: GpuWeakPointer<initdata::raw::GpuStatsFrag::ver>,
     pub(crate) unk_pointer: GpuWeakPointer<u32>,
     pub(crate) busy_flag: GpuWeakPointer<u32>,
     pub(crate) work_queue: GpuWeakPointer<workqueue::QueueInfo>,
     pub(crate) work_item: GpuWeakPointer<fragment::RunFragment::ver>,
-    pub(crate) unk_5c: U64,
-    pub(crate) unk_758_ptr: GpuWeakPointer<u32>,
+    pub(crate) vm_slot: u32,
+    pub(crate) unk_60: u32,
+    pub(crate) unk_758_flag: GpuWeakPointer<u32>,
     pub(crate) unk_6c: U64,
     pub(crate) unk_74: U64,
     pub(crate) unk_7c: U64,
