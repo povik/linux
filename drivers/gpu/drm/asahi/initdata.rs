@@ -385,9 +385,10 @@ impl<'a> InitDataBuilder::ver<'a> {
                 Ok(place!(
                     ptr,
                     raw::Globals::ver {
-                        ktrace_enable: 0xffffffff,
+                        //ktrace_enable: 0xffffffff,
+                        ktrace_enable: 0,
                         #[ver(V >= V13_0B4)]
-                        unk_28_0: 1, // debug
+                        unk_28_0: 0, // debug
                         unk_28: 1,
                         #[ver(V >= V13_0B4)]
                         unk_2c_0: 0,
