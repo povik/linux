@@ -261,6 +261,10 @@ impl Drop for Mapping {
                 self.size()
             );
         }
+
+        unsafe {
+            asm!(".arch armv8.4-a\ndsb sy\ntlbi vmalle1os\ndsb sy\n");
+        }
     }
 }
 
@@ -493,7 +497,7 @@ impl Vm {
         }
 
         unsafe {
-            asm!(".arch armv8.4-a\ntlbi vmalle1os");
+            asm!(".arch armv8.4-a\ndsb sy\n");
         }
 
         Ok(Mapping(node))
