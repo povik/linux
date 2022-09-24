@@ -104,10 +104,10 @@ impl rtkit::Operations for GpuManager::ver {
         let dev = &data.dev;
         dev_info!(dev, "shmem_alloc() {:#x} bytes\n", size);
 
-        let mut obj = gem::new_object(dev, size)?;
+        let mut obj = gem::new_kernel_object(dev, size)?;
         obj.vmap()?;
-        let map = obj.map_into(data.uat.kernel_vm())?;
-        dev_info!(dev, "shmem_alloc() -> VA {:#x}\n", map.iova());
+        let iova = obj.map_into(data.uat.kernel_vm())?;
+        dev_info!(dev, "shmem_alloc() -> VA {:#x}\n", iova);
         Ok(obj)
     }
 }
@@ -117,9 +117,20 @@ impl GpuManager::ver {
     pub(crate) fn new(dev: &AsahiDevice, cfg: &hw::HwConfig) -> Result<Arc<GpuManager::ver>> {
         let uat = mmu::Uat::new(dev)?;
         let mut alloc = KernelAllocators {
-            private: alloc::SimpleAllocator::new(dev, uat.kernel_vm(), 0x20),
-            shared: alloc::SimpleAllocator::new(dev, uat.kernel_vm(), 0x20),
-            gpu: alloc::SimpleAllocator::new(dev, uat.kernel_vm(), 0x20),
+            //             private: alloc::SimpleAllocator::new(dev, uat.kernel_vm(), 0x20, mmu::PROT_FW_PRIV_RW),
+            private: alloc::SimpleAllocator::new(
+                dev,
+                uat.kernel_vm(),
+                0x20,
+                mmu::PROT_FW_SHARED_RW,
+            ),
+            shared: alloc::SimpleAllocator::new(dev, uat.kernel_vm(), 0x20, mmu::PROT_FW_SHARED_RW),
+            gpu: alloc::SimpleAllocator::new(
+                dev,
+                uat.kernel_vm(),
+                0x20,
+                mmu::PROT_GPU_FW_SHARED_RW,
+            ),
         };
 
         let dyncfg = hw::HwDynConfig {

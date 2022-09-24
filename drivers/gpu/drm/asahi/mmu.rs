@@ -54,6 +54,16 @@ const TTBR_ASID_SHIFT: usize = 48;
 
 const PTE_TABLE: u64 = 0x3; // BIT(0) | BIT(1)
 
+pub(crate) const PROT_FW_SHARED_RW: u32 = prot::PRIV | prot::READ | prot::WRITE | prot::CACHE;
+pub(crate) const PROT_FW_SHARED_RO: u32 = prot::PRIV | prot::READ | prot::CACHE;
+pub(crate) const PROT_FW_PRIV_RW: u32 = prot::PRIV | prot::READ | prot::WRITE;
+pub(crate) const PROT_FW_PRIV_RO: u32 = prot::PRIV | prot::READ;
+pub(crate) const PROT_GPU_FW_SHARED_RW: u32 = prot::READ | prot::WRITE | prot::CACHE;
+pub(crate) const PROT_GPU_SHARED_RW: u32 = prot::READ | prot::WRITE | prot::CACHE | prot::NOEXEC;
+pub(crate) const PROT_GPU_SHARED_RO: u32 = prot::READ | prot::CACHE | prot::NOEXEC;
+pub(crate) const PROT_GPU_PRIV_RW: u32 = prot::READ | prot::WRITE | prot::NOEXEC;
+pub(crate) const PROT_GPU_PRIV_RO: u32 = prot::READ | prot::NOEXEC;
+
 type PhysAddr = bindings::phys_addr_t;
 
 struct UatRegion {
@@ -382,6 +392,46 @@ impl Vm {
             (size + UAT_PGSZ) as u64, // Add guard page
         )?;
 
+        Self::map_node(
+            &mut *inner,
+            node,
+            sgt,
+            prot::PRIV | prot::READ | prot::WRITE | prot::CACHE,
+        )
+    }
+
+    pub(crate) fn map_in_range(
+        &self,
+        size: usize,
+        sgt: &mut shmem::SGTableIter<'_>,
+        alignment: u64,
+        start: u64,
+        end: u64,
+        prot: u32,
+    ) -> Result<Mapping> {
+        let mut inner = self.inner.lock();
+
+        let node = inner.mm.insert_node_in_range(
+            MappingInner {
+                owner: self.inner.clone(),
+            },
+            (size + UAT_PGSZ) as u64, // Add guard page
+            alignment,
+            0,
+            start,
+            end,
+            mm::InsertMode::Best,
+        )?;
+
+        Self::map_node(&mut *inner, node, sgt, prot)
+    }
+
+    fn map_node(
+        inner: &mut VmInner,
+        node: mm::Node<MappingInner>,
+        sgt: &mut shmem::SGTableIter<'_>,
+        prot: u32,
+    ) -> Result<Mapping> {
         let mut iova = node.start() as usize;
 
         for range in sgt {
@@ -401,13 +451,7 @@ impl Vm {
 
             dev_info!(inner.dev, "MMU: map: {:#x}:{:#x} -> {:#x}", addr, len, iova);
 
-            inner.map_pages(
-                iova,
-                addr,
-                UAT_PGSZ,
-                len >> UAT_PGBIT,
-                prot::PRIV | prot::READ | prot::WRITE | prot::CACHE,
-            )?;
+            inner.map_pages(iova, addr, UAT_PGSZ, len >> UAT_PGBIT, prot)?;
 
             iova += len;
         }

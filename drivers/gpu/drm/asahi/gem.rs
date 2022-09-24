@@ -21,13 +21,16 @@ use kernel::drm::gem::BaseObject;
 
 use crate::driver::AsahiDevice;
 
-pub(crate) struct DriverObject {}
+pub(crate) struct DriverObject {
+    kernel: bool,
+    flags: u32,
+    mapping: Mutex<Option<crate::mmu::Mapping>>,
+}
 
 pub(crate) type Object = shmem::Object<DriverObject>;
 
 pub(crate) struct ObjectRef {
     pub(crate) gem: gem::ObjectRef<shmem::Object<DriverObject>>,
-    pub(crate) mapping: Option<crate::mmu::Mapping>,
     pub(crate) vmap: Option<shmem::VMap<DriverObject>>,
 }
 
@@ -39,24 +42,69 @@ impl ObjectRef {
         Ok(self.vmap.as_mut().unwrap())
     }
 
-    pub(crate) fn map_into(&mut self, context: &crate::mmu::Vm) -> Result<&crate::mmu::Mapping> {
-        if self.mapping.is_some() {
+    pub(crate) fn map_into(&mut self, vm: &crate::mmu::Vm) -> Result<usize> {
+        let mut mapping = self.gem.mapping.lock();
+        if mapping.is_some() {
             Err(EBUSY)
         } else {
             let sgt = self.gem.sg_table()?;
-            let mapping = context.map(self.gem.size(), &mut sgt.iter())?;
+            let new_mapping = vm.map(self.gem.size(), &mut sgt.iter())?;
 
-            self.mapping = Some(mapping);
-            Ok(self.mapping.as_ref().unwrap())
+            let iova = new_mapping.iova();
+            *mapping = Some(new_mapping);
+            Ok(iova)
+        }
+    }
+
+    pub(crate) fn map_into_range(
+        &mut self,
+        vm: &crate::mmu::Vm,
+        start: u64,
+        end: u64,
+        alignment: u64,
+        prot: u32,
+    ) -> Result<usize> {
+        let mut mapping = self.gem.p.mapping.lock();
+        if mapping.is_some() {
+            Err(EBUSY)
+        } else {
+            let sgt = self.gem.sg_table()?;
+            let new_mapping = vm.map_in_range(
+                self.gem.size(),
+                &mut sgt.iter(),
+                alignment,
+                start,
+                end,
+                prot,
+            )?;
+
+            let iova = new_mapping.iova();
+            *mapping = Some(new_mapping);
+            Ok(iova)
         }
     }
 }
 
-pub(crate) fn new_object(dev: &AsahiDevice, size: usize) -> Result<ObjectRef> {
-    let private = DriverObject {};
+pub(crate) fn new_kernel_object(dev: &AsahiDevice, size: usize) -> Result<ObjectRef> {
+    let private = DriverObject {
+        kernel: true,
+        flags: 0,
+        mapping: Mutex::new(None),
+    };
     Ok(ObjectRef {
         gem: shmem::Object::new(dev, private, size)?,
-        mapping: None,
+        vmap: None,
+    })
+}
+
+pub(crate) fn new_object(dev: &AsahiDevice, size: usize, flags: u32) -> Result<ObjectRef> {
+    let private = DriverObject {
+        kernel: false,
+        flags,
+        mapping: Mutex::new(None),
+    };
+    Ok(ObjectRef {
+        gem: shmem::Object::new(dev, private, size)?,
         vmap: None,
     })
 }
@@ -77,7 +125,7 @@ impl shmem::DriverObject for DriverObject {
 
 impl rtkit::Buffer for ObjectRef {
     fn iova(&self) -> Option<usize> {
-        Some(self.mapping.as_ref()?.iova())
+        Some(self.gem.p.mapping.lock().as_ref()?.iova())
     }
     fn buf(&mut self) -> Option<&mut [u8]> {
         let vmap = self.vmap.as_mut()?;
