@@ -136,6 +136,8 @@
 #define APPLE_UAT_OWNER_OS			(((arm_lpae_iopte)1) << 55)
 #define APPLE_UAT_UXN				(((arm_lpae_iopte)1) << 54)
 #define APPLE_UAT_PXN				(((arm_lpae_iopte)1) << 53)
+#define APPLE_UAT_NG				(((arm_lpae_iopte)1) << 11)
+#define APPLE_UAT_AP1				(((arm_lpae_iopte)1) << 7)
 #define APPLE_UAT_AP0				(((arm_lpae_iopte)1) << 6)
 
 /* IOPTE accessors */
@@ -411,7 +413,7 @@ static arm_lpae_iopte arm_lpae_prot_to_pte(struct arm_lpae_io_pgtable *data,
 	arm_lpae_iopte pte;
 
 	if (data->iop.fmt == APPLE_UAT) {
-		pte = APPLE_UAT_OWNER_OS;
+		pte = APPLE_UAT_OWNER_OS | APPLE_UAT_NG;
 		if (prot & IOMMU_PRIV) {
 			/* Firmware structures */
 			pte |= APPLE_UAT_AP0;
@@ -424,6 +426,7 @@ static arm_lpae_iopte arm_lpae_prot_to_pte(struct arm_lpae_io_pgtable *data,
 			}
 		} else if (prot & IOMMU_NOEXEC) {
 			/* GPU structures (no FW access) */
+			pte |= APPLE_UAT_AP1;
 			if (!(prot & IOMMU_READ)) {
 				pte |= APPLE_UAT_PXN;
 				if (!(prot & IOMMU_WRITE))
@@ -435,7 +438,7 @@ static arm_lpae_iopte arm_lpae_prot_to_pte(struct arm_lpae_io_pgtable *data,
 			/* GPU structures (also FW accessible) */
 			if (prot & IOMMU_WRITE)
 				pte |= APPLE_UAT_UXN;
-			else if (prot & IOMMU_READ)
+			if (prot & IOMMU_READ)
 				pte |= APPLE_UAT_PXN;
 		}
 	} else if (data->iop.fmt == ARM_64_LPAE_S1 ||
