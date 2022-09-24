@@ -20,13 +20,12 @@ pub(crate) struct EventInner {
     stamp: *const AtomicU32,
     gpu_stamp: GpuWeakPointer<Stamp>,
     gpu_fw_stamp: GpuWeakPointer<FwStamp>,
-    owner: Option<Arc<workqueue::WorkQueue>>,
 }
 
 pub(crate) type Token = slotalloc::SlotToken;
 pub(crate) type Event = slotalloc::Guard<EventInner>;
 
-#[derive(Eq, PartialEq, Copy, Clone)]
+#[derive(Eq, PartialEq, Copy, Clone, Debug)]
 pub(crate) struct EventValue(u32);
 
 impl EventValue {
@@ -86,38 +85,79 @@ impl EventInner {
 impl slotalloc::SlotItem for EventInner {
     type Owner = EventManagerInner;
 
-    fn release(&mut self, _owner: &mut Self::Owner, _slot: u32) {
-        self.owner = None;
+    fn release(&mut self, owner: &mut Self::Owner, slot: u32) {
+        pr_info!("EventManager: Released slot {}", slot);
+        owner.owners[slot as usize] = None;
     }
 }
 
 pub(crate) struct EventManagerInner {
     stamps: GpuArray<Stamp>,
     fw_stamps: GpuArray<FwStamp>,
+    owners: Vec<Option<Arc<workqueue::WorkQueue>>>,
 }
 
-pub(crate) struct EventManager(slotalloc::SlotAllocator<EventInner>);
+pub(crate) struct EventManager {
+    alloc: slotalloc::SlotAllocator<EventInner>,
+}
 
 impl EventManager {
     pub(crate) fn new(alloc: &mut gpu::KernelAllocators) -> Result<EventManager> {
+        let mut owners = Vec::new();
+        for _i in 0..(NUM_EVENTS as usize) {
+            owners.try_push(None)?;
+        }
         let inner = EventManagerInner {
             stamps: alloc.shared.array_empty(NUM_EVENTS as usize)?,
             fw_stamps: alloc.private.array_empty(NUM_EVENTS as usize)?,
+            owners,
         };
 
-        Ok(EventManager(slotalloc::SlotAllocator::new(
-            NUM_EVENTS,
-            inner,
-            |inner: &mut EventManagerInner, slot| EventInner {
-                stamp: &inner.stamps[slot as usize].0,
-                gpu_stamp: inner.stamps.weak_item_pointer(slot as usize),
-                gpu_fw_stamp: inner.fw_stamps.weak_item_pointer(slot as usize),
-                owner: None,
-            },
-        )?))
+        Ok(EventManager {
+            alloc: slotalloc::SlotAllocator::new(
+                NUM_EVENTS,
+                inner,
+                |inner: &mut EventManagerInner, slot| EventInner {
+                    stamp: &inner.stamps[slot as usize].0,
+                    gpu_stamp: inner.stamps.weak_item_pointer(slot as usize),
+                    gpu_fw_stamp: inner.fw_stamps.weak_item_pointer(slot as usize),
+                },
+            )?,
+        })
     }
 
-    pub(crate) fn get(&self, token: Option<Token>) -> Result<Event> {
-        Ok(self.0.get(token)?)
+    pub(crate) fn get(
+        &self,
+        token: Option<Token>,
+        owner: Arc<workqueue::WorkQueue>,
+    ) -> Result<Event> {
+        pr_info!("EventManager::get");
+        let ev = self.alloc.get_inner(token, |inner, ev| {
+            pr_info!(
+                "EventManager: Registered owner {:p} on slot {}",
+                &*owner,
+                ev.slot()
+            );
+            inner.owners[ev.slot() as usize] = Some(owner);
+            Ok(())
+        })?;
+        Ok(ev)
+    }
+
+    pub(crate) fn signal(&self, slot: u32) {
+        match self
+            .alloc
+            .with_inner(|inner| inner.owners[slot as usize].as_ref().cloned())
+        {
+            Some(owner) => {
+                owner.signal();
+            }
+            None => {
+                pr_err!("Received event for empty slot {}", slot);
+            }
+        }
     }
 }
+
+unsafe impl Send for EventManager {}
+unsafe impl Sync for EventManager {}
