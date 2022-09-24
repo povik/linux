@@ -142,25 +142,44 @@ impl VmInner {
 
     fn map_pages(
         &mut self,
-        iova: usize,
-        paddr: usize,
+        mut iova: usize,
+        mut paddr: usize,
         pgsize: usize,
         pgcount: usize,
         prot: u32,
     ) -> Result<usize> {
-        self.page_table.map_pages(
-            self.map_iova(iova, pgsize * pgcount)?,
-            paddr,
-            pgsize,
-            pgcount,
-            prot,
-        )
+        let mut left = pgcount;
+        while left > 0 {
+            let mapped = self.page_table.map_pages(
+                self.map_iova(iova, pgsize * pgcount)?,
+                paddr,
+                pgsize,
+                left,
+                prot,
+            )?;
+            assert!(mapped <= left * pgsize);
+
+            left -= mapped / pgsize;
+            paddr += mapped;
+            iova += mapped;
+        }
+        Ok(pgcount * pgsize)
     }
 
-    fn unmap_pages(&mut self, iova: usize, pgsize: usize, pgcount: usize) -> Result<usize> {
-        Ok(self
-            .page_table
-            .unmap_pages(self.map_iova(iova, pgsize * pgcount)?, pgsize, pgcount))
+    fn unmap_pages(&mut self, mut iova: usize, pgsize: usize, pgcount: usize) -> Result<usize> {
+        let mut left = pgcount;
+        while left > 0 {
+            let unmapped = self.page_table.unmap_pages(
+                self.map_iova(iova, pgsize * pgcount)?,
+                pgsize,
+                pgcount,
+            );
+            assert!(unmapped <= left * pgsize);
+
+            left -= unmapped / pgsize;
+            iova += unmapped;
+        }
+        Ok(pgcount * pgsize)
     }
 }
 
