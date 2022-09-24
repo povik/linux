@@ -82,7 +82,11 @@ where
             let next_wptr = (self.wptr + 1) % self.count;
             let mut rptr = T::rptr(raw);
             if next_wptr == rptr {
-                pr_err!("TX ring buffer is full! Waiting...");
+                pr_err!(
+                    "TX ring buffer is full! Waiting... ({}, {})",
+                    next_wptr,
+                    rptr
+                );
                 // TODO: block properly on incoming messages?
                 while next_wptr == rptr {
                     coarse_sleep(Duration::from_millis(8));
@@ -91,6 +95,7 @@ where
             }
             self.ring.ring[self.wptr as usize] = *msg;
             T::set_wptr(raw, next_wptr);
+            self.wptr = next_wptr;
         })
     }
 }
