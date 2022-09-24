@@ -19,6 +19,7 @@ mod microseq;
 mod mmu;
 mod object;
 mod place;
+mod render;
 mod slotalloc;
 mod workqueue;
 
