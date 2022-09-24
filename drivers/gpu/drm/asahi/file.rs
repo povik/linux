@@ -125,12 +125,35 @@ impl File {
         dev_info!(device, "IOCTL: get_param");
         Ok(0)
     }
+
     pub(crate) fn get_bo_offset(
         device: &AsahiDevice,
-        _data: &mut bindings::drm_asahi_get_bo_offset,
-        _file: &DrmFile,
+        data: &mut bindings::drm_asahi_get_bo_offset,
+        file: &DrmFile,
     ) -> Result<u32> {
         dev_info!(device, "IOCTL: get_bo_offset");
-        Ok(0)
+
+        let mut bo = gem::ObjectRef::new(gem::Object::lookup_handle(file, data.handle)?);
+
+        // This can race other threads. Only one will win the map and the
+        // others will return EBUSY.
+        let iova = bo.map_into_range(
+            &file.inner().vm,
+            0x15_00000000,
+            0x1f_ffffffff,
+            mmu::UAT_PGSZ as u64,
+            mmu::PROT_GPU_SHARED_RW,
+        );
+
+        if let Some(iova) = bo.iova() {
+            // If we have a mapping, call it good.
+            data.offset = iova as u64;
+            Ok(0)
+        } else {
+            // Otherwise return the error, or a generic one if something
+            // went very wrong and we lost the mapping.
+            iova?;
+            Err(EIO)
+        }
     }
 }
