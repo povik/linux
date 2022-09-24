@@ -60,7 +60,7 @@ const NUM_PIPES: usize = 4;
 pub(crate) struct GpuManager {
     dev: AsahiDevice,
     initialized: bool,
-    initdata: fw::types::GpuObject<fw::initdata::InitData::ver>,
+    pub(crate) initdata: fw::types::GpuObject<fw::initdata::InitData::ver>,
     uat: mmu::Uat,
     alloc: Mutex<KernelAllocators>,
     io_mappings: Vec<mmu::Mapping>,
