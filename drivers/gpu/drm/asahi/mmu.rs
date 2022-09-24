@@ -521,18 +521,16 @@ impl Vm {
     }
 }
 
-impl Drop for Vm {
+impl Drop for VmInner {
     fn drop(&mut self) {
-        let mut inner = self.inner.lock();
-
-        assert_eq!(inner.active_users, 0);
+        assert_eq!(self.active_users, 0);
 
         // Make sure this VM is not mapped to a TTB if it was
-        if let Some(token) = inner.bind_token.take() {
+        if let Some(token) = self.bind_token.take() {
             let idx = (token.last_slot() as usize) + UAT_USER_CTX_START;
-            let ttb = inner.ttb() | TTBR_VALID | (idx as u64) << TTBR_ASID_SHIFT;
+            let ttb = self.ttb() | TTBR_VALID | (idx as u64) << TTBR_ASID_SHIFT;
 
-            let uat_inner = inner.uat_inner.lock();
+            let uat_inner = self.uat_inner.lock();
             uat_inner.handoff().lock();
             let inval = uat_inner.ttbs()[idx]
                 .ttb0
