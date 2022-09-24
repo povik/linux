@@ -49,7 +49,7 @@ macro_rules! simple_op {
         pub(crate) struct $name(OpHeader);
 
         impl $name {
-            const HEADER: $name = $name(OpHeader::new(OpCode::$name));
+            pub(crate) const HEADER: $name = $name(OpHeader::new(OpCode::$name));
         }
     };
 }
