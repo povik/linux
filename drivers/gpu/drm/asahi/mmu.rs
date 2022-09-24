@@ -471,6 +471,10 @@ impl Vm {
             iova += len;
         }
 
+        unsafe {
+            asm!(".arch armv8.4-a\ntlbi vmalle1os");
+        }
+
         Ok(Mapping(node))
     }
 
