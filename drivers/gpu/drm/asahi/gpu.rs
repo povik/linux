@@ -2,6 +2,7 @@
 #![allow(missing_docs)]
 #![allow(dead_code)]
 
+use core::any::Any;
 use core::mem;
 
 use kernel::{
@@ -71,6 +72,7 @@ pub(crate) struct GpuManager {
 }
 
 pub(crate) trait GpuManager: Send + Sync {
+    fn as_any(&self) -> &dyn Any;
     fn init(&self) -> Result;
     fn test(&self) -> Result;
 }
@@ -269,6 +271,10 @@ impl GpuManager::ver {
 
 #[versions(AGX)]
 impl GpuManager for GpuManager::ver {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
     fn init(&self) -> Result {
         let initdata = self.initdata.gpu_va().get();
         let mut guard = self.rtkit.lock();
