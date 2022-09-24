@@ -31,7 +31,7 @@ pub(crate) struct Stamp(pub(crate) AtomicU32);
 pub(crate) struct FwStamp(pub(crate) AtomicU32);
 
 #[derive(Default, Debug, Copy, Clone)]
-pub(crate) struct F32(u32);
+pub(crate) struct F32(pub(crate) u32);
 
 impl F32 {
     pub(crate) const fn new(v: f32) -> F32 {
