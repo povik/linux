@@ -10,18 +10,36 @@ use crate::fw::event::NotifierList;
 use crate::fw::types::*;
 use crate::fw::workqueue::*;
 use crate::{alloc, channel, event, gpu, object};
-use crate::{box_in_place, inner_ptr, place};
+use crate::{box_in_place, inner_weak_ptr, place};
 use core::mem;
 use core::sync::atomic::Ordering;
 use core::time::Duration;
 use kernel::{
-    dbg,
+    bindings, dbg,
     prelude::*,
     sync::{Arc, CondVar, Guard, Mutex, UniqueArc},
+    Opaque,
 };
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct WorkToken(u64);
+
+pub(crate) struct Batch {
+    value: event::EventValue,
+    commands: usize,
+    // TODO: make abstraction
+    completion: Opaque<bindings::completion>,
+}
+
+impl Batch {
+    pub(crate) fn value(&self) -> event::EventValue {
+        self.value
+    }
+
+    pub(crate) fn wait(&self) {
+        unsafe { bindings::wait_for_completion(self.completion.get()) };
+    }
+}
 
 struct WorkQueueInner {
     event_manager: Arc<event::EventManager>,
@@ -31,12 +49,15 @@ struct WorkQueueInner {
     size: u32,
     wptr: u32,
     pending: Vec<Box<dyn object::OpaqueGpuObject>>,
-    batches: Vec<(event::EventValue, usize)>,
+    batches: Vec<Arc<Batch>>,
     last_token: Option<event::Token>,
     event: Option<(event::Event, event::EventValue)>,
 }
 
+unsafe impl Send for WorkQueueInner {}
+
 pub(crate) struct WorkQueue {
+    info_pointer: GpuWeakPointer<QueueInfo>,
     inner: Mutex<WorkQueueInner>,
     cond: CondVar,
 }
@@ -55,26 +76,22 @@ pub(crate) struct WorkQueueBatch<'a> {
     queue: &'a WorkQueue,
     inner: Guard<'a, Mutex<WorkQueueInner>>,
     commands: usize,
+    wptr: u32,
 }
 
 impl WorkQueue {
     pub(crate) fn new(
         alloc: &mut gpu::KernelAllocators,
         event_manager: Arc<event::EventManager>,
+        gpu_context: GpuWeakPointer<GpuContextData>,
+        notifier_list: GpuWeakPointer<NotifierList>,
         pipe_type: PipeType,
     ) -> Result<Arc<WorkQueue>> {
         let mut info = box_in_place!(QueueInfo {
             state: alloc.shared.new_default::<RingState>()?,
             ring: alloc.shared.array_empty(WQ_SIZE as usize)?,
-            notifier_list: alloc.private.new_default::<NotifierList>()?,
             gpu_buf: alloc.private.array_empty(0x2c18)?,
-            gpu_context: alloc.shared.new_default::<GpuContextData>()?,
         })?;
-
-        let self_ptr = info.notifier_list.weak_pointer();
-        info.notifier_list.with_mut(|raw, _inner| {
-            raw.list_head.next = Some(inner_ptr!(self_ptr, list_head));
-        });
 
         info.state.with_mut(|raw, _inner| {
             raw.rb_size = WQ_SIZE;
@@ -88,7 +105,7 @@ impl WorkQueue {
                     raw::QueueInfo {
                         state: inner.state.gpu_pointer(),
                         ring: inner.ring.gpu_pointer(),
-                        notifier_list: inner.notifier_list.gpu_pointer(),
+                        notifier_list: notifier_list,
                         gpu_buf: inner.gpu_buf.gpu_pointer(),
                         gpu_rptr1: Default::default(),
                         gpu_rptr2: Default::default(),
@@ -108,12 +125,12 @@ impl WorkQueue {
                         unk_94: Default::default(),
                         pending: Default::default(),
                         unk_9c: Default::default(),
-                        gpu_context: inner.gpu_context.gpu_pointer(),
+                        gpu_context: gpu_context,
                         unk_a8: Default::default(),
                     }
                 ))
             })?,
-            new: false,
+            new: true,
             pipe_type,
             size: WQ_SIZE,
             wptr: 0,
@@ -124,6 +141,7 @@ impl WorkQueue {
         };
 
         let mut queue = Pin::from(UniqueArc::try_new(Self {
+            info_pointer: inner.info.weak_pointer(),
             // SAFETY: `condvar_init!` is called below.
             cond: unsafe { CondVar::new() },
             // SAFETY: `mutex_init!` is called below.
@@ -134,31 +152,37 @@ impl WorkQueue {
         let pinned = unsafe { queue.as_mut().map_unchecked_mut(|s| &mut s.cond) };
         kernel::condvar_init!(pinned, "WorkQueue::cond");
 
-        // SAFETY: `inner` is pinned when `queue` is.
+        //         // SAFETY: `inner` is pinned when `queue` is.
         let pinned = unsafe { queue.as_mut().map_unchecked_mut(|s| &mut s.inner) };
         kernel::mutex_init!(pinned, "WorkQueue::inner");
 
         Ok(queue.into())
     }
 
-    pub(crate) fn begin_batch<'a>(&'a self) -> Result<WorkQueueBatch<'a>> {
-        let mut inner = self.inner.lock();
+    pub(crate) fn info_pointer(&self) -> GpuWeakPointer<QueueInfo> {
+        self.info_pointer
+    }
+
+    pub(crate) fn begin_batch(this: &Arc<WorkQueue>) -> Result<WorkQueueBatch<'_>> {
+        let mut inner = this.inner.lock();
 
         if inner.event.is_none() {
-            let event = inner.event_manager.get(inner.last_token)?;
+            pr_info!("Get event");
+            let event = inner.event_manager.get(inner.last_token, this.clone())?;
             let cur = event.current();
             inner.last_token = Some(event.token());
             inner.event = Some((event, cur));
         }
 
         Ok(WorkQueueBatch {
-            queue: self,
+            queue: &*this,
+            wptr: inner.wptr,
             inner,
             commands: 0,
         })
     }
 
-    pub(crate) fn poll_complete(&self) -> bool {
+    pub(crate) fn signal(&self) -> bool {
         let mut inner = self.inner.lock();
         let event = inner.event.as_ref();
         let cur_value = match event {
@@ -172,27 +196,47 @@ impl WorkQueue {
         let mut completed_commands: usize = 0;
         let mut batches: usize = 0;
 
-        for (value, commands) in inner.batches.iter() {
-            if value <= &cur_value {
-                completed_commands += commands;
+        for batch in inner.batches.iter() {
+            if batch.value <= cur_value {
+                completed_commands += batch.commands;
                 batches += 1;
             } else {
                 break;
             }
         }
+        pr_info!(
+            "WorkQueue({:?}): completed {} batches",
+            inner.pipe_type,
+            batches
+        );
 
-        inner.batches.drain(..batches);
+        let mut completed = Vec::new();
+        for i in inner.batches.drain(..batches) {
+            if completed.try_push(i).is_err() {
+                pr_err!("Failed to signal completions");
+                break;
+            }
+        }
         inner.pending.drain(..completed_commands);
         self.cond.notify_all();
-        inner.batches.is_empty()
+        let empty = inner.batches.is_empty();
+        if empty {
+            inner.event = None;
+        }
+        core::mem::drop(inner);
+
+        for batch in completed {
+            unsafe { bindings::complete_all(batch.completion.get()) };
+        }
+        empty
     }
 }
 
 impl<'a> WorkQueueBatch<'a> {
-    pub(crate) fn add<T: Command>(&'a mut self, command: Box<GpuObject<T>>) -> Result {
+    pub(crate) fn add<T: Command>(&mut self, command: Box<GpuObject<T>>) -> Result {
         let inner = &mut self.inner;
 
-        let next_wptr = (inner.wptr + 1) % inner.size;
+        let next_wptr = (self.wptr + 1) % inner.size;
         if inner.doneptr() == next_wptr {
             pr_err!("Work queue ring buffer is full! Waiting...");
             while inner.doneptr() == next_wptr {
@@ -203,13 +247,9 @@ impl<'a> WorkQueueBatch<'a> {
         }
         inner.pending.try_reserve(1)?;
 
-        let wptr = inner.wptr;
-        inner.info.ring[wptr as usize] = command.gpu_va().get();
+        inner.info.ring[self.wptr as usize] = command.gpu_va().get();
 
-        inner
-            .info
-            .state
-            .with(|raw, _inner| raw.cpu_wptr.store(next_wptr, Ordering::Release));
+        self.wptr = next_wptr;
 
         // Cannot fail, since we did a try_reserve(1) above
         inner
@@ -220,24 +260,38 @@ impl<'a> WorkQueueBatch<'a> {
         Ok(())
     }
 
-    pub(crate) fn commit(&mut self) -> Result<event::EventValue> {
+    pub(crate) fn commit(&mut self) -> Result<Arc<Batch>> {
         let inner = &mut self.inner;
         let event = inner.event.as_mut().expect("WorkQueueBatch lost its event");
 
         if self.commands == 0 {
-            return Ok(event.1);
+            return Err(EINVAL);
         }
 
         event.1.increment();
         let event_value = event.1;
 
-        inner.batches.try_push((event_value, self.commands))?;
+        inner
+            .info
+            .state
+            .with(|raw, _inner| raw.cpu_wptr.store(self.wptr, Ordering::Release));
+
+        inner.wptr = self.wptr;
+        let batch = Arc::try_new(Batch {
+            value: event_value,
+            commands: self.commands,
+            completion: Opaque::uninit(),
+        })?;
+        unsafe { bindings::init_completion(batch.completion.get()) };
+        inner.batches.try_push(batch.clone())?;
         self.commands = 0;
-        Ok(event_value)
+        Ok(batch)
     }
 
     pub(crate) fn submit(mut self, channel: &mut channel::PipeChannel) -> Result {
-        self.commit()?;
+        if self.commands != 0 {
+            return Err(EINVAL);
+        }
 
         let inner = &mut self.inner;
         let event = inner.event.as_ref().expect("WorkQueueBatch lost its event");
@@ -253,4 +307,41 @@ impl<'a> WorkQueueBatch<'a> {
         inner.new = false;
         Ok(())
     }
+
+    pub(crate) fn event(&self) -> &event::Event {
+        let event = self
+            .inner
+            .event
+            .as_ref()
+            .expect("WorkQueueBatch lost its event");
+        &(event.0)
+    }
+
+    pub(crate) fn event_value(&self) -> event::EventValue {
+        let event = self
+            .inner
+            .event
+            .as_ref()
+            .expect("WorkQueueBatch lost its event");
+        event.1
+    }
+
+    pub(crate) fn pipe_type(&self) -> PipeType {
+        self.inner.pipe_type
+    }
 }
+
+impl<'a> Drop for WorkQueueBatch<'a> {
+    fn drop(&mut self) {
+        if self.commands != 0 {
+            pr_warn!("WorkQueueBatch: rolling back {} commands!", self.commands);
+
+            let inner = &mut self.inner;
+            let new_len = inner.pending.len() - self.commands;
+            inner.pending.truncate(new_len);
+        }
+    }
+}
+
+unsafe impl Send for WorkQueue {}
+unsafe impl Sync for WorkQueue {}

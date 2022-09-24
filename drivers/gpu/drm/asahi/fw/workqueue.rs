@@ -105,7 +105,7 @@ pub(crate) mod raw {
     pub(crate) struct QueueInfo<'a> {
         pub(crate) state: GpuPointer<'a, super::RingState>,
         pub(crate) ring: GpuPointer<'a, &'a [u64]>,
-        pub(crate) notifier_list: GpuPointer<'a, event::NotifierList>,
+        pub(crate) notifier_list: GpuWeakPointer<event::NotifierList>,
         pub(crate) gpu_buf: GpuPointer<'a, &'a [u8]>,
         pub(crate) gpu_rptr1: AtomicU32,
         pub(crate) gpu_rptr2: AtomicU32,
@@ -125,7 +125,7 @@ pub(crate) mod raw {
         pub(crate) unk_94: u32,
         pub(crate) pending: AtomicU32,
         pub(crate) unk_9c: u32,
-        pub(crate) gpu_context: GpuPointer<'a, super::GpuContextData>,
+        pub(crate) gpu_context: GpuWeakPointer<super::GpuContextData>,
         pub(crate) unk_a8: U64,
     }
 }
@@ -140,9 +140,7 @@ impl Command for Barrier {}
 pub(crate) struct QueueInfo {
     pub(crate) state: GpuObject<RingState>,
     pub(crate) ring: GpuArray<u64>,
-    pub(crate) notifier_list: GpuObject<event::NotifierList>,
     pub(crate) gpu_buf: GpuArray<u8>,
-    pub(crate) gpu_context: GpuObject<GpuContextData>,
 }
 
 impl GpuStruct for QueueInfo {
