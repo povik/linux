@@ -6,7 +6,7 @@
 
 use super::types::*;
 use super::{event, job, workqueue};
-use crate::{buffer, fw, microseq};
+use crate::{buffer, fw, microseq, mmu};
 use kernel::sync::Arc;
 
 pub(crate) mod raw {
@@ -29,6 +29,16 @@ pub(crate) mod raw {
         pub(crate) address: u32,
         pub(crate) unk_18: u32,
         pub(crate) unk_1c_padding: u32,
+    }
+
+    impl StorePipelineBinding {
+        pub(crate) fn new(pipeline_bind: u32, address: u32) -> StorePipelineBinding {
+            StorePipelineBinding {
+                pipeline_bind,
+                address,
+                ..Default::default()
+            }
+        }
     }
 
     #[derive(Debug)]
@@ -54,13 +64,13 @@ pub(crate) mod raw {
     #[versions(AGX)]
     #[derive(Debug)]
     #[repr(C)]
-    pub(crate) struct JobParameters1 {
+    pub(crate) struct JobParameters1<'a> {
         pub(crate) unk_0: U64,
         pub(crate) clear_pipeline: ClearPipelineBinding,
         pub(crate) unk_18: U64,
         pub(crate) scissor_array: U64,
         pub(crate) depth_bias_array: U64,
-        pub(crate) aux_fb: AuxFBInfo::ver,
+        pub(crate) aux_fb_info: AuxFBInfo::ver,
         pub(crate) depth_dimensions: U64,
         pub(crate) unk_48: U64,
         pub(crate) depth_flags: U64,
@@ -69,12 +79,12 @@ pub(crate) mod raw {
         pub(crate) stencil_buffer_ptr1: U64,
         pub(crate) stencil_buffer_ptr2: U64,
         pub(crate) unk_68: Array<0xc, U64>,
-        pub(crate) tvb_tilemap: U64,
-        pub(crate) tvb_heapmeta_addr: U64,
+        pub(crate) tvb_tilemap: GpuPointer<'a, &'a [u8]>,
+        pub(crate) tvb_heapmeta: GpuPointer<'a, &'a [u8]>,
         pub(crate) unk_e8: U64,
-        pub(crate) tvb_heapmeta_addr2: U64,
+        pub(crate) tvb_heapmeta_2: GpuPointer<'a, &'a [u8]>,
         pub(crate) unk_f8: U64,
-        pub(crate) aux_fb_ptr: U64,
+        pub(crate) aux_fb: GpuPointer<'a, &'a [u8]>,
         pub(crate) unk_108: Array<0x6, U64>,
         pub(crate) pipeline_base: U64,
         pub(crate) unk_140: U64,
@@ -115,12 +125,12 @@ pub(crate) mod raw {
     #[derive(Debug)]
     #[repr(C)]
     pub(crate) struct JobParameters3 {
-        pub(crate) unk_40_padding: Array<0xac, u8>,
+        pub(crate) unk_44_padding: Array<0xac, u8>,
         pub(crate) depth_bias_array: ArrayAddr,
         pub(crate) scissor_array: ArrayAddr,
         pub(crate) unk_110: U64,
         pub(crate) unk_118: U64,
-        pub(crate) unk_120: [U64; 0x25],
+        pub(crate) unk_120: Array<0x25, U64>,
         pub(crate) unk_reload_pipeline: ClearPipelineBinding,
         pub(crate) unk_258: U64,
         pub(crate) unk_260: U64,
@@ -143,7 +153,7 @@ pub(crate) mod raw {
         pub(crate) unk_2f0: Array<3, U64>,
         pub(crate) aux_fb_unk0: u32,
         pub(crate) unk_30c: u32,
-        pub(crate) aux_fb: AuxFBInfo::ver,
+        pub(crate) aux_fb_info: AuxFBInfo::ver,
         pub(crate) unk_320_padding: Array<0x10, u8>,
         pub(crate) unk_partial_store_pipeline: StorePipelineBinding,
         pub(crate) partial_store_pipeline: StorePipelineBinding,
@@ -176,9 +186,9 @@ pub(crate) mod raw {
         pub(crate) microsequence: GpuPointer<'a, &'a [u8]>,
         pub(crate) microsequence_size: u32,
         pub(crate) notifier: GpuPointer<'a, event::Notifier>,
-        pub(crate) buffer: GpuPointer<'a, fw::buffer::Info::ver>,
+        pub(crate) buffer: GpuWeakPointer<fw::buffer::Info::ver>,
         pub(crate) scene: GpuPointer<'a, fw::buffer::Scene::ver>,
-        pub(crate) unk_emptybuf_addr: U64,
+        pub(crate) unk_buffer_buf: GpuWeakPointer<[u8]>,
         pub(crate) tvb_tilemap: GpuPointer<'a, &'a [u8]>,
         pub(crate) unk_40: U64,
         pub(crate) unk_48: u32,
@@ -190,16 +200,16 @@ pub(crate) mod raw {
         pub(crate) uuid2: u32,
         pub(crate) unk_68: U64,
         pub(crate) tile_count: U64,
-        pub(crate) params_1: JobParameters1::ver,
-        pub(crate) params_2: JobParameters2,
-        pub(crate) params_3: JobParameters3::ver,
+        pub(crate) job_params1: JobParameters1::ver<'a>,
+        pub(crate) job_params2: JobParameters2,
+        pub(crate) job_params3: JobParameters3::ver,
         pub(crate) unk_758_flag: u32,
         pub(crate) unk_75c_flag: u32,
         pub(crate) unk_buf: Array<0x110, u8>,
         pub(crate) busy_flag: u32,
         pub(crate) tvb_overflow_count: u32,
         pub(crate) unk_878: u32,
-        pub(crate) encoder_params: job::EncoderParams,
+        pub(crate) encoder_params: job::EncoderParams<'a>,
         pub(crate) unk_pointee: u32,
         pub(crate) meta: job::JobMeta,
         pub(crate) unk_914: u32,
@@ -232,9 +242,14 @@ pub(crate) struct RunFragment {
     pub(crate) notifier: Arc<GpuObject<event::Notifier>>,
     pub(crate) scene: Arc<buffer::Scene::ver>,
     pub(crate) micro_seq: microseq::MicroSequence,
+    pub(crate) vm_bind: mmu::VmBind,
+    pub(crate) aux_fb: GpuArray<u8>,
 }
 
 #[versions(AGX)]
 impl GpuStruct for RunFragment::ver {
     type Raw<'a> = raw::RunFragment::ver<'a>;
 }
+
+#[versions(AGX)]
+impl workqueue::Command for RunFragment::ver {}
