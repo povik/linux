@@ -128,7 +128,20 @@ impl<T: SlotItem> SlotAllocator<T> {
         Ok(SlotAllocator(alloc.into()))
     }
 
+    pub(crate) fn with_inner<RetVal>(&self, cb: impl FnOnce(&mut T::Owner) -> RetVal) -> RetVal {
+        let mut inner = self.0.inner.lock();
+        cb(&mut inner.owner)
+    }
+
     pub(crate) fn get(&self, token: Option<SlotToken>) -> Result<Guard<T>> {
+        self.get_inner(token, |_a, _b| Ok(()))
+    }
+
+    pub(crate) fn get_inner(
+        &self,
+        token: Option<SlotToken>,
+        cb: impl FnOnce(&mut T::Owner, &mut Guard<T>) -> Result<()>,
+    ) -> Result<Guard<T>> {
         let mut inner = self.0.inner.lock();
 
         if let Some(token) = token {
@@ -136,12 +149,14 @@ impl<T: SlotItem> SlotAllocator<T> {
             if slot.is_some() {
                 let count = slot.as_ref().unwrap().get_time;
                 if count == token.time {
-                    return Ok(Guard {
+                    let mut guard = Guard {
                         item: Some(slot.take().unwrap().item),
                         token,
                         changed: false,
                         alloc: self.0.clone(),
-                    });
+                    };
+                    cb(&mut inner.owner, &mut guard)?;
+                    return Ok(guard);
                 }
             }
         }
@@ -179,7 +194,8 @@ impl<T: SlotItem> SlotAllocator<T> {
             .take()
             .expect("Someone stole our slot?")
             .item;
-        Ok(Guard {
+
+        let mut guard = Guard {
             item: Some(item),
             changed: true,
             token: SlotToken {
@@ -187,7 +203,10 @@ impl<T: SlotItem> SlotAllocator<T> {
                 slot,
             },
             alloc: self.0.clone(),
-        })
+        };
+
+        cb(&mut inner.owner, &mut guard)?;
+        Ok(guard)
     }
 }
 
