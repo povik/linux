@@ -8,7 +8,7 @@ use super::types::*;
 use crate::trivial_gpustruct;
 use core::sync::atomic::Ordering;
 
-mod raw {
+pub(crate) mod raw {
     use super::*;
 
     #[derive(Debug, Clone, Copy, Default)]
@@ -58,7 +58,7 @@ mod raw {
     pub(crate) struct Threshold(AtomicU64);
 
     impl Threshold {
-        fn increment(&mut self) {
+        pub(crate) fn increment(&self) {
             self.0.fetch_add(1, Ordering::Release);
         }
     }
@@ -66,7 +66,7 @@ mod raw {
     #[derive(Debug)]
     #[repr(C)]
     pub(crate) struct Notifier<'a> {
-        pub(crate) threshold: GpuPointer<'a, u64>,
+        pub(crate) threshold: GpuPointer<'a, super::Threshold>,
         pub(crate) generation: u32,
         pub(crate) cur_count: u32,
         pub(crate) unk_10: u32,
