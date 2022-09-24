@@ -35,11 +35,19 @@ pub(crate) struct ObjectRef {
 }
 
 impl ObjectRef {
+    pub(crate) fn new(gem: gem::ObjectRef<shmem::Object<DriverObject>>) -> ObjectRef {
+        ObjectRef { gem, vmap: None }
+    }
+
     pub(crate) fn vmap(&mut self) -> Result<&mut shmem::VMap<DriverObject>> {
         if self.vmap.is_none() {
             self.vmap = Some(self.gem.vmap()?);
         }
         Ok(self.vmap.as_mut().unwrap())
+    }
+
+    pub(crate) fn iova(&self) -> Option<usize> {
+        Some(self.gem.mapping.lock().as_ref()?.iova())
     }
 
     pub(crate) fn map_into(&mut self, vm: &crate::mmu::Vm) -> Result<usize> {
@@ -64,7 +72,7 @@ impl ObjectRef {
         alignment: u64,
         prot: u32,
     ) -> Result<usize> {
-        let mut mapping = self.gem.p.mapping.lock();
+        let mut mapping = self.gem.mapping.lock();
         if mapping.is_some() {
             Err(EBUSY)
         } else {
@@ -86,36 +94,38 @@ impl ObjectRef {
 }
 
 pub(crate) fn new_kernel_object(dev: &AsahiDevice, size: usize) -> Result<ObjectRef> {
-    let private = DriverObject {
-        kernel: true,
-        flags: 0,
-        mapping: Mutex::new(None),
-    };
-    Ok(ObjectRef {
-        gem: shmem::Object::new(dev, private, size)?,
-        vmap: None,
-    })
+    let mut gem = shmem::Object::<DriverObject>::new(dev, size)?;
+    gem.kernel = true;
+    gem.flags = 0;
+
+    Ok(ObjectRef::new(gem.into_ref()))
 }
 
 pub(crate) fn new_object(dev: &AsahiDevice, size: usize, flags: u32) -> Result<ObjectRef> {
-    let private = DriverObject {
-        kernel: false,
-        flags,
-        mapping: Mutex::new(None),
-    };
-    Ok(ObjectRef {
-        gem: shmem::Object::new(dev, private, size)?,
-        vmap: None,
-    })
+    let mut gem = shmem::Object::<DriverObject>::new(dev, size)?;
+    gem.kernel = false;
+    gem.flags = flags;
+
+    Ok(ObjectRef::new(
+        shmem::Object::<DriverObject>::new(dev, size)?.into_ref(),
+    ))
 }
 
 impl gem::BaseDriverObject<Object> for DriverObject {
-    fn init(obj: &mut Object) -> Result<()> {
-        dev_info!(obj.dev(), "DriverObject::init\n");
-        Ok(())
+    fn new(dev: &AsahiDevice, size: usize) -> Result<DriverObject> {
+        dev_info!(dev, "DriverObject::new({})\n", size);
+
+        Ok(DriverObject {
+            kernel: false,
+            flags: 0,
+            mapping: Mutex::new(None),
+        })
     }
-    fn uninit(obj: &mut Object) {
-        dev_info!(obj.dev(), "DriverObject::uninit\n");
+}
+
+impl Drop for DriverObject {
+    fn drop(&mut self) {
+        pr_info!("DriverObject::drop\n");
     }
 }
 
@@ -125,7 +135,7 @@ impl shmem::DriverObject for DriverObject {
 
 impl rtkit::Buffer for ObjectRef {
     fn iova(&self) -> Option<usize> {
-        Some(self.gem.p.mapping.lock().as_ref()?.iova())
+        self.iova()
     }
     fn buf(&mut self) -> Option<&mut [u8]> {
         let vmap = self.vmap.as_mut()?;
