@@ -16,7 +16,7 @@ use kernel::{
 use crate::driver::AsahiDevice;
 use crate::fw::channels::DeviceControlMsg;
 use crate::fw::channels::PipeType;
-use crate::{alloc, buffer, channel, event, fw, gem, hw, initdata, mmu};
+use crate::{alloc, buffer, channel, event, fw, gem, hw, initdata, mmu, workqueue};
 
 const EP_FIRMWARE: u8 = 0x20;
 const EP_DOORBELL: u8 = 0x21;
@@ -79,6 +79,10 @@ pub(crate) trait GpuManager: Send + Sync {
     fn as_any(&self) -> &dyn Any;
     fn init(&self) -> Result;
     fn test(&self) -> Result;
+    fn alloc(&self) -> Guard<'_, Mutex<KernelAllocators>>;
+    fn new_vm(&self) -> Result<mmu::Vm>;
+    fn bind_vm(&self, vm: &mmu::Vm) -> Result<mmu::VmBind>;
+    fn submit_batch(&self, batch: workqueue::WorkQueueBatch<'_>) -> Result;
 }
 
 #[versions(AGX)]
@@ -268,10 +272,6 @@ impl GpuManager::ver {
         self.io_mappings.try_push(mapping)?;
         Ok(())
     }
-
-    fn alloc(&self) -> Guard<'_, Mutex<KernelAllocators>> {
-        self.alloc.lock()
-    }
 }
 
 #[versions(AGX)]
@@ -300,6 +300,52 @@ impl GpuManager for GpuManager::ver {
     }
 
     fn test(&self) -> Result {
+        Ok(())
+    }
+
+    fn alloc(&self) -> Guard<'_, Mutex<KernelAllocators>> {
+        self.alloc.lock()
+    }
+
+    fn new_vm(&self) -> Result<mmu::Vm> {
+        self.uat.new_vm()
+    }
+
+    fn bind_vm(&self, vm: &mmu::Vm) -> Result<mmu::VmBind> {
+        self.uat.bind(vm)
+    }
+
+    fn submit_batch(&self, batch: workqueue::WorkQueueBatch<'_>) -> Result {
+        let pipe_type = batch.pipe_type();
+        let pipes = match pipe_type {
+            PipeType::Vertex => &self.pipes.vtx,
+            PipeType::Fragment => &self.pipes.frag,
+            PipeType::Compute => &self.pipes.comp,
+        };
+
+        /* TODO: need try_lock()
+        let pipe = 'outer: loop {
+            for p in pipes.iter() {
+                if let Ok(guard) = p.try_lock() {
+                    break 'outer guard;
+                }
+            }
+            break pipes[0].lock();
+        };
+        */
+
+        let index: usize = 0;
+        let mut pipe = pipes[index].lock();
+
+        batch.submit(&mut pipe)?;
+
+        let mut guard = self.rtkit.lock();
+        let rtk = guard.as_mut().unwrap();
+        rtk.send_message(
+            EP_DOORBELL,
+            MSG_TX_DOORBELL | pipe_type as u64 | ((index as u64) << 2),
+        )?;
+
         Ok(())
     }
 }
