@@ -16,8 +16,8 @@ use kernel::{dbg, prelude::*};
 
 const NUM_BUFFERS: u32 = 127;
 
-const PAGE_SHIFT: usize = mmu::UAT_PGBIT;
-const PAGE_SIZE: usize = mmu::UAT_PGSZ;
+pub(crate) const PAGE_SHIFT: usize = 15; // Buffer pages are 32K (!)
+pub(crate) const PAGE_SIZE: usize = 1 << PAGE_SHIFT;
 const PAGES_PER_BLOCK: usize = 4;
 const BLOCK_SIZE: usize = PAGE_SIZE * PAGES_PER_BLOCK;
 
