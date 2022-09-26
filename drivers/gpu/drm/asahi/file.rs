@@ -14,6 +14,7 @@ use kernel::sync::{smutex::Mutex, Arc};
 use kernel::{bindings, drm};
 
 pub(crate) struct File {
+    id: u64,
     vm: mmu::Vm,
     ualloc: Arc<Mutex<alloc::SimpleAllocator>>,
     renderer: Box<dyn render::Renderer>,
@@ -26,8 +27,9 @@ impl drm::file::DriverFile for File {
 
     fn open(device: &AsahiDevice) -> Result<Box<Self>> {
         dev_info!(device, "DRM device opened");
-
-        let vm = device.data().gpu.new_vm()?;
+        let gpu = &device.data().gpu;
+        let vm = gpu.new_vm()?;
+        let id = gpu.ids().file.next();
         let ualloc = Arc::try_new(Mutex::new(alloc::SimpleAllocator::new_with_range(
             device,
             &vm,
@@ -38,7 +40,9 @@ impl drm::file::DriverFile for File {
         )))?;
         let renderer = device.data().gpu.new_renderer(ualloc.clone())?;
 
+        dev_info!(device, "[File {}]: Opened successfully", id);
         Ok(Box::try_new(Self {
+            id,
             vm,
             ualloc,
             renderer,
@@ -52,7 +56,7 @@ impl File {
         data: &mut bindings::drm_asahi_submit,
         file: &DrmFile,
     ) -> Result<u32> {
-        dev_info!(device, "IOCTL: submit");
+        dev_info!(device, "[File {}]: IOCTL: submit", file.inner().id,);
         let inner = file.inner();
         inner
             .renderer
@@ -63,9 +67,9 @@ impl File {
     pub(crate) fn wait_bo(
         device: &AsahiDevice,
         _data: &mut bindings::drm_asahi_wait_bo,
-        _file: &DrmFile,
+        file: &DrmFile,
     ) -> Result<u32> {
-        dev_info!(device, "IOCTL: wait_bo");
+        dev_info!(device, "[File {}]: IOCTL: wait_bo", file.inner().id);
         Ok(0)
     }
 
@@ -74,7 +78,12 @@ impl File {
         data: &mut bindings::drm_asahi_create_bo,
         file: &DrmFile,
     ) -> Result<u32> {
-        dev_info!(device, "IOCTL: create_bo");
+        dev_info!(
+            device,
+            "[File {}]: IOCTL: create_bo size={:#x?}",
+            file.inner().id,
+            data.size
+        );
 
         let mut bo = gem::new_object(device, data.size as usize, data.flags)?;
 
@@ -101,6 +110,15 @@ impl File {
         let handle = bo.gem.create_handle(file)?;
         data.handle = handle;
 
+        dev_info!(
+            device,
+            "[File {}]: IOCTL: create_bo size={:#x} offset={:#x?} handle={:#x?}",
+            file.inner().id,
+            data.size,
+            data.offset,
+            data.handle
+        );
+
         Ok(0)
     }
 
@@ -109,7 +127,12 @@ impl File {
         data: &mut bindings::drm_asahi_mmap_bo,
         file: &DrmFile,
     ) -> Result<u32> {
-        dev_info!(device, "IOCTL: mmap_bo");
+        dev_info!(
+            device,
+            "[File {}]: IOCTL: mmap_bo handle={:#x?}",
+            file.inner().id,
+            data.handle
+        );
 
         let bo = gem::Object::lookup_handle(file, data.handle)?;
 
@@ -120,9 +143,9 @@ impl File {
     pub(crate) fn get_param(
         device: &AsahiDevice,
         _data: &mut bindings::drm_asahi_get_param,
-        _file: &DrmFile,
+        file: &DrmFile,
     ) -> Result<u32> {
-        dev_info!(device, "IOCTL: get_param");
+        dev_info!(device, "[File {}]: IOCTL: get_param", file.inner().id);
         Ok(0)
     }
 
@@ -131,7 +154,12 @@ impl File {
         data: &mut bindings::drm_asahi_get_bo_offset,
         file: &DrmFile,
     ) -> Result<u32> {
-        dev_info!(device, "IOCTL: get_bo_offset");
+        dev_info!(
+            device,
+            "[File {}]: IOCTL: get_bo_offset handle={:#x?}",
+            file.inner().id,
+            data.handle
+        );
 
         let mut bo = gem::ObjectRef::new(gem::Object::lookup_handle(file, data.handle)?);
 
@@ -148,10 +176,22 @@ impl File {
         if let Some(iova) = bo.iova() {
             // If we have a mapping, call it good.
             data.offset = iova as u64;
+            dev_info!(
+                device,
+                "[File {}]: IOCTL: get_bo_offset handle={:#x?} offset={:#x?}",
+                file.inner().id,
+                data.handle,
+                iova
+            );
             Ok(0)
         } else {
             // Otherwise return the error, or a generic one if something
             // went very wrong and we lost the mapping.
+            dev_info!(
+                device,
+                "[File {}]: IOCTL: get_bo_offset failed",
+                file.inner().id
+            );
             iova?;
             Err(EIO)
         }
