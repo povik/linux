@@ -13,6 +13,7 @@ use crate::{file, gem, gpu, hw, mmu};
 use kernel::macros::vtable;
 
 const ASC_CTL_SIZE: usize = 0x4000;
+const SGX_SIZE: usize = 0x1000000;
 const CPU_CONTROL: usize = 0x44;
 const CPU_RUN: u32 = 0x1 << 4; // BIT(4)
 
@@ -32,6 +33,7 @@ pub(crate) struct AsahiData {
 
 pub(crate) struct AsahiResources {
     asc: IoMem<ASC_CTL_SIZE>,
+    sgx: IoMem<SGX_SIZE>,
 }
 
 type DeviceData = device::Data<drv::Registration<AsahiDriver>, AsahiResources, AsahiData>;
@@ -41,6 +43,16 @@ pub(crate) struct AsahiDriver;
 pub(crate) type AsahiDevice = kernel::drm::device::Device<AsahiDriver>;
 
 impl AsahiDriver {
+    fn write32<const N: usize>(res: &mut IoMem<N>, off: usize, val: u32) {
+        res.writel_relaxed(val, off);
+    }
+
+    fn init_mmio(res: &mut AsahiResources) -> Result {
+        // Read: 0x0
+        Self::write32(&mut res.sgx, 0xd14000, 0x70001);
+        Ok(())
+    }
+
     fn start_cpu(res: &mut AsahiResources) -> Result {
         let val = res.asc.readl_relaxed(CPU_CONTROL);
 
@@ -95,11 +107,16 @@ impl platform::Driver for AsahiDriver {
         // TODO: add device abstraction to ioremap by name
         // SAFETY: AGX does DMA via the UAT IOMMU (mostly)
         let asc_res = unsafe { pdev.ioremap_resource(0)? };
+        let sgx_res = unsafe { pdev.ioremap_resource(1)? };
 
         let mut res = AsahiResources {
             // SAFETY: This device does DMA via the UAT IOMMU.
             asc: asc_res,
+            sgx: sgx_res,
         };
+
+        // Initialize misc MMIO
+        AsahiDriver::init_mmio(&mut res)?;
 
         // Start the coprocessor CPU, so UAT can initialize the handoff
         AsahiDriver::start_cpu(&mut res)?;
