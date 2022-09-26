@@ -127,6 +127,17 @@ struct VmInner {
 }
 
 impl VmInner {
+    fn asid_ttb(&self) -> Option<u64> {
+        if self.is_kernel {
+            Some(0x40 << TTBR_ASID_SHIFT)
+        } else {
+            // TODO: check if we lost the slot, don't really own the ASID in that case.
+            self.bind_token
+                .as_ref()
+                .map(|token| (token.last_slot() as u64) << TTBR_ASID_SHIFT)
+        }
+    }
+
     fn ttb(&self) -> u64 {
         self.page_table.cfg().ttbr
     }
@@ -264,7 +275,26 @@ impl Drop for Mapping {
         }
 
         unsafe {
-            asm!(".arch armv8.4-a\ndsb sy\ntlbi vmalle1os\ndsb sy\n");
+            asm!("dsb sy");
+        }
+
+        if let Some(asid) = owner.asid_ttb() {
+            let mut page = (0xfffffffffff & (self.iova() as u64 >> 12)) | asid;
+            let mut count = self.size() >> UAT_PGBIT;
+            while count != 0 {
+                unsafe {
+                    asm!(
+                        ".arch armv8.4-a",
+                        "tlbi vae1os, {x}",
+                        x = in(reg) page,
+                    );
+                }
+                count -= 1;
+                page += 4;
+            }
+            unsafe {
+                asm!("dsb sy");
+            }
         }
     }
 }
@@ -353,7 +383,7 @@ impl io_pgtable::FlushOps for Uat {
 
     fn tlb_flush_all(_data: <Self::Data as PointerWrapper>::Borrowed<'_>) {
         unsafe {
-            asm!(".arch armv8.4-a\ntlbi vmalle1os");
+            asm!(".arch armv8.4-a", "dsb sy", "tlbi vmalle1os", "dsb sy");
         }
     }
     fn tlb_flush_walk(
@@ -363,7 +393,7 @@ impl io_pgtable::FlushOps for Uat {
         _granule: usize,
     ) {
         unsafe {
-            asm!(".arch armv8.4-a\ntlbi vmalle1os");
+            asm!(".arch armv8.4-a", "dsb sy", "tlbi vmalle1os", "dsb sy");
         }
     }
     fn tlb_add_page(
@@ -371,9 +401,6 @@ impl io_pgtable::FlushOps for Uat {
         _iova: usize,
         _granule: usize,
     ) {
-        unsafe {
-            asm!(".arch armv8.4-a\ntlbi vmalle1os");
-        }
     }
 }
 
@@ -572,9 +599,14 @@ impl Drop for VmInner {
             core::mem::drop(uat_inner);
 
             if inval {
-                // TODO: invalidate ASID only
+                let asid = (idx as u64) << TTBR_ASID_SHIFT;
+
                 unsafe {
-                    asm!(".arch armv8.4-a\ntlbi vmalle1os");
+                    asm!(
+                        ".arch armv8.4-a",
+                        "tlbi aside1os, {x}",
+                        x = in(reg) asid,
+                    );
                 }
             }
         }
@@ -765,7 +797,7 @@ impl Drop for Uat {
         // Make sure we flush the TLBs
         fence(Ordering::SeqCst);
         unsafe {
-            asm!(".arch armv8.4-a\ntlbi vmalle1os");
+            asm!(".arch armv8.4-a", "tlbi vmalle1os");
         }
     }
 }
