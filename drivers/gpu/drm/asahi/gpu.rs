@@ -111,6 +111,11 @@ pub(crate) trait GpuManager: Send + Sync {
     ) -> Result<Box<dyn render::Renderer>>;
     fn submit_batch(&self, batch: workqueue::WorkQueueBatch<'_>) -> Result;
     fn ids(&self) -> &SequenceIDs;
+    fn kick_firmware(&self) -> Result;
+    fn invalidate_context(
+        &self,
+        context: &fw::types::GpuObject<fw::workqueue::GpuContextData>,
+    ) -> Result;
 }
 
 #[versions(AGX)]
@@ -313,6 +318,11 @@ impl GpuManager for GpuManager::ver {
     }
 
     fn init(&self) -> Result {
+        self.tx_channels
+            .lock()
+            .device_control
+            .send(&DeviceControlMsg::Initialize);
+
         let initdata = self.initdata.gpu_va().get();
         let mut guard = self.rtkit.lock();
         let rtk = guard.as_mut().unwrap();
@@ -321,12 +331,6 @@ impl GpuManager for GpuManager::ver {
         rtk.start_endpoint(EP_FIRMWARE)?;
         rtk.start_endpoint(EP_DOORBELL)?;
         rtk.send_message(EP_FIRMWARE, MSG_INIT | (initdata & INIT_DATA_MASK))?;
-
-        self.tx_channels
-            .lock()
-            .device_control
-            .send(&DeviceControlMsg::Initialize);
-
         rtk.send_message(EP_DOORBELL, MSG_TX_DOORBELL | DOORBELL_DEVCTRL)?;
         Ok(())
     }
@@ -391,6 +395,59 @@ impl GpuManager for GpuManager::ver {
             EP_DOORBELL,
             MSG_TX_DOORBELL | pipe_type as u64 | ((index as u64) << 2),
         )?;
+
+        Ok(())
+    }
+
+    fn kick_firmware(&self) -> Result {
+        let mut guard = self.rtkit.lock();
+        let rtk = guard.as_mut().unwrap();
+        rtk.send_message(EP_DOORBELL, MSG_TX_DOORBELL | DOORBELL_KICKFW)?;
+
+        Ok(())
+    }
+
+    fn invalidate_context(
+        &self,
+        context: &fw::types::GpuObject<fw::workqueue::GpuContextData>,
+    ) -> Result {
+        dev_info!(
+            self.dev,
+            "Invalidating GPU context @ {:?}\n",
+            context.weak_pointer()
+        );
+
+        let dc = context.with(|raw, _inner| DeviceControlMsg::DestroyContext {
+            unk_4: 0,
+            ctx_23: raw.unk_23,
+            unk_c: 0,
+            unk_10: 0,
+            ctx_0: raw.unk_0,
+            ctx_1: raw.unk_1,
+            ctx_4: raw.unk_4,
+            unk_18: 0,
+            gpu_context: context.weak_pointer(),
+        });
+
+        dev_info!(self.dev, "Context invalidation command: {:?}\n", &dc);
+
+        let mut txch = self.tx_channels.lock();
+
+        let token = txch.device_control.send(&dc);
+
+        {
+            let mut guard = self.rtkit.lock();
+            let rtk = guard.as_mut().unwrap();
+            rtk.send_message(EP_DOORBELL, MSG_TX_DOORBELL | DOORBELL_DEVCTRL)?;
+        }
+
+        txch.device_control.wait_for(token)?;
+
+        dev_info!(
+            self.dev,
+            "GPU context invalidated: {:?}\n",
+            context.weak_pointer()
+        );
 
         Ok(())
     }
