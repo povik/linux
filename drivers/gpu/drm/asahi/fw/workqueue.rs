@@ -40,22 +40,26 @@ pub(crate) mod raw {
     #[derive(Debug, Clone, Copy)]
     #[repr(C)]
     pub(crate) struct GpuContextData {
-        unk_0: u16,
-        unk_2: Array<0x3, u8>,
-        unk_5: u8,
+        pub(crate) unk_0: u8,
+        pub(crate) unk_1: u8,
+        unk_2: Array<0x2, u8>,
+        pub(crate) unk_4: u8,
+        pub(crate) unk_5: u8,
         unk_6: Array<0x18, u8>,
-        unk_1e: u8,
-        unk_1f: u8,
+        pub(crate) unk_1e: u8,
+        pub(crate) unk_1f: u8,
         unk_20: Array<0x3, u8>,
-        unk_23: u8,
+        pub(crate) unk_23: u8,
         unk_24: Array<0x1c, u8>,
     }
 
     impl Default for GpuContextData {
         fn default() -> Self {
             Self {
-                unk_0: 0xffff,
+                unk_0: 0xff,
+                unk_1: 0xff,
                 unk_2: Default::default(),
+                unk_4: 0,
                 unk_5: 1,
                 unk_6: Default::default(),
                 unk_1e: 0xff,
