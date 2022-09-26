@@ -837,3 +837,16 @@ impl Renderer for Renderer::ver {
         Ok(())
     }
 }
+
+#[versions(AGX)]
+impl Drop for Renderer::ver {
+    fn drop(&mut self) {
+        let dev = self.dev.data();
+        if dev.gpu.invalidate_context(&self.gpu_context).is_err() {
+            dev_err!(
+                self.dev,
+                "Renderer::drop: Failed to invalidate GPU context!\n"
+            );
+        }
+    }
+}
