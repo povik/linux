@@ -382,6 +382,11 @@ impl Renderer for Renderer::ver {
                     #[ver(V >= V13_0B4)]
                     unk3: 0x100000,
                 };
+
+                let unk_flag = false;
+                let aux_fb_unk: u32 = if unk_flag { 4 } else { 8 };
+                let unk_378: u32 = aux_fb_unk * 2;
+
                 Ok(place!(
                     ptr,
                     fw::fragment::raw::RunFragment::ver {
@@ -454,7 +459,7 @@ impl Renderer for Renderer::ver {
                             tile_blocks_x: 4 * tile_info.tile_blocks_x as u16,
                             unk_24: 0x0,
                             tile_counts: ((tile_info.tiles_y - 1) << 12) | (tile_info.tiles_x - 1),
-                            unk_2c: 0x8,
+                            unk_2c: aux_fb_unk,
                             depth_clear_val1: F32(cmdbuf.depth_clear_value),
                             stencil_clear_val1: cmdbuf.stencil_clear_value,
                             unk_35: 0x7, // clear flags? 2 : depth 4 : stencil?
@@ -502,7 +507,7 @@ impl Renderer for Renderer::ver {
                             stencil_buffer_ptr2: U64(cmdbuf.stencil_buffer),
                             stencil_buffer_ptr3: U64(cmdbuf.stencil_buffer),
                             unk_2f0: Default::default(),
-                            aux_fb_unk0: 0x8, // sometimes 4
+                            aux_fb_unk0: aux_fb_unk,
                             unk_30c: 0x0,
                             aux_fb_info: aux_fb_info,
                             unk_320_padding: Default::default(),
@@ -517,9 +522,9 @@ impl Renderer for Renderer::ver {
                             ),
                             depth_clear_val2: F32(cmdbuf.depth_clear_value),
                             stencil_clear_val2: cmdbuf.stencil_clear_value,
-                            unk_375: 3,
+                            unk_375: 3, // sometimes 1
                             unk_376: 0x0,
-                            unk_378: 0x10, //0x8
+                            unk_378: unk_378,
                             unk_37c: 0x0,
                             unk_380: U64(0x0),
                             unk_388: U64(0x0),
@@ -542,8 +547,8 @@ impl Renderer for Renderer::ver {
                             unk_1c: 0xffffffff,
                             seq_buffer: inner.scene.seq_buf_pointer(),
                             unk_28: U64(0x0), // fixed
-                            unk_30: 0,
-                            unk_34: 0,
+                            unk_30: unk_flag as u32,
+                            unk_34: unk_flag as u32,
                             unk_38: 0, // 1 for boot stuff?
                         },
                         unk_pointee: 0,
