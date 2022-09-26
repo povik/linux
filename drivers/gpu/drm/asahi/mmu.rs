@@ -123,6 +123,7 @@ struct VmInner {
     active_users: usize,
     binding: Option<slotalloc::Guard<SlotInner>>,
     bind_token: Option<slotalloc::SlotToken>,
+    id: u64,
 }
 
 impl VmInner {
@@ -377,7 +378,12 @@ impl io_pgtable::FlushOps for Uat {
 }
 
 impl Vm {
-    fn new(dev: device::Device, uat_inner: Arc<Mutex<UatInner>>, is_kernel: bool) -> Result<Vm> {
+    fn new(
+        dev: device::Device,
+        uat_inner: Arc<Mutex<UatInner>>,
+        is_kernel: bool,
+        id: u64,
+    ) -> Result<Vm> {
         let page_table = AppleUAT::new(
             &dev,
             io_pgtable::Config {
@@ -414,6 +420,7 @@ impl Vm {
                 binding: None,
                 bind_token: None,
                 active_users: 0,
+                id,
             }))?,
         })
     }
@@ -683,8 +690,8 @@ impl Uat {
         ))
     }
 
-    pub(crate) fn new_vm(&self) -> Result<Vm> {
-        Vm::new(self.dev.clone(), self.inner.clone(), false)
+    pub(crate) fn new_vm(&self, id: u64) -> Result<Vm> {
+        Vm::new(self.dev.clone(), self.inner.clone(), false, id)
     }
 
     pub(crate) fn new(dev: &dyn device::RawDevice) -> Result<Self> {
@@ -701,8 +708,8 @@ impl Uat {
             ttbs_rgn,
         }))?;
 
-        let kernel_lower_vm = Vm::new(device::Device::from_dev(dev), inner.clone(), false)?;
-        let kernel_vm = Vm::new(device::Device::from_dev(dev), inner.clone(), true)?;
+        let kernel_lower_vm = Vm::new(device::Device::from_dev(dev), inner.clone(), false, 1)?;
+        let kernel_vm = Vm::new(device::Device::from_dev(dev), inner.clone(), true, 0)?;
 
         let ttb0 = kernel_lower_vm.ttb();
         let ttb1 = kernel_vm.ttb();

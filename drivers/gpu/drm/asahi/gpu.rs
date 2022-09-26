@@ -340,7 +340,7 @@ impl GpuManager for GpuManager::ver {
     }
 
     fn new_vm(&self) -> Result<mmu::Vm> {
-        self.uat.new_vm()
+        self.uat.new_vm(self.ids.vm.next())
     }
 
     fn bind_vm(&self, vm: &mmu::Vm) -> Result<mmu::VmBind> {
