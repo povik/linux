@@ -92,25 +92,30 @@ impl File {
         let mut bo = gem::new_object(device, data.size as usize, data.flags)?;
 
         if data.flags & bindings::ASAHI_BO_PIPELINE != 0 {
+            let start = 0x11_00000000 + ((file.inner().id & 0x1f) << 27);
+            let end = start + 0x7ffffff;
             let iova = bo.map_into_range(
                 &file.inner().vm,
-                0x11_00000000,
-                0x11_ffffffff,
+                start,
+                end,
                 mmu::UAT_PGSZ as u64,
                 mmu::PROT_GPU_SHARED_RW,
             )?;
             data.offset = iova as u64 - 0x11_00000000;
         } else {
+            // DEBUG: use different VM ranges for different files
+            let start = 0x20_00000000 + ((file.inner().id & 0x1f) << 32);
+            let end = start + 0xffffffff;
+
             let iova = bo.map_into_range(
                 &file.inner().vm,
-                0x15_00000000,
-                0x1f_ffffffff,
+                start,
+                end,
                 mmu::UAT_PGSZ as u64,
                 mmu::PROT_GPU_SHARED_RW,
             )?;
             data.offset = iova as u64;
         }
-
         let handle = bo.gem.create_handle(file)?;
         data.handle = handle;
 
@@ -167,12 +172,15 @@ impl File {
 
         let mut bo = gem::ObjectRef::new(gem::Object::lookup_handle(file, data.handle)?);
 
+        let start = 0x20_80000000 + ((file.inner().id & 0x1f) << 32);
+        let end = start + 0xffffffff;
+
         // This can race other threads. Only one will win the map and the
         // others will return EBUSY.
         let iova = bo.map_into_range(
             &file.inner().vm,
-            0x15_00000000,
-            0x1f_ffffffff,
+            start,
+            end,
             mmu::UAT_PGSZ as u64,
             mmu::PROT_GPU_SHARED_RW,
         );
