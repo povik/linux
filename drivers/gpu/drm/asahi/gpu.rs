@@ -4,6 +4,7 @@
 
 use core::any::Any;
 use core::mem;
+use core::sync::atomic::{AtomicU64, Ordering};
 
 use kernel::{
     macros::versions,
@@ -59,6 +60,27 @@ struct TxChannels {
 
 const NUM_PIPES: usize = 4;
 
+#[derive(Default)]
+pub(crate) struct ID(AtomicU64);
+
+impl ID {
+    pub(crate) fn new(val: u64) -> ID {
+        ID(AtomicU64::new(val))
+    }
+
+    pub(crate) fn next(&self) -> u64 {
+        self.0.fetch_add(1, Ordering::Relaxed)
+    }
+}
+
+#[derive(Default)]
+pub(crate) struct SequenceIDs {
+    pub(crate) file: ID,
+    pub(crate) vm: ID,
+    pub(crate) buf: ID,
+    pub(crate) submission: ID,
+}
+
 #[versions(AGX)]
 pub(crate) struct GpuManager {
     dev: AsahiDevice,
@@ -73,6 +95,7 @@ pub(crate) struct GpuManager {
     pipes: PipeChannels,
     event_manager: Arc<event::EventManager>,
     buffer_mgr: buffer::BufferManager,
+    ids: SequenceIDs,
 }
 
 pub(crate) trait GpuManager: Send + Sync {
@@ -87,6 +110,7 @@ pub(crate) trait GpuManager: Send + Sync {
         ualloc: Arc<Mutex<alloc::SimpleAllocator>>,
     ) -> Result<Box<dyn render::Renderer>>;
     fn submit_batch(&self, batch: workqueue::WorkQueueBatch<'_>) -> Result;
+    fn ids(&self) -> &SequenceIDs;
 }
 
 #[versions(AGX)]
@@ -195,6 +219,10 @@ impl GpuManager::ver {
             event_manager,
             buffer_mgr: buffer::BufferManager::new()?,
             alloc: Mutex::new(alloc),
+            ids: SequenceIDs {
+                vm: ID::new(2), // IDs 0 and 1 are for the kernel
+                ..Default::default()
+            },
         })?;
 
         {
@@ -364,6 +392,10 @@ impl GpuManager for GpuManager::ver {
         )?;
 
         Ok(())
+    }
+
+    fn ids(&self) -> &SequenceIDs {
+        &self.ids
     }
 }
 
