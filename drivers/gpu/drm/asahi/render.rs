@@ -22,15 +22,16 @@ use kernel::user_ptr::UserSlicePtr;
 pub(crate) trait Renderer: Send + Sync {
     fn render(
         &self,
-        device: &AsahiDevice,
         vm: &mmu::Vm,
         ualloc: &Arc<Mutex<alloc::SimpleAllocator>>,
         cmd: &bindings::drm_asahi_submit,
+        id: u64,
     ) -> Result;
 }
 
 #[versions(AGX)]
 pub(crate) struct Renderer {
+    dev: AsahiDevice,
     wq_vtx: Arc<workqueue::WorkQueue>,
     wq_frag: Arc<workqueue::WorkQueue>,
     buffer: buffer::Buffer::ver,
@@ -57,6 +58,7 @@ struct TileInfo {
 #[versions(AGX)]
 impl Renderer::ver {
     pub(crate) fn new(
+        dev: &AsahiDevice,
         alloc: &mut gpu::KernelAllocators,
         ualloc: Arc<Mutex<alloc::SimpleAllocator>>,
         event_manager: Arc<event::EventManager>,
@@ -97,6 +99,7 @@ impl Renderer::ver {
             )?)?;
 
         Ok(Renderer::ver {
+            dev: dev.clone(),
             wq_vtx: workqueue::WorkQueue::new(
                 alloc,
                 event_manager.clone(),
@@ -165,17 +168,16 @@ impl Renderer::ver {
 impl Renderer for Renderer::ver {
     fn render(
         &self,
-        device: &AsahiDevice,
         vm: &mmu::Vm,
         ualloc: &Arc<Mutex<alloc::SimpleAllocator>>,
         cmd: &bindings::drm_asahi_submit,
+        id: u64,
     ) -> Result {
-        let dev = device.data();
+        let dev = self.dev.data();
         let gpu = match dev.gpu.as_any().downcast_ref::<gpu::GpuManager::ver>() {
             Some(gpu) => gpu,
             None => panic!("GpuManager mismatched with Renderer!"),
         };
-
         let notifier = &self.notifier;
 
         self.buffer.increment();
@@ -183,7 +185,7 @@ impl Renderer for Renderer::ver {
         let mut alloc = gpu.alloc();
         let kalloc = &mut *alloc;
 
-        dev_info!(device, "render!");
+        dev_info!(self.dev, "[Submission {}] Render!\n", id);
 
         let mut cmdbuf_reader = unsafe {
             UserSlicePtr::new(
@@ -211,11 +213,39 @@ impl Renderer for Renderer::ver {
 
         let next_vtx = batches_vtx.event_value().next();
         let next_frag = batches_frag.event_value().next();
+        dev_info!(
+            self.dev,
+            "[Submission {}] Vert event #{} {:?} -> {:?}\n",
+            id,
+            batches_vtx.event().slot(),
+            batches_vtx.event_value(),
+            next_vtx
+        );
 
         let vm_bind = gpu.bind_vm(vm)?;
 
+        dev_info!(
+            self.dev,
+            "[Submission {}] VM slot = {}\n",
+            id,
+            vm_bind.slot()
+        );
+
         let uuid_3d = cmdbuf.cmd_3d_id;
         let uuid_ta = cmdbuf.cmd_ta_id;
+
+        dev_info!(
+            self.dev,
+            "[Submission {}] Vert UUID = {:#x?}\n",
+            id,
+            uuid_ta
+        );
+        dev_info!(
+            self.dev,
+            "[Submission {}] Frag UUID = {:#x?}\n",
+            id,
+            uuid_3d
+        );
 
         let barrier: GpuObject<fw::workqueue::Barrier> = kalloc.private.new_inplace(
             Default::default(),
@@ -781,21 +811,28 @@ impl Renderer for Renderer::ver {
         notifier.threshold.with(|raw, _inner| {
             raw.increment();
         });
-        pr_info!("Add!");
         batches_vtx.add(Box::try_new(vtx)?)?;
-        pr_info!("Commit!");
         let batch_vtx = batches_vtx.commit()?;
 
-        pr_info!("Submit!");
+        dev_info!(self.dev, "[Submission {}] Submit frag!\n", id);
         gpu.submit_batch(batches_frag)?;
+        dev_info!(self.dev, "[Submission {}] Submit vert!\n", id);
         gpu.submit_batch(batches_vtx)?;
 
-        pr_info!("Waiting for vertex batch...");
+        dev_info!(
+            self.dev,
+            "[Submission {}] Waiting for vertex batch...\n",
+            id
+        );
         batch_vtx.wait();
-        pr_info!("Vertex batch completed!");
-        pr_info!("Waiting for fragment batch...");
+        dev_info!(self.dev, "[Submission {}] Vertex batch completed!\n", id);
+        dev_info!(
+            self.dev,
+            "[Submission {}] Waiting for fragment batch...\n",
+            id
+        );
         batch_frag.wait();
-        pr_info!("Fragment batch completed!");
+        dev_info!(self.dev, "[Submission {}] Fragment batch completed!\n", id);
 
         Ok(())
     }

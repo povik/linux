@@ -56,11 +56,15 @@ impl File {
         data: &mut bindings::drm_asahi_submit,
         file: &DrmFile,
     ) -> Result<u32> {
-        dev_info!(device, "[File {}]: IOCTL: submit", file.inner().id,);
+        let id = device.data().gpu.ids().submission.next();
+        dev_info!(
+            device,
+            "[File {}]: IOCTL: submit (submission ID: {})",
+            file.inner().id,
+            id
+        );
         let inner = file.inner();
-        inner
-            .renderer
-            .render(device, &inner.vm, &inner.ualloc, data)?;
+        inner.renderer.render(&inner.vm, &inner.ualloc, data, id)?;
         Ok(0)
     }
 

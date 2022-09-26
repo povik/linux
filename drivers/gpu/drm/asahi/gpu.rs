@@ -353,6 +353,7 @@ impl GpuManager for GpuManager::ver {
     ) -> Result<Box<dyn render::Renderer>> {
         let mut kalloc = self.alloc();
         Ok(Box::try_new(render::Renderer::ver::new(
+            &self.dev,
             &mut *kalloc,
             ualloc,
             self.event_manager.clone(),
