@@ -134,7 +134,7 @@ pub(crate) struct RunWorkQueueMsg {
 
 pub(crate) type PipeMsg = RunWorkQueueMsg;
 
-pub(crate) const DEVICECONTROL_SZ: usize = 0x30;
+pub(crate) const DEVICECONTROL_SZ: usize = 0x2c;
 
 // TODO: clean up when arbitrary_enum_discriminant is stable
 // https://github.com/rust-lang/rust/issues/60553
@@ -165,7 +165,19 @@ pub(crate) enum DeviceControlMsg {
     Unk14(Array<DEVICECONTROL_SZ, u8>),
     Unk15(Array<DEVICECONTROL_SZ, u8>),
     Unk16(Array<DEVICECONTROL_SZ, u8>),
-    Unk17(Array<DEVICECONTROL_SZ, u8>),
+    DestroyContext {
+        unk_4: u32,
+        ctx_23: u8,
+        // padding 3 bytes
+        unk_c: u32,
+        unk_10: u32,
+        ctx_0: u8,
+        ctx_1: u8,
+        ctx_4: u8,
+        // padding 1 byte
+        unk_18: u32,
+        gpu_context: GpuWeakPointer<super::workqueue::GpuContextData>,
+    },
     Unk18(Array<DEVICECONTROL_SZ, u8>),
     Initialize,
 }
