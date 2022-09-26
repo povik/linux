@@ -79,7 +79,7 @@ where
         })
     }
 
-    pub(crate) fn put(&mut self, msg: &U) {
+    pub(crate) fn put(&mut self, msg: &U) -> u32 {
         self.ring.state.with(|raw, _inner| {
             let next_wptr = (self.wptr + 1) % self.count;
             let mut rptr = T::rptr(raw);
@@ -98,6 +98,19 @@ where
             self.ring.ring[self.wptr as usize] = *msg;
             T::set_wptr(raw, next_wptr);
             self.wptr = next_wptr;
+        });
+        self.wptr
+    }
+
+    pub(crate) fn wait_for(&mut self, wptr: u32, timeout_ms: usize) -> Result {
+        self.ring.state.with(|raw, _inner| {
+            for _i in 0..timeout_ms {
+                if T::rptr(raw) == wptr {
+                    return Ok(());
+                }
+                coarse_sleep(Duration::from_millis(1));
+            }
+            Err(ETIMEDOUT)
         })
     }
 }
@@ -107,6 +120,8 @@ pub(crate) struct DeviceControlChannel {
 }
 
 impl DeviceControlChannel {
+    const COMMAND_TIMEOUT_MS: usize = 100;
+
     pub(crate) fn new(alloc: &mut gpu::KernelAllocators) -> Result<DeviceControlChannel> {
         Ok(DeviceControlChannel {
             ch: TxChannel::<ChannelState, DeviceControlMsg>::new(alloc, 0x100)?,
@@ -117,8 +132,12 @@ impl DeviceControlChannel {
         self.ch.ring.to_raw()
     }
 
-    pub(crate) fn send(&mut self, msg: &DeviceControlMsg) {
-        self.ch.put(msg);
+    pub(crate) fn send(&mut self, msg: &DeviceControlMsg) -> u32 {
+        self.ch.put(msg)
+    }
+
+    pub(crate) fn wait_for(&mut self, wptr: u32) -> Result {
+        self.ch.wait_for(wptr, Self::COMMAND_TIMEOUT_MS)
     }
 }
 
