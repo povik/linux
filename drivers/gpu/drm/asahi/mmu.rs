@@ -117,7 +117,7 @@ struct VmInner {
     is_kernel: bool,
     min_va: usize,
     max_va: usize,
-    page_table: IOPagetable<Uat, AppleUATCfg>,
+    page_table: AppleUAT<Uat>,
     mm: mm::Allocator<MappingInner>,
     uat_inner: Arc<Mutex<UatInner>>,
     active_users: usize,
@@ -162,13 +162,10 @@ impl VmInner {
     ) -> Result<usize> {
         let mut left = pgcount;
         while left > 0 {
-            let mapped = self.page_table.map_pages(
-                self.map_iova(iova, pgsize * pgcount)?,
-                paddr,
-                pgsize,
-                left,
-                prot,
-            )?;
+            let mapped_iova = self.map_iova(iova, pgsize * pgcount)?;
+            let mapped = self
+                .page_table
+                .map_pages(mapped_iova, paddr, pgsize, left, prot)?;
             assert!(mapped <= left * pgsize);
 
             left -= mapped / pgsize;
@@ -181,11 +178,8 @@ impl VmInner {
     fn unmap_pages(&mut self, mut iova: usize, pgsize: usize, pgcount: usize) -> Result<usize> {
         let mut left = pgcount;
         while left > 0 {
-            let unmapped = self.page_table.unmap_pages(
-                self.map_iova(iova, pgsize * pgcount)?,
-                pgsize,
-                pgcount,
-            );
+            let mapped_iova = self.map_iova(iova, pgsize * pgcount)?;
+            let unmapped = self.page_table.unmap_pages(mapped_iova, pgsize, pgcount);
             assert!(unmapped <= left * pgsize);
 
             left -= unmapped / pgsize;
