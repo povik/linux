@@ -45,7 +45,7 @@ pub trait Operations {
         _endpoint: u8,
         _message: u64,
     ) -> bool {
-        return false;
+        false
     }
 
     fn shmem_alloc(
@@ -178,7 +178,7 @@ impl<T: Operations> RTKit<T> {
         },
     };
 
-    pub unsafe fn new(
+    pub fn new(
         dev: &dyn device::RawDevice,
         mbox_name: Option<&'static CStr>,
         mbox_idx: usize,
