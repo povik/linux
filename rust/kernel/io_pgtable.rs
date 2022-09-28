@@ -14,6 +14,7 @@ use crate::{
 
 use core::marker::PhantomData;
 use core::mem;
+use core::ops::{Deref, DerefMut};
 
 pub mod prot {
     pub const READ: u32 = bindings::IOMMU_READ;
@@ -234,12 +235,27 @@ macro_rules! iopt_type {
         pub struct $type<T: FlushOps>(IOPagetable<T, $cfg>);
 
         impl<T: FlushOps> $type<T> {
-            pub fn new(
-                dev: &dyn device::RawDevice,
-                config: Config,
-                data: T::Data,
-            ) -> Result<IOPagetable<T, $cfg>> {
-                IOPagetable::<T, $cfg>::new_fmt(dev, bindings::$fmt, config, data)
+            pub fn new(dev: &dyn device::RawDevice, config: Config, data: T::Data) -> Result<Self> {
+                Ok(Self(IOPagetable::<T, $cfg>::new_fmt(
+                    dev,
+                    bindings::$fmt,
+                    config,
+                    data,
+                )?))
+            }
+        }
+
+        impl<T: FlushOps> Deref for $type<T> {
+            type Target = IOPagetable<T, $cfg>;
+
+            fn deref(&self) -> &Self::Target {
+                &self.0
+            }
+        }
+
+        impl<T: FlushOps> DerefMut for $type<T> {
+            fn deref_mut(&mut self) -> &mut Self::Target {
+                &mut self.0
             }
         }
     };
