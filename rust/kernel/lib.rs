@@ -52,6 +52,7 @@ pub mod cred;
 pub mod delay;
 pub mod device;
 pub mod driver;
+#[cfg(CONFIG_DRM)]
 pub mod drm;
 pub mod error;
 pub mod file;
