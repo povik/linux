@@ -270,9 +270,17 @@ impl Drop for Mapping {
         }
 
         unsafe {
-            asm!("dsb sy");
+            asm!(
+                ".arch armv8.4-a",
+                "dsb sy",
+                "tlbi vmalle1os",
+                "dsb sy",
+                "isb"
+            );
+            //asm!("dsb sy");
         }
 
+        /*
         if let Some(asid) = owner.asid_ttb() {
             let mut page = (0xfffffffffff & (self.iova() as u64 >> 12)) | asid;
             let mut count = self.size() >> UAT_PGBIT;
@@ -291,6 +299,7 @@ impl Drop for Mapping {
                 asm!("dsb sy");
             }
         }
+        */
     }
 }
 
@@ -378,7 +387,13 @@ impl io_pgtable::FlushOps for Uat {
 
     fn tlb_flush_all(_data: <Self::Data as PointerWrapper>::Borrowed<'_>) {
         unsafe {
-            asm!(".arch armv8.4-a", "dsb sy", "tlbi vmalle1os", "dsb sy");
+            asm!(
+                ".arch armv8.4-a",
+                "dsb sy",
+                "tlbi vmalle1os",
+                "dsb sy",
+                "isb"
+            );
         }
     }
     fn tlb_flush_walk(
@@ -388,7 +403,13 @@ impl io_pgtable::FlushOps for Uat {
         _granule: usize,
     ) {
         unsafe {
-            asm!(".arch armv8.4-a", "dsb sy", "tlbi vmalle1os", "dsb sy");
+            asm!(
+                ".arch armv8.4-a",
+                "dsb sy",
+                "tlbi vmalle1os",
+                "dsb sy",
+                "isb"
+            );
         }
     }
     fn tlb_add_page(
@@ -536,8 +557,17 @@ impl Vm {
         }
 
         unsafe {
-            asm!(".arch armv8.4-a\ndsb sy\n");
+            asm!(
+                ".arch armv8.4-a",
+                "dsb sy",
+                "tlbi vmalle1os",
+                "dsb sy",
+                "isb"
+            );
         }
+        //         unsafe {
+        //             asm!(".arch armv8.4-a\ndsb sy\n");
+        //         }
 
         Ok(Mapping(node))
     }
@@ -617,6 +647,16 @@ impl Drop for VmInner {
                         x = in(reg) asid,
                     );
                 }
+            }
+
+            unsafe {
+                asm!(
+                    ".arch armv8.4-a",
+                    "dsb sy",
+                    "tlbi vmalle1os",
+                    "dsb sy",
+                    "isb"
+                );
             }
         }
     }
@@ -717,6 +757,16 @@ impl Uat {
                 ttbs[idx].ttb0.store(ttb, Ordering::Relaxed);
                 ttbs[idx].ttb1.store(0, Ordering::Relaxed);
                 uat_inner.handoff().unlock();
+                core::mem::drop(uat_inner);
+
+                let asid = (idx as u64) << TTBR_ASID_SHIFT;
+                unsafe {
+                    asm!(
+                        ".arch armv8.4-a",
+                        "tlbi aside1os, {x}",
+                        x = in(reg) asid,
+                    );
+                }
             }
 
             inner.bind_token = Some(slot.token());
@@ -806,7 +856,13 @@ impl Drop for Uat {
         // Make sure we flush the TLBs
         fence(Ordering::SeqCst);
         unsafe {
-            asm!(".arch armv8.4-a", "tlbi vmalle1os");
+            asm!(
+                ".arch armv8.4-a",
+                "dsb sy",
+                "tlbi vmalle1os",
+                "dsb sy",
+                "isb"
+            );
         }
     }
 }
