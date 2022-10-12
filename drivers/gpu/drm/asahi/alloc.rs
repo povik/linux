@@ -154,14 +154,14 @@ impl SimpleAllocator {
         let align = self.min_align.max(mem::align_of::<T::Raw<'static>>());
         let offset = (size_aligned - size) & !(align - 1);
 
-        dev_info!(
-            &self.dev,
-            "Allocator::new: size={:#x} size_al={:#x} al={:#x} off={:#x}",
-            size,
-            size_aligned,
-            align,
-            offset
-        );
+        //         dev_info!(
+        //             &self.dev,
+        //             "Allocator::new: size={:#x} size_al={:#x} al={:#x} off={:#x}",
+        //             size,
+        //             size_aligned,
+        //             align,
+        //             offset
+        //         );
 
         let mut obj = crate::gem::new_kernel_object(&self.dev, size_aligned)?;
         let p = obj.vmap()?.as_mut_ptr() as *mut u8;
@@ -176,14 +176,14 @@ impl SimpleAllocator {
         let ptr = unsafe { p.add(offset) } as *mut T;
         let gpu_ptr = (iova + offset) as u64;
 
-        dev_info!(
-            &self.dev,
-            "Allocator::new -> {:#?} / {:#?} | {:#x} / {:#x}",
-            p,
-            ptr,
-            iova,
-            gpu_ptr
-        );
+        //         dev_info!(
+        //             &self.dev,
+        //             "Allocator::new -> {:#?} / {:#?} | {:#x} / {:#x}",
+        //             p,
+        //             ptr,
+        //             iova,
+        //             gpu_ptr
+        //         );
 
         Ok(SimpleAllocation {
             dev: self.dev.clone(),
@@ -257,16 +257,16 @@ impl Allocator for SimpleAllocator {
         let align = self.min_align.max(mem::align_of::<T>());
         let offset = (size_aligned - size) & !(align - 1);
 
-        dev_info!(
-            &self.dev,
-            "Allocator::array_empty: size={:#x} size_al={:#x} al={:#x} off={:#x} ({:#x} * {:#x})",
-            size,
-            size_aligned,
-            align,
-            offset,
-            mem::size_of::<T>(),
-            count
-        );
+        //         dev_info!(
+        //             &self.dev,
+        //             "Allocator::array_empty: size={:#x} size_al={:#x} al={:#x} off={:#x} ({:#x} * {:#x})",
+        //             size,
+        //             size_aligned,
+        //             align,
+        //             offset,
+        //             mem::size_of::<T>(),
+        //             count
+        //         );
 
         let mut obj = crate::gem::new_kernel_object(&self.dev, size_aligned)?;
         let p = obj.vmap()?.as_mut_ptr() as *mut u8;
@@ -280,14 +280,14 @@ impl Allocator for SimpleAllocator {
         )?;
         let gpu_ptr = (iova + offset) as u64;
 
-        dev_info!(
-            &self.dev,
-            "Allocator::array_empty -> {:#?} / {:#?} | {:#x} / {:#x}",
-            p,
-            ptr,
-            iova,
-            gpu_ptr
-        );
+        //         dev_info!(
+        //             &self.dev,
+        //             "Allocator::array_empty -> {:#?} / {:#?} | {:#x} / {:#x}",
+        //             p,
+        //             ptr,
+        //             iova,
+        //             gpu_ptr
+        //         );
 
         let alloc = SimpleAllocation {
             dev: self.dev.clone(),
