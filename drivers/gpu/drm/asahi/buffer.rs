@@ -159,7 +159,7 @@ impl Buffer::ver {
             ))
         })?;
 
-        let tvb_something = ualloc.lock().array_empty(0x10000)?;
+        let tvb_something = ualloc.lock().array_empty(0x20000)?;
         let kernel_buffer = alloc.private.array_empty(0x40)?;
 
         Ok(Buffer::ver {
