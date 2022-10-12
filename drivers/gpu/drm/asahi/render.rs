@@ -38,6 +38,7 @@ pub(crate) struct Renderer {
     gpu_context: GpuObject<fw::workqueue::GpuContextData>,
     notifier_list: GpuObject<fw::event::NotifierList>,
     notifier: Arc<GpuObject<fw::event::Notifier>>,
+    id: u64,
 }
 
 #[versions(AGX)]
@@ -63,6 +64,7 @@ impl Renderer::ver {
         ualloc: Arc<Mutex<alloc::SimpleAllocator>>,
         event_manager: Arc<event::EventManager>,
         mgr: &buffer::BufferManager,
+        id: u64,
     ) -> Result<Renderer::ver> {
         let mut buffer = buffer::Buffer::ver::new(alloc, ualloc, mgr)?;
 
@@ -89,7 +91,7 @@ impl Renderer::ver {
                         ptr,
                         fw::event::raw::Notifier {
                             threshold: inner.threshold.gpu_pointer(),
-                            generation: 0,
+                            generation: id as u32,
                             cur_count: 0,
                             unk_10: 0x50,
                             state: Default::default()
@@ -106,6 +108,7 @@ impl Renderer::ver {
                 gpu_context.weak_pointer(),
                 notifier_list.weak_pointer(),
                 channel::PipeType::Vertex,
+                id,
             )?,
             wq_frag: workqueue::WorkQueue::new(
                 alloc,
@@ -113,11 +116,13 @@ impl Renderer::ver {
                 gpu_context.weak_pointer(),
                 notifier_list.weak_pointer(),
                 channel::PipeType::Fragment,
+                id,
             )?,
             buffer,
             gpu_context,
             notifier_list,
             notifier,
+            id,
         })
     }
 
@@ -305,8 +310,8 @@ impl Renderer for Renderer::ver {
                     work_queue: self.wq_frag.info_pointer(),
                     work_item: ptr,
                     vm_slot: vm_bind.slot(),
-                    unk_50: 0x1,
-                    event_generation: 0,
+                    unk_50: 0x1, // fixed
+                    event_generation: self.id as u32,
                     buffer_slot: scene.slot(),
                     unk_5c: 0,
                     prev_stamp_value: U64(batches_frag.event_value().counter() as u64),
@@ -632,8 +637,8 @@ impl Renderer for Renderer::ver {
                     stats,
                     work_queue: self.wq_vtx.info_pointer(),
                     vm_slot: vm_bind.slot(),
-                    unk_38: 1,
-                    event_generation: 0, // TODO: should match Notifier
+                    unk_38: 1, // fixed
+                    event_generation: self.id as u32,
                     buffer_slot: scene.slot(),
                     unk_44: 0,
                     unk_48: U64(0), //　or 1

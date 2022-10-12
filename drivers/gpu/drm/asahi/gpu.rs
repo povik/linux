@@ -60,7 +60,6 @@ struct TxChannels {
 
 const NUM_PIPES: usize = 4;
 
-#[derive(Default)]
 pub(crate) struct ID(AtomicU64);
 
 impl ID {
@@ -73,12 +72,19 @@ impl ID {
     }
 }
 
+impl Default for ID {
+    fn default() -> Self {
+        ID(AtomicU64::new(2))
+    }
+}
+
 #[derive(Default)]
 pub(crate) struct SequenceIDs {
     pub(crate) file: ID,
     pub(crate) vm: ID,
     pub(crate) buf: ID,
     pub(crate) submission: ID,
+    pub(crate) renderer: ID,
 }
 
 #[versions(AGX)]
@@ -224,10 +230,7 @@ impl GpuManager::ver {
             event_manager,
             buffer_mgr: buffer::BufferManager::new()?,
             alloc: Mutex::new(alloc),
-            ids: SequenceIDs {
-                vm: ID::new(2), // IDs 0 and 1 are for the kernel
-                ..Default::default()
-            },
+            ids: Default::default(),
         })?;
 
         {
@@ -356,12 +359,14 @@ impl GpuManager for GpuManager::ver {
         ualloc: Arc<Mutex<alloc::SimpleAllocator>>,
     ) -> Result<Box<dyn render::Renderer>> {
         let mut kalloc = self.alloc();
+        let id = self.ids.renderer.next();
         Ok(Box::try_new(render::Renderer::ver::new(
             &self.dev,
             &mut *kalloc,
             ualloc,
             self.event_manager.clone(),
             &self.buffer_mgr,
+            id,
         )?)?)
     }
 
