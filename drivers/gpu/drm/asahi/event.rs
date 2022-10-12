@@ -131,7 +131,6 @@ impl EventManager {
         token: Option<Token>,
         owner: Arc<workqueue::WorkQueue>,
     ) -> Result<Event> {
-        pr_info!("EventManager::get");
         let ev = self.alloc.get_inner(token, |inner, ev| {
             pr_info!(
                 "EventManager: Registered owner {:p} on slot {}",
