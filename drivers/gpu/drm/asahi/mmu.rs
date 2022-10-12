@@ -162,7 +162,7 @@ impl VmInner {
     ) -> Result<usize> {
         let mut left = pgcount;
         while left > 0 {
-            let mapped_iova = self.map_iova(iova, pgsize * pgcount)?;
+            let mapped_iova = self.map_iova(iova, pgsize * left)?;
             let mapped = self
                 .page_table
                 .map_pages(mapped_iova, paddr, pgsize, left, prot)?;
@@ -178,8 +178,8 @@ impl VmInner {
     fn unmap_pages(&mut self, mut iova: usize, pgsize: usize, pgcount: usize) -> Result<usize> {
         let mut left = pgcount;
         while left > 0 {
-            let mapped_iova = self.map_iova(iova, pgsize * pgcount)?;
-            let unmapped = self.page_table.unmap_pages(mapped_iova, pgsize, pgcount);
+            let mapped_iova = self.map_iova(iova, pgsize * left)?;
+            let unmapped = self.page_table.unmap_pages(mapped_iova, pgsize, left);
             assert!(unmapped <= left * pgsize);
 
             left -= unmapped / pgsize;
