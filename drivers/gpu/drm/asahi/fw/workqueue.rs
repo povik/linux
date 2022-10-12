@@ -17,7 +17,7 @@ pub(crate) enum CommandType {
     RunBlitter = 2,
     RunCompute = 3,
     Barrier = 4,
-    InitBufferManager = 6,
+    InitBuffer = 6,
 }
 
 pub(crate) trait Command: GpuStruct {}

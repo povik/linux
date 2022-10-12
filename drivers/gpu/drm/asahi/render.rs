@@ -589,6 +589,30 @@ impl Renderer for Renderer::ver {
             },
         )?;
 
+        if scene.rebind() {
+            let bind_buffer = kalloc.private.new_inplace(
+                fw::buffer::InitBuffer::ver {
+                    scene: scene.clone(),
+                },
+                |_inner, ptr: *mut MaybeUninit<fw::buffer::raw::InitBuffer::ver>| {
+                    Ok(place!(
+                        ptr,
+                        fw::buffer::raw::InitBuffer::ver {
+                            tag: fw::workqueue::CommandType::InitBuffer,
+                            vm_slot: vm_bind.slot(),
+                            buffer_slot: scene.slot(),
+                            unk_c: 0,
+                            block_count: self.buffer.block_count(),
+                            buffer: scene.buffer_pointer(),
+                            stamp_value: next_vtx,
+                        }
+                    ))
+                },
+            )?;
+
+            batches_vtx.add(Box::try_new(bind_buffer)?)?;
+        }
+
         let vtx = GpuObject::new_prealloc(
             kalloc.private.prealloc()?,
             |ptr: GpuWeakPointer<fw::vertex::RunVertex::ver>| {

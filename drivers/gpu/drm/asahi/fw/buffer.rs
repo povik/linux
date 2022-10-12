@@ -108,12 +108,12 @@ pub(crate) mod raw {
     #[repr(C)]
     pub(crate) struct InitBuffer {
         pub(crate) tag: workqueue::CommandType,
-        pub(crate) context_id: u32,
-        pub(crate) buffer_mgr_slot: u32,
+        pub(crate) vm_slot: u32,
+        pub(crate) buffer_slot: u32,
         pub(crate) unk_c: u32,
-        pub(crate) unk_10: u32,
-        pub(crate) buffer_mgr: GpuWeakPointer<super::Info::ver>,
-        pub(crate) stamp_value: u32,
+        pub(crate) block_count: u32,
+        pub(crate) buffer: GpuWeakPointer<super::Info::ver>,
+        pub(crate) stamp_value: EventValue,
     }
 }
 
@@ -157,7 +157,7 @@ impl GpuStruct for Scene::ver {
 
 #[versions(AGX)]
 pub(crate) struct InitBuffer {
-    pub(crate) buffer: Arc<Mutex<crate::buffer::BufferInner::ver>>,
+    pub(crate) scene: Arc<crate::buffer::Scene::ver>,
 }
 
 #[versions(AGX)]
