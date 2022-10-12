@@ -52,6 +52,10 @@ pub(crate) struct Scene {
 
 #[versions(AGX)]
 impl Scene::ver {
+    pub(crate) fn rebind(&self) -> bool {
+        self.rebind
+    }
+
     pub(crate) fn slot(&self) -> u32 {
         self.slot
     }
@@ -172,6 +176,10 @@ impl Buffer::ver {
                 kernel_buffer,
             }))?,
         })
+    }
+
+    pub(crate) fn block_count(&self) -> u32 {
+        self.inner.lock().blocks.len() as u32
     }
 
     pub(crate) fn add_blocks(&mut self, count: usize) -> Result {
