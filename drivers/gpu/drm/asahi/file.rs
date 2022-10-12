@@ -196,7 +196,7 @@ impl File {
             mmu::PROT_GPU_SHARED_RW,
         );
 
-        if let Some(iova) = bo.iova() {
+        if let Some(iova) = bo.iova(file.inner().vm.id()) {
             // If we have a mapping, call it good.
             data.offset = iova as u64;
             dev_info!(

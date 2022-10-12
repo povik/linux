@@ -24,7 +24,7 @@ use crate::driver::AsahiDevice;
 pub(crate) struct DriverObject {
     kernel: bool,
     flags: u32,
-    mapping: Mutex<Option<crate::mmu::Mapping>>,
+    mappings: Mutex<Vec<(u64, crate::mmu::Mapping)>>,
 }
 
 pub(crate) type Object = shmem::Object<DriverObject>;
@@ -46,22 +46,32 @@ impl ObjectRef {
         Ok(self.vmap.as_mut().unwrap())
     }
 
-    pub(crate) fn iova(&self) -> Option<usize> {
-        Some(self.gem.mapping.lock().as_ref()?.iova())
+    pub(crate) fn iova(&self, vm_id: u64) -> Option<usize> {
+        let mut mappings = self.gem.mappings.lock();
+        for (mapped_id, mapping) in mappings.iter() {
+            if *mapped_id == vm_id {
+                return Some(mapping.iova());
+            }
+        }
+
+        None
     }
 
     pub(crate) fn map_into(&mut self, vm: &crate::mmu::Vm) -> Result<usize> {
-        let mut mapping = self.gem.mapping.lock();
-        if mapping.is_some() {
-            Err(EBUSY)
-        } else {
-            let sgt = self.gem.sg_table()?;
-            let new_mapping = vm.map(self.gem.size(), &mut sgt.iter())?;
-
-            let iova = new_mapping.iova();
-            *mapping = Some(new_mapping);
-            Ok(iova)
+        let vm_id = vm.id();
+        let mut mappings = self.gem.mappings.lock();
+        for (mapped_id, mapping) in mappings.iter() {
+            if *mapped_id == vm_id {
+                return Err(EBUSY);
+            }
         }
+
+        let sgt = self.gem.sg_table()?;
+        let new_mapping = vm.map(self.gem.size(), &mut sgt.iter())?;
+
+        let iova = new_mapping.iova();
+        mappings.try_push((vm_id, new_mapping))?;
+        Ok(iova)
     }
 
     pub(crate) fn map_into_range(
@@ -72,24 +82,27 @@ impl ObjectRef {
         alignment: u64,
         prot: u32,
     ) -> Result<usize> {
-        let mut mapping = self.gem.mapping.lock();
-        if mapping.is_some() {
-            Err(EBUSY)
-        } else {
-            let sgt = self.gem.sg_table()?;
-            let new_mapping = vm.map_in_range(
-                self.gem.size(),
-                &mut sgt.iter(),
-                alignment,
-                start,
-                end,
-                prot,
-            )?;
-
-            let iova = new_mapping.iova();
-            *mapping = Some(new_mapping);
-            Ok(iova)
+        let vm_id = vm.id();
+        let mut mappings = self.gem.mappings.lock();
+        for (mapped_id, mapping) in mappings.iter() {
+            if *mapped_id == vm_id {
+                return Err(EBUSY);
+            }
         }
+
+        let sgt = self.gem.sg_table()?;
+        let new_mapping = vm.map_in_range(
+            self.gem.size(),
+            &mut sgt.iter(),
+            alignment,
+            start,
+            end,
+            prot,
+        )?;
+
+        let iova = new_mapping.iova();
+        mappings.try_push((vm_id, new_mapping))?;
+        Ok(iova)
     }
 }
 
@@ -118,7 +131,7 @@ impl gem::BaseDriverObject<Object> for DriverObject {
         Ok(DriverObject {
             kernel: false,
             flags: 0,
-            mapping: Mutex::new(None),
+            mappings: Mutex::new(Vec::new()),
         })
     }
 }
@@ -135,7 +148,7 @@ impl shmem::DriverObject for DriverObject {
 
 impl rtkit::Buffer for ObjectRef {
     fn iova(&self) -> Option<usize> {
-        self.iova()
+        self.iova(0)
     }
     fn buf(&mut self) -> Option<&mut [u8]> {
         let vmap = self.vmap.as_mut()?;
