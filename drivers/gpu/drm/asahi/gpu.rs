@@ -5,8 +5,10 @@
 use core::any::Any;
 use core::mem;
 use core::sync::atomic::{AtomicU64, Ordering};
+use core::time::Duration;
 
 use kernel::{
+    delay::coarse_sleep,
     macros::versions,
     prelude::*,
     soc::apple::rtkit,
@@ -122,6 +124,7 @@ pub(crate) trait GpuManager: Send + Sync {
         &self,
         context: &fw::types::GpuObject<fw::workqueue::GpuContextData>,
     ) -> Result;
+    fn wait_for_poweroff(&self, timeout: usize) -> Result;
 }
 
 #[versions(AGX)]
@@ -459,6 +462,18 @@ impl GpuManager for GpuManager::ver {
 
     fn ids(&self) -> &SequenceIDs {
         &self.ids
+    }
+
+    fn wait_for_poweroff(&self, timeout: usize) -> Result {
+        self.initdata.runtime_pointers.hwdata_a.with(|raw, _inner| {
+            for _i in 0..timeout {
+                if raw.pwr_status.load(Ordering::Relaxed) == 4 {
+                    return Ok(());
+                }
+                coarse_sleep(Duration::from_millis(1));
+            }
+            Err(ETIMEDOUT)
+        })
     }
 }
 
