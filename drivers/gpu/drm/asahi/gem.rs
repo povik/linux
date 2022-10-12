@@ -126,7 +126,7 @@ pub(crate) fn new_object(dev: &AsahiDevice, size: usize, flags: u32) -> Result<O
 
 impl gem::BaseDriverObject<Object> for DriverObject {
     fn new(dev: &AsahiDevice, size: usize) -> Result<DriverObject> {
-        dev_info!(dev, "DriverObject::new({})\n", size);
+        //         dev_info!(dev, "DriverObject::new({})\n", size);
 
         Ok(DriverObject {
             kernel: false,
@@ -138,7 +138,7 @@ impl gem::BaseDriverObject<Object> for DriverObject {
 
 impl Drop for DriverObject {
     fn drop(&mut self) {
-        pr_info!("DriverObject::drop\n");
+        //         pr_info!("DriverObject::drop\n");
     }
 }
 
