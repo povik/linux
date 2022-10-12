@@ -663,7 +663,12 @@ impl Drop for VmInner {
 }
 
 impl Uat {
-    fn map_region(dev: &dyn device::RawDevice, name: &CStr, size: usize) -> Result<UatRegion> {
+    fn map_region(
+        dev: &dyn device::RawDevice,
+        name: &CStr,
+        size: usize,
+        cached: bool,
+    ) -> Result<UatRegion> {
         let rdev = dev.raw_device();
 
         let mut res = core::mem::MaybeUninit::<bindings::resource>::uninit();
@@ -709,7 +714,12 @@ impl Uat {
             return Err(ENOMEM);
         }
 
-        let map = unsafe { bindings::memremap(res.start, rgn_size, bindings::MEMREMAP_WB.into()) };
+        let flags = if cached {
+            bindings::MEMREMAP_WB
+        } else {
+            bindings::MEMREMAP_WC
+        };
+        let map = unsafe { bindings::memremap(res.start, rgn_size, flags.into()) };
         let map = NonNull::new(map);
 
         match map {
@@ -788,9 +798,9 @@ impl Uat {
     pub(crate) fn new(dev: &driver::AsahiDevice) -> Result<Self> {
         dev_info!(dev, "MMU: Initializing...\n");
 
-        let handoff_rgn = Self::map_region(dev, c_str!("handoff"), HANDOFF_SIZE)?;
-        let ttbs_rgn = Self::map_region(dev, c_str!("ttbs"), SLOTS_SIZE)?;
-        let pagetables_rgn = Self::map_region(dev, c_str!("pagetables"), PAGETABLES_SIZE)?;
+        let handoff_rgn = Self::map_region(dev, c_str!("handoff"), HANDOFF_SIZE, false)?;
+        let ttbs_rgn = Self::map_region(dev, c_str!("ttbs"), SLOTS_SIZE, false)?;
+        let pagetables_rgn = Self::map_region(dev, c_str!("pagetables"), PAGETABLES_SIZE, true)?;
 
         dev_info!(dev, "MMU: Initializing kernel page table\n");
 
