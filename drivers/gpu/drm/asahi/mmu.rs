@@ -26,7 +26,7 @@ use kernel::{
 };
 
 use crate::no_debug;
-use crate::slotalloc;
+use crate::{driver, slotalloc};
 
 const PPL_MAGIC: u64 = 0x4b1d000000000002;
 
@@ -113,7 +113,7 @@ const SLOTS_SIZE: usize = UAT_NUM_CTX * size_of::<SlotTTBS>();
 const PAGETABLES_SIZE: usize = UAT_PGSZ;
 
 struct VmInner {
-    dev: device::Device,
+    dev: driver::AsahiDevice,
     is_kernel: bool,
     min_va: usize,
     max_va: usize,
@@ -191,6 +191,7 @@ impl VmInner {
 
 #[derive(Clone)]
 pub(crate) struct Vm {
+    id: u64,
     inner: Arc<Mutex<VmInner>>,
 }
 no_debug!(Vm);
@@ -313,7 +314,7 @@ impl UatInner {
 unsafe impl Send for UatInner {}
 
 pub(crate) struct Uat {
-    dev: device::Device,
+    dev: driver::AsahiDevice,
     pagetables_rgn: UatRegion,
 
     inner: Arc<Mutex<UatInner>>,
@@ -395,12 +396,21 @@ impl io_pgtable::FlushOps for Uat {
         _iova: usize,
         _granule: usize,
     ) {
+        unsafe {
+            asm!(
+                ".arch armv8.4-a",
+                "dsb sy",
+                "tlbi vmalle1os",
+                "dsb sy",
+                "isb"
+            );
+        }
     }
 }
 
 impl Vm {
     fn new(
-        dev: device::Device,
+        dev: driver::AsahiDevice,
         uat_inner: Arc<Mutex<UatInner>>,
         is_kernel: bool,
         id: u64,
@@ -430,6 +440,7 @@ impl Vm {
         let mm = mm::Allocator::new(min_va as u64, (max_va - min_va + 1) as u64)?;
 
         Ok(Vm {
+            id,
             inner: Arc::try_new(Mutex::new(VmInner {
                 dev,
                 min_va,
@@ -571,6 +582,10 @@ impl Vm {
         )?;
 
         Ok(Mapping(node))
+    }
+
+    pub(crate) fn id(&self) -> u64 {
+        self.id
     }
 }
 
@@ -720,7 +735,7 @@ impl Uat {
         Vm::new(self.dev.clone(), self.inner.clone(), false, id)
     }
 
-    pub(crate) fn new(dev: &dyn device::RawDevice) -> Result<Self> {
+    pub(crate) fn new(dev: &driver::AsahiDevice) -> Result<Self> {
         dev_info!(dev, "MMU: Initializing...\n");
 
         let handoff_rgn = Self::map_region(dev, c_str!("handoff"), HANDOFF_SIZE)?;
@@ -734,14 +749,14 @@ impl Uat {
             ttbs_rgn,
         }))?;
 
-        let kernel_lower_vm = Vm::new(device::Device::from_dev(dev), inner.clone(), false, 1)?;
-        let kernel_vm = Vm::new(device::Device::from_dev(dev), inner.clone(), true, 0)?;
+        let kernel_lower_vm = Vm::new(dev.clone(), inner.clone(), false, 1)?;
+        let kernel_vm = Vm::new(dev.clone(), inner.clone(), true, 0)?;
 
         let ttb0 = kernel_lower_vm.ttb();
         let ttb1 = kernel_vm.ttb();
 
         let uat = Self {
-            dev: device::Device::from_dev(dev),
+            dev: dev.clone(),
             pagetables_rgn,
             kernel_vm,
             kernel_lower_vm,
