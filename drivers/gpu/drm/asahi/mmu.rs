@@ -132,9 +132,9 @@ impl VmInner {
             Some(0x40 << TTBR_ASID_SHIFT)
         } else {
             // TODO: check if we lost the slot, don't really own the ASID in that case.
-            self.bind_token
-                .as_ref()
-                .map(|token| (token.last_slot() as u64) << TTBR_ASID_SHIFT)
+            self.bind_token.as_ref().map(|token| {
+                (token.last_slot() as u64 + UAT_USER_CTX_START as u64) << TTBR_ASID_SHIFT
+            })
         }
     }
 
