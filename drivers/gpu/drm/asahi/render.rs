@@ -220,11 +220,19 @@ impl Renderer for Renderer::ver {
         let next_frag = batches_frag.event_value().next();
         dev_info!(
             self.dev,
-            "[Submission {}] Vert event #{} {:?} -> {:?}\n",
+            "[Submission {}] Vert event #{} {:#x?} -> {:#x?}\n",
             id,
             batches_vtx.event().slot(),
             batches_vtx.event_value(),
             next_vtx
+        );
+        dev_info!(
+            self.dev,
+            "[Submission {}] Frag event #{} {:#x?} -> {:#x?}\n",
+            id,
+            batches_frag.event().slot(),
+            batches_frag.event_value(),
+            next_frag
         );
 
         let vm_bind = gpu.bind_vm(vm)?;
