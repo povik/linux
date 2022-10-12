@@ -168,7 +168,6 @@ impl WorkQueue {
         let mut inner = this.inner.lock();
 
         if inner.event.is_none() {
-            pr_info!("Get event");
             let event = inner.event_manager.get(inner.last_token, this.clone())?;
             let cur = event.current();
             inner.last_token = Some(event.token());
