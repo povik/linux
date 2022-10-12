@@ -71,7 +71,7 @@ impl<'a> InitDataBuilder::ver<'a> {
                         unk_4: 192000,
                         #[ver(V >= V13_0B4)]
                         unk_8_0: 192000,
-                        pwr_status: 4,
+                        pwr_status: AtomicU32::new(4),
                         unk_10: const_f32!(1.0),
                         actual_pstate: 1,
                         tgt_pstate: 1,

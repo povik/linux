@@ -134,7 +134,7 @@ pub(crate) mod raw {
 
     #[versions(AGX)]
     #[derive(Default)]
-    #[repr(C, packed(4))]
+    #[repr(C)]
     pub(crate) struct HwDataA {
         pub(crate) unk_0: u32,
         pub(crate) unk_4: u32,
@@ -143,7 +143,7 @@ pub(crate) mod raw {
         pub(crate) unk_8_0: u32,
 
         pub(crate) unk_8: u32,
-        pub(crate) pwr_status: u32,
+        pub(crate) pwr_status: AtomicU32,
         pub(crate) unk_10: F32,
         pub(crate) unk_14: u32,
         pub(crate) unk_18: u32,
@@ -175,7 +175,7 @@ pub(crate) mod raw {
         pub(crate) unk_1b4: u32,
         pub(crate) temp_c: u32,
         pub(crate) avg_power_mw: u32,
-        pub(crate) update_ts: u64,
+        pub(crate) update_ts: U64,
         pub(crate) unk_1c8: u32,
         pub(crate) unk_1cc: Array<0x478, u8>,
         pub(crate) pad_644: Pad<0x8>,
