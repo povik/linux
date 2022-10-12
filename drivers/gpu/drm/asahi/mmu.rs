@@ -250,12 +250,12 @@ impl Mapping {
 impl Drop for Mapping {
     fn drop(&mut self) {
         let mut owner = self.0.owner.lock();
-        dev_info!(
-            owner.dev,
-            "MMU: unmap {:#x}:{:#x}",
-            self.iova(),
-            self.size()
-        );
+        //         dev_info!(
+        //             owner.dev,
+        //             "MMU: unmap {:#x}:{:#x}",
+        //             self.iova(),
+        //             self.size()
+        //         );
         // Do not try to unmap guard page (-1)
         if owner
             .unmap_pages(self.iova(), UAT_PGSZ, (self.size() >> UAT_PGBIT) - 1)
@@ -549,7 +549,7 @@ impl Vm {
                 return Err(EINVAL);
             }
 
-            dev_info!(inner.dev, "MMU: map: {:#x}:{:#x} -> {:#x}", addr, len, iova);
+            //             dev_info!(inner.dev, "MMU: map: {:#x}:{:#x} -> {:#x}", addr, len, iova);
 
             inner.map_pages(iova, addr, UAT_PGSZ, len >> UAT_PGBIT, prot)?;
 
