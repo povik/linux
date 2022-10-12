@@ -67,9 +67,9 @@ pub(crate) mod raw {
     #[repr(C)]
     pub(crate) struct Notifier<'a> {
         pub(crate) threshold: GpuPointer<'a, super::Threshold>,
-        pub(crate) generation: u32,
-        pub(crate) cur_count: u32,
-        pub(crate) unk_10: u32,
+        pub(crate) generation: AtomicU32,
+        pub(crate) cur_count: AtomicU32,
+        pub(crate) unk_10: AtomicU32,
         pub(crate) state: NotifierState,
     }
 }

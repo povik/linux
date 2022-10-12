@@ -91,9 +91,9 @@ impl Renderer::ver {
                         ptr,
                         fw::event::raw::Notifier {
                             threshold: inner.threshold.gpu_pointer(),
-                            generation: id as u32,
-                            cur_count: 0,
-                            unk_10: 0x50,
+                            generation: AtomicU32::new(id as u32),
+                            cur_count: AtomicU32::new(0),
+                            unk_10: AtomicU32::new(0x50),
                             state: Default::default()
                         }
                     ))
