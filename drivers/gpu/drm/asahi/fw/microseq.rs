@@ -120,7 +120,7 @@ pub(crate) struct StartVertex<'a> {
     pub(crate) event_generation: u32,
     pub(crate) buffer_slot: u32,
     pub(crate) unk_44: u32,
-    pub(crate) unk_48: U64,
+    pub(crate) prev_stamp_value: U64,
     pub(crate) unk_50: u32,
     pub(crate) unk_pointer: GpuWeakPointer<u32>,
     pub(crate) unk_job_buf: GpuWeakPointer<U64>,

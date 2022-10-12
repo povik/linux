@@ -109,7 +109,7 @@ pub(crate) mod raw {
         pub(crate) microsequence: GpuPointer<'a, &'a [u8]>,
         pub(crate) microsequence_size: u32,
         pub(crate) fragment_stamp_slot: u32,
-        pub(crate) stamp_value: EventValue,
+        pub(crate) fragment_stamp_value: EventValue,
         pub(crate) unk_pointee: u32,
         pub(crate) unk_pad: u32,
         pub(crate) job_params2: JobParameters2<'a>,

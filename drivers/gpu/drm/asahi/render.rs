@@ -272,6 +272,9 @@ impl Renderer for Renderer::ver {
 
         batches_frag.add(Box::try_new(barrier)?)?;
 
+        let unk0 = 0x0;
+        let unk1 = 0x0;
+
         let frag = GpuObject::new_prealloc(
             kalloc.private.prealloc()?,
             |ptr: GpuWeakPointer<fw::fragment::RunFragment::ver>| {
@@ -564,10 +567,10 @@ impl Renderer for Renderer::ver {
                             stamp_value: next_frag,
                             stamp_slot: batches_frag.event().slot(),
                             unk_20: 0, // fixed
-                            unk_24: 1,
+                            unk_24: unk0,
                             uuid: uuid_3d,
                             prev_stamp_value: batches_frag.event_value().counter(),
-                            unk_30: 0, // sometimes 1?
+                            unk_30: unk1, // sometimes 1?
                             unk_buf_0: U64(0),
                             unk_buf_8: U64(0),
                             unk_buf_10: U64(0),
@@ -641,12 +644,12 @@ impl Renderer for Renderer::ver {
                     event_generation: self.id as u32,
                     buffer_slot: scene.slot(),
                     unk_44: 0,
-                    unk_48: U64(0), //　or 1
+                    prev_stamp_value: U64(batches_vtx.event_value().counter() as u64),
                     unk_50: 0,
                     unk_pointer: inner_weak_ptr!(ptr, unk_pointee),
                     unk_job_buf: inner_weak_ptr!(ptr, meta.unk_buf_0),
-                    unk_64: 0x0, // fixed
-                    unk_68: 0x0, // sometimes 1?
+                    unk_64: 0x0,  // fixed
+                    unk_68: unk1, // sometimes 1?
                     uuid: uuid_ta,
                     unk_70: 0x0,                // fixed
                     unk_74: Default::default(), // fixed
@@ -763,7 +766,7 @@ impl Renderer for Renderer::ver {
                         microsequence: inner.micro_seq.gpu_pointer(),
                         microsequence_size: inner.micro_seq.len() as u32,
                         fragment_stamp_slot: batches_frag.event().slot(),
-                        stamp_value: next_vtx,
+                        fragment_stamp_value: next_frag,
                         unk_pointee: 0,
                         unk_pad: 0,
                         job_params2: fw::vertex::raw::JobParameters2 {
@@ -802,11 +805,11 @@ impl Renderer for Renderer::ver {
                             fw_stamp: batches_vtx.event().fw_stamp_pointer(),
                             stamp_value: next_vtx,
                             stamp_slot: batches_vtx.event().slot(),
-                            unk_20: 0, // fixed
-                            unk_24: 0, // 1 for boot stuff?
+                            unk_20: 0,    // fixed
+                            unk_24: unk0, // 1 for boot stuff?
                             uuid: uuid_ta,
                             prev_stamp_value: batches_vtx.event_value().counter(),
-                            unk_30: 0, // sometimes 1?
+                            unk_30: unk1, // sometimes 1?
                             unk_buf_0: U64(0),
                             unk_buf_8: U64(0),
                             unk_buf_10: U64(0),
