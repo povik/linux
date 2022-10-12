@@ -64,8 +64,19 @@ impl File {
             id
         );
         let inner = file.inner();
-        inner.renderer.render(&inner.vm, &inner.ualloc, data, id)?;
-        Ok(0)
+        let ret = inner.renderer.render(&inner.vm, &inner.ualloc, data, id);
+        if let Err(e) = ret {
+            dev_info!(
+                device,
+                "[File {}]: IOCTL: submit failed! (submission ID: {} err: {:?})",
+                file.inner().id,
+                id,
+                e
+            );
+            Err(e)
+        } else {
+            Ok(0)
+        }
     }
 
     pub(crate) fn wait_bo(
