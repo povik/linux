@@ -703,10 +703,11 @@ impl Drop for VmInner {
 
             let uat_inner = self.uat_inner.lock();
             uat_inner.handoff().lock();
-            let inval = uat_inner.ttbs()[idx]
-                .ttb0
-                .compare_exchange(ttb, 0, Ordering::SeqCst, Ordering::Relaxed)
-                .is_ok();
+            let ttb_cur = uat_inner.ttbs()[idx].ttb0.load(Ordering::SeqCst);
+            let inval = ttb_cur == ttb;
+            if inval {
+                uat_inner.ttbs()[idx].ttb0.store(0, Ordering::SeqCst);
+            }
             uat_inner.handoff().unlock();
             core::mem::drop(uat_inner);
 
