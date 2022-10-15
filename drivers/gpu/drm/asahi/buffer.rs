@@ -304,6 +304,9 @@ impl Buffer::ver {
 
             let slot = inner.mgr.0.get(inner.last_token)?;
             rebind = slot.changed();
+
+            pr_info!("Buffer: assigning slot {} (rebind={})", slot.slot(), rebind);
+
             inner.last_token = Some(slot.token());
             inner.active_slot = Some(slot);
         }
@@ -350,6 +353,10 @@ impl Drop for Scene::ver {
         inner.active_scenes -= 1;
 
         if inner.active_scenes == 0 {
+            pr_info!(
+                "Buffer: no scenes left, dropping slot {}",
+                inner.active_slot.take().unwrap().slot()
+            );
             inner.active_slot = None;
         }
     }
