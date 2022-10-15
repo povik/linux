@@ -92,6 +92,11 @@ impl Scene::ver {
     pub(crate) fn seq_buf_pointer(&self) -> GpuPointer<'_, &'_ [u64]> {
         self.object.seq_buf.gpu_pointer()
     }
+
+    pub(crate) fn debug(&self) {
+        dbg!(self);
+        dbg!(&self.object.user_buffer);
+    }
 }
 
 pub(crate) struct SlotInner();
