@@ -35,6 +35,7 @@ pub(crate) struct BufferInner {
     last_token: Option<slotalloc::SlotToken>,
     tvb_something: GpuArray<u8>,
     kernel_buffer: GpuArray<u8>,
+    stats: GpuObject<buffer::Stats>,
 }
 
 #[versions(AGX)]
@@ -161,6 +162,12 @@ impl Buffer::ver {
 
         let tvb_something = ualloc.lock().array_empty(0x20000)?;
         let kernel_buffer = alloc.private.array_empty(0x40)?;
+        let stats = alloc
+            .shared
+            .new_object(Default::default(), |_inner| buffer::raw::Stats {
+                cpu_flag: AtomicU32::from(1),
+                ..Default::default()
+            })?;
 
         Ok(Buffer::ver {
             inner: Arc::try_new(Mutex::new(BufferInner::ver {
@@ -174,6 +181,7 @@ impl Buffer::ver {
                 last_token: None,
                 tvb_something,
                 kernel_buffer,
+                stats,
             }))?,
         })
     }
@@ -240,6 +248,10 @@ impl Buffer::ver {
     ) -> Result<Scene::ver> {
         let mut inner = self.inner.lock();
 
+        inner.stats.with(|raw, _inner| {
+            raw.cpu_flag.store(1, Ordering::Relaxed);
+        });
+
         // TODO: what is this exactly?
         let user_buffer = inner.ualloc.lock().array_empty(0x80)?;
         let tvb_heapmeta = inner.ualloc.lock().array_empty(0x200)?;
@@ -254,12 +266,6 @@ impl Buffer::ver {
         }
         let scene_inner = box_in_place!(buffer::Scene::ver {
             user_buffer: user_buffer,
-            stats: alloc.shared.new_object(Default::default(), |_inner| {
-                buffer::raw::Stats {
-                    cpu_flag: AtomicU32::from(1),
-                    ..Default::default()
-                }
-            })?,
             buffer: self.inner.clone(),
             tvb_heapmeta: tvb_heapmeta,
             tvb_tilemap: tvb_tilemap,
@@ -267,6 +273,7 @@ impl Buffer::ver {
             seq_buf: seq_buf,
         })?;
 
+        let stats_pointer = inner.stats.weak_pointer();
         let scene = alloc.private.new_boxed(scene_inner, |inner, ptr| {
             Ok(place!(
                 ptr,
@@ -276,7 +283,7 @@ impl Buffer::ver {
                     unk_10: U64(0),
                     user_buffer: inner.user_buffer.gpu_pointer(),
                     unk_20: 0,
-                    stats: inner.stats.gpu_pointer(),
+                    stats: stats_pointer,
                     unk_2c: 0,
                     unk_30: U64(0),
                     unk_38: U64(0),

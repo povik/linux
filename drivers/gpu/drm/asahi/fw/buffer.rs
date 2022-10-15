@@ -97,7 +97,7 @@ pub(crate) mod raw {
         pub(crate) unk_10: U64,
         pub(crate) user_buffer: GpuPointer<'a, &'a [u8]>,
         pub(crate) unk_20: u32,
-        pub(crate) stats: GpuPointer<'a, super::Stats>,
+        pub(crate) stats: GpuWeakPointer<super::Stats>,
         pub(crate) unk_2c: u32,
         pub(crate) unk_30: U64,
         pub(crate) unk_38: U64,
@@ -139,7 +139,6 @@ impl GpuStruct for Info::ver {
 #[versions(AGX)]
 pub(crate) struct Scene {
     pub(crate) user_buffer: GpuArray<u8>,
-    pub(crate) stats: GpuObject<Stats>,
     pub(crate) buffer: Arc<Mutex<crate::buffer::BufferInner::ver>>,
     pub(crate) tvb_heapmeta: GpuArray<u8>,
     pub(crate) tvb_tilemap: GpuArray<u8>,
