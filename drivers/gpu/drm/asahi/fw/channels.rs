@@ -177,9 +177,10 @@ pub(crate) enum DeviceControlMsg {
         // padding 1 byte
         unk_18: u32,
         gpu_context: GpuWeakPointer<super::workqueue::GpuContextData>,
+        __pad: Pad<0xc>,
     },
     Unk18(Array<DEVICECONTROL_SZ, u8>),
-    Initialize,
+    Initialize(Pad<DEVICECONTROL_SZ>),
 }
 default_zeroed!(DeviceControlMsg);
 

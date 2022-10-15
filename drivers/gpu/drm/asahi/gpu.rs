@@ -377,7 +377,7 @@ impl GpuManager for GpuManager::ver {
         self.tx_channels
             .lock()
             .device_control
-            .send(&DeviceControlMsg::Initialize);
+            .send(&DeviceControlMsg::Initialize(Default::default()));
 
         let initdata = self.initdata.gpu_va().get();
         let mut guard = self.rtkit.lock();
@@ -487,6 +487,7 @@ impl GpuManager for GpuManager::ver {
             ctx_4: raw.unk_4,
             unk_18: 0,
             gpu_context: context.weak_pointer(),
+            __pad: Default::default(),
         });
 
         dev_info!(self.dev, "Context invalidation command: {:?}\n", &dc);
