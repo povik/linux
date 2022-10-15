@@ -78,6 +78,19 @@ pub(crate) struct SimpleAllocation<T> {
     obj: crate::gem::ObjectRef,
 }
 
+impl<T> Drop for SimpleAllocation<T> {
+    fn drop(&mut self) {
+        dev_info!(
+            self.device(),
+            "Allocator: drop object @ {:#x}",
+            self.gpu_ptr()
+        );
+        if let Ok(vmap) = self.obj.vmap() {
+            vmap.as_mut_slice().fill(0x42);
+        }
+    }
+}
+
 impl<T> Debug for SimpleAllocation<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.debug_struct(core::any::type_name::<SimpleAllocation<T>>())
@@ -165,6 +178,7 @@ impl SimpleAllocator {
 
         let mut obj = crate::gem::new_kernel_object(&self.dev, size_aligned)?;
         let p = obj.vmap()?.as_mut_ptr() as *mut u8;
+        obj.vmap()?.as_mut_slice().fill(0xde);
         let iova = obj.map_into_range(
             &self.vm,
             self.start,
@@ -270,6 +284,8 @@ impl Allocator for SimpleAllocator {
 
         let mut obj = crate::gem::new_kernel_object(&self.dev, size_aligned)?;
         let p = obj.vmap()?.as_mut_ptr() as *mut u8;
+        obj.vmap()?.as_mut_slice().fill(0xde);
+
         let ptr = unsafe { p.add(offset) } as *mut T;
         let iova = obj.map_into_range(
             &self.vm,
