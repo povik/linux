@@ -62,11 +62,12 @@ impl Renderer::ver {
         dev: &AsahiDevice,
         alloc: &mut gpu::KernelAllocators,
         ualloc: Arc<Mutex<alloc::SimpleAllocator>>,
+        ualloc_priv: Arc<Mutex<alloc::SimpleAllocator>>,
         event_manager: Arc<event::EventManager>,
         mgr: &buffer::BufferManager,
         id: u64,
     ) -> Result<Renderer::ver> {
-        let mut buffer = buffer::Buffer::ver::new(alloc, ualloc, mgr)?;
+        let mut buffer = buffer::Buffer::ver::new(alloc, ualloc, ualloc_priv, mgr)?;
 
         buffer.add_blocks(0x10)?;
 

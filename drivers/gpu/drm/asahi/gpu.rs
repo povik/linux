@@ -116,6 +116,7 @@ pub(crate) trait GpuManager: Send + Sync {
     fn new_renderer(
         &self,
         ualloc: Arc<Mutex<alloc::SimpleAllocator>>,
+        ualloc_priv: Arc<Mutex<alloc::SimpleAllocator>>,
     ) -> Result<Box<dyn render::Renderer>>;
     fn submit_batch(&self, batch: workqueue::WorkQueueBatch<'_>) -> Result;
     fn ids(&self) -> &SequenceIDs;
@@ -409,6 +410,7 @@ impl GpuManager for GpuManager::ver {
     fn new_renderer(
         &self,
         ualloc: Arc<Mutex<alloc::SimpleAllocator>>,
+        ualloc_priv: Arc<Mutex<alloc::SimpleAllocator>>,
     ) -> Result<Box<dyn render::Renderer>> {
         let mut kalloc = self.alloc();
         let id = self.ids.renderer.next();
@@ -416,6 +418,7 @@ impl GpuManager for GpuManager::ver {
             &self.dev,
             &mut *kalloc,
             ualloc,
+            ualloc_priv,
             self.event_manager.clone(),
             &self.buffer_mgr,
             id,

@@ -112,6 +112,7 @@ impl Buffer::ver {
     pub(crate) fn new(
         alloc: &mut gpu::KernelAllocators,
         ualloc: Arc<Mutex<alloc::SimpleAllocator>>,
+        ualloc_priv: Arc<Mutex<alloc::SimpleAllocator>>,
         mgr: &BufferManager,
     ) -> Result<Buffer::ver> {
         let max_pages = MAX_SIZE / PAGE_SIZE;
@@ -120,8 +121,8 @@ impl Buffer::ver {
         let inner = box_in_place!(buffer::Info::ver {
             block_ctl: alloc.shared.new_default::<buffer::BlockControl>()?,
             counter: alloc.shared.new_default::<buffer::Counter>()?,
-            page_list: ualloc.lock().array_empty(max_pages)?,
-            block_list: ualloc.lock().array_empty(max_blocks)?,
+            page_list: ualloc_priv.lock().array_empty(max_pages)?,
+            block_list: ualloc_priv.lock().array_empty(max_blocks)?,
         })?;
 
         let info = alloc.shared.new_boxed(inner, |inner, ptr| {

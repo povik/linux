@@ -7,6 +7,7 @@
 //! Asahi File state
 
 use crate::driver::AsahiDevice;
+use crate::fw::types::*;
 use crate::{alloc, buffer, driver, gem, gpu, mmu, render};
 use kernel::drm::gem::BaseObject;
 use kernel::prelude::*;
@@ -17,6 +18,9 @@ pub(crate) struct File {
     id: u64,
     vm: mmu::Vm,
     ualloc: Arc<Mutex<alloc::SimpleAllocator>>,
+    ualloc_priv: Arc<Mutex<alloc::SimpleAllocator>>,
+    ualloc_extra: alloc::SimpleAllocator,
+    unk_page: GpuArray<u8>,
     renderer: Box<dyn render::Renderer>,
 }
 
@@ -35,16 +39,39 @@ impl drm::file::DriverFile for File {
             &vm,
             0x60_00000000,
             0x60_ffffffff,
+            mmu::PROT_GPU_SHARED_RW,
+            buffer::PAGE_SIZE,
+        )))?;
+        let ualloc_priv = Arc::try_new(Mutex::new(alloc::SimpleAllocator::new_with_range(
+            device,
+            &vm,
+            0x61_00000000,
+            0x61_ffffffff,
             mmu::PROT_GPU_FW_SHARED_RW,
             buffer::PAGE_SIZE,
         )))?;
-        let renderer = device.data().gpu.new_renderer(ualloc.clone())?;
+        let mut ualloc_extra = alloc::SimpleAllocator::new_with_range(
+            device,
+            &vm,
+            0x6f_ffff8000,
+            0x70_00000000,
+            mmu::PROT_GPU_SHARED_RW,
+            0x4000,
+        );
+        let unk_page: GpuArray<u8> = ualloc_extra.array_empty(1)?;
+        let renderer = device
+            .data()
+            .gpu
+            .new_renderer(ualloc.clone(), ualloc_priv.clone())?;
 
         dev_info!(device, "[File {}]: Opened successfully", id);
         Ok(Box::try_new(Self {
             id,
             vm,
             ualloc,
+            ualloc_priv,
+            ualloc_extra,
+            unk_page,
             renderer,
         })?)
     }
