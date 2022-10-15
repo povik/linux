@@ -128,15 +128,19 @@ struct VmInner {
 }
 
 impl VmInner {
-    fn asid_ttb(&self) -> Option<u64> {
+    fn slot(&self) -> Option<u32> {
         if self.is_kernel {
-            Some(0x40 << TTBR_ASID_SHIFT)
+            Some(0x40)
         } else {
-            // TODO: check if we lost the slot, don't really own the ASID in that case.
-            self.bind_token.as_ref().map(|token| {
-                (token.last_slot() as u64 + UAT_USER_CTX_START as u64) << TTBR_ASID_SHIFT
-            })
+            // TODO: check if we lost the slot, don't really own it in that case.
+            self.bind_token
+                .as_ref()
+                .map(|token| (token.last_slot() as u32 + UAT_USER_CTX_START as u32))
         }
+    }
+
+    fn asid_ttb(&self) -> Option<u64> {
+        self.slot().map(|slot| (slot as u64) << TTBR_ASID_SHIFT)
     }
 
     fn ttb(&self) -> u64 {
@@ -235,6 +239,7 @@ impl Clone for VmBind {
 
 pub(crate) struct MappingInner {
     owner: Arc<Mutex<VmInner>>,
+    uat_inner: Arc<Mutex<UatInner>>,
 }
 
 pub(crate) struct Mapping(mm::Node<MappingInner>);
@@ -251,12 +256,22 @@ impl Mapping {
 impl Drop for Mapping {
     fn drop(&mut self) {
         let mut owner = self.0.owner.lock();
-        //         dev_info!(
-        //             owner.dev,
-        //             "MMU: unmap {:#x}:{:#x}",
-        //             self.iova(),
-        //             self.size()
-        //         );
+
+        dev_info!(
+            owner.dev,
+            "MMU: unmap {:#x}:{:#x}",
+            self.iova(),
+            self.size()
+        );
+
+        let mut slot_inner = owner.slot().map(|slot| (slot, self.0.uat_inner.lock()));
+
+        if let Some((slot, uat_inner)) = slot_inner.as_mut() {
+            uat_inner
+                .handoff()
+                .begin_flush(*slot, self.iova() as u64, self.size() as u64);
+        }
+
         // Do not try to unmap guard page (-1)
         if owner
             .unmap_pages(self.iova(), UAT_PGSZ, (self.size() >> UAT_PGBIT) - 1)
@@ -281,6 +296,20 @@ impl Drop for Mapping {
             //asm!("dsb sy");
         }
 
+        if let Some(asid) = owner.asid_ttb() {
+            dev_info!(owner.dev, "MMU: flush ASID: {:#x}", asid);
+            unsafe {
+                asm!(
+                    ".arch armv8.4-a",
+                    "dsb sy",
+                    "tlbi aside1os, {x}",
+                    "dsb sy",
+                    "isb",
+                    x = in(reg) asid
+                );
+            }
+        }
+
         /*
         if let Some(asid) = owner.asid_ttb() {
             let mut page = (0xfffffffffff & (self.iova() as u64 >> 12)) | asid;
@@ -301,6 +330,10 @@ impl Drop for Mapping {
             }
         }
         */
+
+        if let Some((slot, uat_inner)) = slot_inner.as_mut() {
+            uat_inner.handoff().end_flush(*slot);
+        }
     }
 }
 
@@ -360,6 +393,33 @@ impl Handoff {
     fn unlock(&self) {
         self.turn.store(1, Ordering::Relaxed);
         self.lock_ap.store(0, Ordering::Release);
+    }
+
+    fn begin_flush(&self, slot: u32, start: u64, size: u64) {
+        let flush = &self.flush[slot as usize];
+        assert_eq!(flush.state.load(Ordering::Relaxed), 0);
+        flush.addr.store(start, Ordering::Relaxed);
+        flush.size.store(size, Ordering::Relaxed);
+
+        let a = self.unk.load(Ordering::Relaxed); // ?
+        let b = self.unk2.load(Ordering::Relaxed); // ?
+
+        pr_info!("Handoff: {} {}\n", a, b);
+
+        flush.addr.load(Ordering::Relaxed);
+        flush.addr.store(start, Ordering::Relaxed);
+        flush.addr.load(Ordering::Relaxed);
+        flush.addr.store(
+            (start & 0xffff_ffff_ffff) | 0xdead_0000_0000_0000,
+            Ordering::Relaxed,
+        );
+        flush.state.store(2, Ordering::Relaxed);
+    }
+
+    fn end_flush(&self, slot: u32) {
+        let flush = &self.flush[slot as usize];
+        assert_eq!(flush.state.load(Ordering::Relaxed), 2);
+        flush.state.store(0, Ordering::Relaxed);
     }
 
     fn init(&self) {
@@ -486,9 +546,11 @@ impl Vm {
     pub(crate) fn map(&self, size: usize, sgt: &mut shmem::SGTableIter<'_>) -> Result<Mapping> {
         let mut inner = self.inner.lock();
 
+        let uat_inner = inner.uat_inner.clone();
         let node = inner.mm.insert_node(
             MappingInner {
                 owner: self.inner.clone(),
+                uat_inner,
             },
             (size + UAT_PGSZ) as u64, // Add guard page
         )?;
@@ -512,9 +574,11 @@ impl Vm {
     ) -> Result<Mapping> {
         let mut inner = self.inner.lock();
 
+        let uat_inner = inner.uat_inner.clone();
         let node = inner.mm.insert_node_in_range(
             MappingInner {
                 owner: self.inner.clone(),
+                uat_inner,
             },
             (size + UAT_PGSZ) as u64, // Add guard page
             alignment,
@@ -550,7 +614,7 @@ impl Vm {
                 return Err(EINVAL);
             }
 
-            //             dev_info!(inner.dev, "MMU: map: {:#x}:{:#x} -> {:#x}", addr, len, iova);
+            dev_info!(inner.dev, "MMU: map: {:#x}:{:#x} -> {:#x}", addr, len, iova);
 
             inner.map_pages(iova, addr, UAT_PGSZ, len >> UAT_PGBIT, prot)?;
 
@@ -576,9 +640,11 @@ impl Vm {
     pub(crate) fn map_io(&self, phys: usize, size: usize) -> Result<Mapping> {
         let mut inner = self.inner.lock();
 
+        let uat_inner = inner.uat_inner.clone();
         let node = inner.mm.insert_node(
             MappingInner {
                 owner: self.inner.clone(),
+                uat_inner,
             },
             (size + UAT_PGSZ) as u64, // Add guard page
         )?;
@@ -624,6 +690,12 @@ impl Drop for VmInner {
     fn drop(&mut self) {
         assert_eq!(self.active_users, 0);
 
+        pr_info!(
+            "VmInner::Drop [{}]: bind_token={:?}\n",
+            self.id,
+            self.bind_token
+        );
+
         // Make sure this VM is not mapped to a TTB if it was
         if let Some(token) = self.bind_token.take() {
             let idx = (token.last_slot() as usize) + UAT_USER_CTX_START;
@@ -641,6 +713,11 @@ impl Drop for VmInner {
             if inval {
                 let asid = (idx as u64) << TTBR_ASID_SHIFT;
 
+                pr_info!(
+                    "VmInner::Drop [{}]: need inval for ASID {:#x}\n",
+                    self.id,
+                    asid
+                );
                 unsafe {
                     asm!(
                         ".arch armv8.4-a",
@@ -649,16 +726,16 @@ impl Drop for VmInner {
                     );
                 }
             }
+        }
 
-            unsafe {
-                asm!(
-                    ".arch armv8.4-a",
-                    "dsb sy",
-                    "tlbi vmalle1os",
-                    "dsb sy",
-                    "isb"
-                );
-            }
+        unsafe {
+            asm!(
+                ".arch armv8.4-a",
+                "dsb sy",
+                "tlbi vmalle1os",
+                "dsb sy",
+                "isb"
+            );
         }
     }
 }
@@ -759,6 +836,7 @@ impl Uat {
 
             let slot = self.slots.get(inner.bind_token)?;
             if slot.changed() {
+                pr_info!("Vm Bind [{}]: bind_token={:?}\n", vm.id, slot.token(),);
                 let idx = (slot.slot() as usize) + UAT_USER_CTX_START;
                 let ttb = inner.ttb() | TTBR_VALID | (idx as u64) << TTBR_ASID_SHIFT;
 
