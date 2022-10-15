@@ -247,3 +247,9 @@ impl File {
         }
     }
 }
+
+impl Drop for File {
+    fn drop(&mut self) {
+        pr_info!("[File {}]: Closing...", self.id);
+    }
+}
