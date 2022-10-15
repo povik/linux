@@ -119,9 +119,7 @@ pub(crate) fn new_object(dev: &AsahiDevice, size: usize, flags: u32) -> Result<O
     gem.kernel = false;
     gem.flags = flags;
 
-    Ok(ObjectRef::new(
-        shmem::Object::<DriverObject>::new(dev, size)?.into_ref(),
-    ))
+    Ok(ObjectRef::new(gem.into_ref()))
 }
 
 impl gem::BaseDriverObject<Object> for DriverObject {
