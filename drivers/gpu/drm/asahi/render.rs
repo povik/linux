@@ -299,7 +299,7 @@ impl Renderer for Renderer::ver {
 
                 for i in 0..cmdbuf.attachment_count.min(cmdbuf.attachments.len() as u32) {
                     let att = &cmdbuf.attachments[i as usize];
-                    let cache_lines = (att.size + 127) & !127; // 128
+                    let cache_lines = (att.size + 127) >> 7;
                     let order = 1;
                     attachments[i as usize] = microseq::Attachment {
                         address: U64(att.pointer),
