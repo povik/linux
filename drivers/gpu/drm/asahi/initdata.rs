@@ -466,7 +466,7 @@ impl<'a> InitDataBuilder::ver<'a> {
                         unk_1102c_8: 100,
                         #[ver(V >= V13_0B4)]
                         unk_1102c_c: 1,
-                        idle_to_off_timeout_ms: 2,
+                        idle_to_off_timeout_ms: 50000,
                         unk_11034: 40,
                         unk_11038: 5,
                         unk_118e0: 40,
