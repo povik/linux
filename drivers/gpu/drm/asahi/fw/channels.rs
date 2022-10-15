@@ -193,11 +193,12 @@ pub(crate) enum EventMsg {
         firing: [u32; 4],
         unk_14: u16,
     },
+    Unk2(Array<EVENT_SZ, u8>),
     Unk3(Array<EVENT_SZ, u8>),
     Timeout {
         counter: u32,
         unk_8: u32,
-        stamp_index: i32,
+        event_slot: u32,
     }, // Max discriminant: 0x4
 }
 

@@ -833,11 +833,11 @@ pub(crate) mod raw {
     #[versions(AGX)]
     no_debug!(RuntimePointers::ver<'_>);
 
-    #[derive(Debug, Default, Clone, Copy)]
-    #[repr(C, packed)]
+    #[derive(Debug, Default)]
+    #[repr(C)]
     pub(crate) struct PendingStamp {
-        pub(crate) info: u32,
-        pub(crate) wait_value: u32,
+        pub(crate) info: AtomicU32,
+        pub(crate) wait_value: AtomicU32,
     }
 
     #[derive(Debug, Default, Clone, Copy)]

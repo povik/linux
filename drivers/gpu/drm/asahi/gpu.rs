@@ -124,6 +124,8 @@ pub(crate) trait GpuManager: Send + Sync {
         &self,
         context: &fw::types::GpuObject<fw::workqueue::GpuContextData>,
     ) -> Result;
+    fn handle_timeout(&self, counter: u32, event_slot: u32);
+    fn handle_fault(&self);
     fn wait_for_poweroff(&self, timeout: usize) -> Result;
 }
 
@@ -293,6 +295,11 @@ impl GpuManager::ver {
 
         *mgr.rtkit.lock() = Some(rtkit);
 
+        {
+            let mut rxc = mgr.rx_channels.lock();
+            rxc.event.set_manager(mgr.clone());
+        }
+
         Ok(mgr)
     }
 
@@ -314,6 +321,48 @@ impl GpuManager::ver {
 
         self.io_mappings.try_push(mapping)?;
         Ok(())
+    }
+
+    fn show_pending_events(&self) {
+        dev_err!(self.dev, "  Pending events:\n");
+
+        self.initdata.globals.with(|raw, _inner| {
+            for i in raw.pending_stamps.iter() {
+                let info = i.info.load(Ordering::Relaxed);
+                let wait_value = i.wait_value.load(Ordering::Relaxed);
+
+                if info != 0 {
+                    let slot = info >> 3;
+                    let flags = info & 0x7;
+                    dev_err!(
+                        self.dev,
+                        "    [{}] flags={} value={:#x}\n",
+                        slot,
+                        flags,
+                        wait_value
+                    );
+                    i.info.store(0, Ordering::Relaxed);
+                    i.wait_value.store(0, Ordering::Relaxed);
+                }
+            }
+        });
+    }
+
+    fn recover(&self) {
+        self.initdata.fw_status.with(|raw, _inner| {
+            let halt_count = raw.flags.halt_count.load(Ordering::Relaxed);
+            let halted = raw.flags.halted.load(Ordering::Relaxed);
+            dev_err!(self.dev, "  Halt count: {}\n", halt_count);
+            dev_err!(self.dev, "  Halted: {}\n", halted);
+
+            if halted != 0 {
+                dev_err!(self.dev, "  Attempting recovery...\n");
+                raw.flags.halted.store(0, Ordering::SeqCst);
+                raw.flags.resume.store(1, Ordering::SeqCst);
+            } else {
+                dev_err!(self.dev, "  Cannot recover.\n");
+            }
+        });
     }
 }
 
@@ -462,6 +511,31 @@ impl GpuManager for GpuManager::ver {
 
     fn ids(&self) -> &SequenceIDs {
         &self.ids
+    }
+
+    fn handle_timeout(&self, counter: u32, event_slot: u32) {
+        dev_err!(self.dev, " (\\________/) \n");
+        dev_err!(self.dev, "  |        |  \n");
+        dev_err!(self.dev, "'.| \\  , / |.'\n");
+        dev_err!(self.dev, "--| / (( \\ |--\n");
+        dev_err!(self.dev, ".'|  _-_-  |'.\n");
+        dev_err!(self.dev, "  |________|  \n");
+        dev_err!(self.dev, "** GPU timeout nya~!!!!! **\n");
+        dev_err!(self.dev, "  Event slot: {}\n", event_slot);
+        self.show_pending_events();
+        self.recover();
+    }
+
+    fn handle_fault(&self) {
+        dev_err!(self.dev, " (\\________/) \n");
+        dev_err!(self.dev, "  |        |  \n");
+        dev_err!(self.dev, "'.| \\  , / |.'\n");
+        dev_err!(self.dev, "--| / (( \\ |--\n");
+        dev_err!(self.dev, ".'|  _-_-  |'.\n");
+        dev_err!(self.dev, "  |________|  \n");
+        dev_err!(self.dev, "GPU fault nya~!!!!!\n");
+        self.show_pending_events();
+        self.recover();
     }
 
     fn wait_for_poweroff(&self, timeout: usize) -> Result {

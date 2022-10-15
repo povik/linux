@@ -164,6 +164,7 @@ impl PipeChannel {
 pub(crate) struct EventChannel {
     ch: RxChannel<ChannelState, RawEventMsg>,
     mgr: Arc<event::EventManager>,
+    gpu: Option<Arc<dyn gpu::GpuManager>>,
 }
 
 impl EventChannel {
@@ -174,7 +175,12 @@ impl EventChannel {
         Ok(EventChannel {
             ch: RxChannel::<ChannelState, RawEventMsg>::new(alloc, 0x100)?,
             mgr,
+            gpu: None,
         })
+    }
+
+    pub(crate) fn set_manager(&mut self, gpu: Arc<dyn gpu::GpuManager>) {
+        self.gpu = Some(gpu);
     }
 
     pub(crate) fn to_raw(&self) -> raw::ChannelRing<ChannelState, RawEventMsg> {
@@ -188,12 +194,18 @@ impl EventChannel {
                 0..=EVENT_MAX => {
                     let msg = unsafe { msg.msg };
                     match msg {
-                        EventMsg::Fault => {
-                            pr_crit!("GPU faulted!");
-                        }
-                        EventMsg::Timeout { .. } => {
-                            pr_crit!("GPU timeout! {:?}", msg);
-                        }
+                        EventMsg::Fault => match self.gpu.as_ref() {
+                            Some(gpu) => gpu.handle_fault(),
+                            None => pr_crit!("EventChannel: No GPU manager available!"),
+                        },
+                        EventMsg::Timeout {
+                            counter,
+                            event_slot,
+                            ..
+                        } => match self.gpu.as_ref() {
+                            Some(gpu) => gpu.handle_timeout(counter, event_slot),
+                            None => pr_crit!("EventChannel: No GPU manager available!"),
+                        },
                         EventMsg::Flag { firing, .. } => {
                             pr_crit!("GPU flag event: {:?}", msg);
                             for (i, flags) in firing.iter().enumerate() {

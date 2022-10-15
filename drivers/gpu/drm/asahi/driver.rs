@@ -33,7 +33,7 @@ pub(crate) struct AsahiData {
 
 pub(crate) struct AsahiResources {
     asc: IoMem<ASC_CTL_SIZE>,
-    sgx: IoMem<SGX_SIZE>,
+    pub(crate) sgx: IoMem<SGX_SIZE>,
 }
 
 type DeviceData = device::Data<drv::Registration<AsahiDriver>, AsahiResources, AsahiData>;
