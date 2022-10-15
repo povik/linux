@@ -122,7 +122,7 @@ impl Buffer::ver {
             block_ctl: alloc.shared.new_default::<buffer::BlockControl>()?,
             counter: alloc.shared.new_default::<buffer::Counter>()?,
             page_list: ualloc_priv.lock().array_empty(max_pages)?,
-            block_list: ualloc_priv.lock().array_empty(max_blocks)?,
+            block_list: ualloc_priv.lock().array_empty(max_blocks * 2)?,
         })?;
 
         let info = alloc.shared.new_boxed(inner, |inner, ptr| {
@@ -225,7 +225,7 @@ impl Buffer::ver {
                 .blocks
                 .try_push(block)
                 .expect("try_push() failed after try_reserve()");
-            inner.info.block_list[cur_count + i] = page_num;
+            inner.info.block_list[2 * (cur_count + i)] = page_num;
             for j in 0..PAGES_PER_BLOCK {
                 inner.info.page_list[(cur_count + i) * PAGES_PER_BLOCK + j] = page_num + j as u32;
             }
