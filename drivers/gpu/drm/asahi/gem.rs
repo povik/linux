@@ -47,7 +47,7 @@ impl ObjectRef {
     }
 
     pub(crate) fn iova(&self, vm_id: u64) -> Option<usize> {
-        let mut mappings = self.gem.mappings.lock();
+        let mappings = self.gem.mappings.lock();
         for (mapped_id, mapping) in mappings.iter() {
             if *mapped_id == vm_id {
                 return Some(mapping.iova());
@@ -60,7 +60,7 @@ impl ObjectRef {
     pub(crate) fn map_into(&mut self, vm: &crate::mmu::Vm) -> Result<usize> {
         let vm_id = vm.id();
         let mut mappings = self.gem.mappings.lock();
-        for (mapped_id, mapping) in mappings.iter() {
+        for (mapped_id, _mapping) in mappings.iter() {
             if *mapped_id == vm_id {
                 return Err(EBUSY);
             }
@@ -84,7 +84,7 @@ impl ObjectRef {
     ) -> Result<usize> {
         let vm_id = vm.id();
         let mut mappings = self.gem.mappings.lock();
-        for (mapped_id, mapping) in mappings.iter() {
+        for (mapped_id, _mapping) in mappings.iter() {
             if *mapped_id == vm_id {
                 return Err(EBUSY);
             }
