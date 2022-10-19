@@ -14,7 +14,7 @@ use core::sync::atomic::{fence, AtomicU32, AtomicU64, AtomicU8, Ordering};
 
 use kernel::{
     bindings, c_str, device,
-    drm::{gem, gem::shmem, mm},
+    drm::mm,
     error::{to_result, Result},
     io_pgtable,
     io_pgtable::{prot, AppleUAT, AppleUATCfg, IOPagetable},
@@ -26,7 +26,7 @@ use kernel::{
 };
 
 use crate::no_debug;
-use crate::{driver, slotalloc};
+use crate::{driver, gem, slotalloc};
 
 const PPL_MAGIC: u64 = 0x4b1d000000000002;
 
@@ -56,6 +56,13 @@ const TTBR_ASID_SHIFT: usize = 48;
 
 const PTE_TABLE: u64 = 0x3; // BIT(0) | BIT(1)
 
+// Note: prot::CACHE means "cache coherency", which for UAT means *uncached*,
+// since uncached mappings from the GFX ASC side are cache coherent with the AP cache.
+// Not having that flag means *cached noncoherent*.
+
+pub(crate) const PROT_FW_MMIO_RW: u32 =
+    prot::PRIV | prot::READ | prot::WRITE | prot::CACHE | prot::MMIO;
+pub(crate) const PROT_FW_MMIO_RO: u32 = prot::PRIV | prot::READ | prot::CACHE | prot::MMIO;
 pub(crate) const PROT_FW_SHARED_RW: u32 = prot::PRIV | prot::READ | prot::WRITE | prot::CACHE;
 pub(crate) const PROT_FW_SHARED_RO: u32 = prot::PRIV | prot::READ | prot::CACHE;
 pub(crate) const PROT_FW_PRIV_RW: u32 = prot::PRIV | prot::READ | prot::WRITE;
@@ -190,7 +197,36 @@ impl VmInner {
             left -= unmapped / pgsize;
             iova += unmapped;
         }
+
         Ok(pgcount * pgsize)
+    }
+
+    fn map_node(&mut self, node: &mm::Node<MappingInner>, prot: u32) -> Result {
+        let mut iova = node.start() as usize;
+        let sgt = node.sgt.as_ref().ok_or(EINVAL)?;
+
+        for range in sgt.iter() {
+            let addr = range.dma_address();
+            let len = range.dma_len();
+
+            if (addr | len | iova) & UAT_PGMSK != 0 {
+                dev_err!(
+                    self.dev,
+                    "MMU: Mapping {:#x}:{:#x} -> {:#x} is not page-aligned",
+                    addr,
+                    len,
+                    iova
+                );
+                return Err(EINVAL);
+            }
+
+            dev_info!(self.dev, "MMU: map: {:#x}:{:#x} -> {:#x}", addr, len, iova);
+
+            self.map_pages(iova, addr, UAT_PGSZ, len >> UAT_PGBIT, prot)?;
+
+            iova += len;
+        }
+        Ok(())
     }
 }
 
@@ -239,7 +275,9 @@ impl Clone for VmBind {
 
 pub(crate) struct MappingInner {
     owner: Arc<Mutex<VmInner>>,
-    uat_inner: Arc<Mutex<UatInner>>,
+    uat_inner: Arc<UatInner>,
+    prot: u32,
+    sgt: Option<gem::SGTable>,
 }
 
 pub(crate) struct Mapping(mm::Node<MappingInner>);
@@ -543,7 +581,7 @@ impl Vm {
         self.inner.lock().ttb()
     }
 
-    pub(crate) fn map(&self, size: usize, sgt: &mut shmem::SGTableIter<'_>) -> Result<Mapping> {
+    pub(crate) fn map(&self, size: usize, sgt: gem::SGTable) -> Result<Mapping> {
         let mut inner = self.inner.lock();
 
         let uat_inner = inner.uat_inner.clone();
@@ -551,22 +589,20 @@ impl Vm {
             MappingInner {
                 owner: self.inner.clone(),
                 uat_inner,
+                prot: PROT_FW_SHARED_RW,
+                sgt: Some(sgt),
             },
             (size + UAT_PGSZ) as u64, // Add guard page
         )?;
 
-        Self::map_node(
-            &mut *inner,
-            node,
-            sgt,
-            prot::PRIV | prot::READ | prot::WRITE | prot::CACHE,
-        )
+        inner.map_node(&node, PROT_FW_SHARED_RW)?;
+        Ok(Mapping(node))
     }
 
     pub(crate) fn map_in_range(
         &self,
         size: usize,
-        sgt: &mut shmem::SGTableIter<'_>,
+        sgt: gem::SGTable,
         alignment: u64,
         start: u64,
         end: u64,
@@ -579,6 +615,8 @@ impl Vm {
             MappingInner {
                 owner: self.inner.clone(),
                 uat_inner,
+                prot,
+                sgt: Some(sgt),
             },
             (size + UAT_PGSZ) as u64, // Add guard page
             alignment,
@@ -588,56 +626,12 @@ impl Vm {
             mm::InsertMode::Best,
         )?;
 
-        Self::map_node(&mut *inner, node, sgt, prot)
-    }
-
-    fn map_node(
-        inner: &mut VmInner,
-        node: mm::Node<MappingInner>,
-        sgt: &mut shmem::SGTableIter<'_>,
-        prot: u32,
-    ) -> Result<Mapping> {
-        let mut iova = node.start() as usize;
-
-        for range in sgt {
-            let addr = range.dma_address();
-            let len = range.dma_len();
-
-            if (addr | len | iova) & UAT_PGMSK != 0 {
-                dev_err!(
-                    inner.dev,
-                    "MMU: Mapping {:#x}:{:#x} -> {:#x} is not page-aligned",
-                    addr,
-                    len,
-                    iova
-                );
-                return Err(EINVAL);
-            }
-
-            dev_info!(inner.dev, "MMU: map: {:#x}:{:#x} -> {:#x}", addr, len, iova);
-
-            inner.map_pages(iova, addr, UAT_PGSZ, len >> UAT_PGBIT, prot)?;
-
-            iova += len;
-        }
-
-        unsafe {
-            asm!(
-                ".arch armv8.4-a",
-                "dsb sy",
-                "tlbi vmalle1os",
-                "dsb sy",
-                "isb"
-            );
-        }
-        //         unsafe {
-        //             asm!(".arch armv8.4-a\ndsb sy\n");
-        //         }
-
+        inner.map_node(&node, prot)?;
         Ok(Mapping(node))
     }
 
-    pub(crate) fn map_io(&self, phys: usize, size: usize) -> Result<Mapping> {
+    pub(crate) fn map_io(&self, phys: usize, size: usize, rw: bool) -> Result<Mapping> {
+        let prot = if rw { PROT_FW_MMIO_RW } else { PROT_FW_MMIO_RO };
         let mut inner = self.inner.lock();
 
         let uat_inner = inner.uat_inner.clone();
@@ -645,6 +639,8 @@ impl Vm {
             MappingInner {
                 owner: self.inner.clone(),
                 uat_inner,
+                prot,
+                sgt: None,
             },
             (size + UAT_PGSZ) as u64, // Add guard page
         )?;
@@ -670,13 +666,7 @@ impl Vm {
             iova
         );
 
-        inner.map_pages(
-            iova,
-            phys,
-            UAT_PGSZ,
-            size >> UAT_PGBIT,
-            prot::PRIV | prot::READ | prot::WRITE | prot::CACHE | prot::MMIO,
-        )?;
+        inner.map_pages(iova, phys, UAT_PGSZ, size >> UAT_PGBIT, prot)?;
 
         Ok(Mapping(node))
     }

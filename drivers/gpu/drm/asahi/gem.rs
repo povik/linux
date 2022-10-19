@@ -28,6 +28,7 @@ pub(crate) struct DriverObject {
 }
 
 pub(crate) type Object = shmem::Object<DriverObject>;
+pub(crate) type SGTable = shmem::SGTable<DriverObject>;
 
 pub(crate) struct ObjectRef {
     pub(crate) gem: gem::ObjectRef<shmem::Object<DriverObject>>,
@@ -67,7 +68,7 @@ impl ObjectRef {
         }
 
         let sgt = self.gem.sg_table()?;
-        let new_mapping = vm.map(self.gem.size(), &mut sgt.iter())?;
+        let new_mapping = vm.map(self.gem.size(), sgt)?;
 
         let iova = new_mapping.iova();
         mappings.try_push((vm_id, new_mapping))?;
@@ -91,14 +92,7 @@ impl ObjectRef {
         }
 
         let sgt = self.gem.sg_table()?;
-        let new_mapping = vm.map_in_range(
-            self.gem.size(),
-            &mut sgt.iter(),
-            alignment,
-            start,
-            end,
-            prot,
-        )?;
+        let new_mapping = vm.map_in_range(self.gem.size(), sgt, alignment, start, end, prot)?;
 
         let iova = new_mapping.iova();
         mappings.try_push((vm_id, new_mapping))?;

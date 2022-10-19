@@ -320,7 +320,10 @@ impl GpuManager::ver {
         let off = map.base & mmu::UAT_PGMSK;
         let base = map.base - off;
         let end = (map.base + map.size + mmu::UAT_PGMSK) & !mmu::UAT_PGMSK;
-        let mapping = self.uat.kernel_vm().map_io(base, end - base)?;
+        let mapping = self
+            .uat
+            .kernel_vm()
+            .map_io(base, end - base, map.writable)?;
 
         self.initdata.runtime_pointers.hwdata_b.with_mut(|raw, _| {
             raw.io_mappings[index] = fw::initdata::raw::IOMapping {
