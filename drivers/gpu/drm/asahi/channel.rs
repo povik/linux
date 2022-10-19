@@ -9,7 +9,7 @@ use crate::fw::initdata::{raw, ChannelRing};
 use crate::fw::types::*;
 use crate::{event, gpu};
 use core::time::Duration;
-use kernel::{dbg, delay::coarse_sleep, prelude::*, sync::Arc};
+use kernel::{dbg, delay::coarse_sleep, prelude::*, sync::Arc, time};
 
 pub(crate) use crate::fw::channels::PipeType;
 
@@ -102,13 +102,13 @@ where
         self.wptr
     }
 
-    pub(crate) fn wait_for(&mut self, wptr: u32, timeout_ms: usize) -> Result {
+    pub(crate) fn wait_for(&mut self, wptr: u32, timeout_ms: u64) -> Result {
+        let timeout = time::ktime_get() + Duration::from_millis(timeout_ms);
         self.ring.state.with(|raw, _inner| {
-            for _i in 0..timeout_ms {
+            while time::ktime_get() < timeout {
                 if T::rptr(raw) == wptr {
                     return Ok(());
                 }
-                coarse_sleep(Duration::from_millis(1));
             }
             Err(ETIMEDOUT)
         })
@@ -120,7 +120,7 @@ pub(crate) struct DeviceControlChannel {
 }
 
 impl DeviceControlChannel {
-    const COMMAND_TIMEOUT_MS: usize = 100;
+    const COMMAND_TIMEOUT_MS: u64 = 100;
 
     pub(crate) fn new(alloc: &mut gpu::KernelAllocators) -> Result<DeviceControlChannel> {
         Ok(DeviceControlChannel {
