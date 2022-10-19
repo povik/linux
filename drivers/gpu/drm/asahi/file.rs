@@ -24,7 +24,7 @@ pub(crate) struct File {
     renderer: Box<dyn render::Renderer>,
 }
 
-type DrmFile = drm::file::File<File>;
+pub(crate) type DrmFile = drm::file::File<File>;
 
 impl drm::file::DriverFile for File {
     type Driver = driver::AsahiDriver;
@@ -245,6 +245,10 @@ impl File {
             iova?;
             Err(EIO)
         }
+    }
+
+    pub(crate) fn vm_id(&self) -> u64 {
+        self.vm.id()
     }
 }
 

@@ -20,6 +20,7 @@ use kernel::{
 use kernel::drm::gem::BaseObject;
 
 use crate::driver::AsahiDevice;
+use crate::file::DrmFile;
 
 pub(crate) struct DriverObject {
     kernel: bool,
@@ -33,6 +34,18 @@ pub(crate) type SGTable = shmem::SGTable<DriverObject>;
 pub(crate) struct ObjectRef {
     pub(crate) gem: gem::ObjectRef<shmem::Object<DriverObject>>,
     pub(crate) vmap: Option<shmem::VMap<DriverObject>>,
+}
+
+impl DriverObject {
+    fn drop_mappings(&self, vm_id: u64) {
+        let mut mappings = self.mappings.lock();
+        for (index, (mapped_id, _mapping)) in mappings.iter().enumerate() {
+            if *mapped_id == vm_id {
+                mappings.swap_remove(index);
+                return;
+            }
+        }
+    }
 }
 
 impl ObjectRef {
@@ -100,13 +113,7 @@ impl ObjectRef {
     }
 
     pub(crate) fn drop_mappings(&mut self, vm_id: u64) {
-        let mut mappings = self.gem.mappings.lock();
-        for (index, (mapped_id, _mapping)) in mappings.iter().enumerate() {
-            if *mapped_id == vm_id {
-                mappings.swap_remove(index);
-                return;
-            }
-        }
+        self.gem.drop_mappings(vm_id);
     }
 }
 
@@ -133,6 +140,11 @@ impl gem::BaseDriverObject<Object> for DriverObject {
             flags: 0,
             mappings: Mutex::new(Vec::new()),
         })
+    }
+
+    fn close(obj: &Object, file: &DrmFile) {
+        pr_info!("DriverObject::close\n");
+        obj.drop_mappings(file.inner().vm_id());
     }
 }
 
