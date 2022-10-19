@@ -174,13 +174,7 @@ impl GpuManager::ver {
     pub(crate) fn new(dev: &AsahiDevice, cfg: &hw::HwConfig) -> Result<Arc<GpuManager::ver>> {
         let uat = mmu::Uat::new(dev)?;
         let mut alloc = KernelAllocators {
-            //             private: alloc::SimpleAllocator::new(dev, uat.kernel_vm(), 0x20, mmu::PROT_FW_PRIV_RW),
-            private: alloc::SimpleAllocator::new(
-                dev,
-                uat.kernel_vm(),
-                0x20,
-                mmu::PROT_FW_SHARED_RW,
-            ),
+            private: alloc::SimpleAllocator::new(dev, uat.kernel_vm(), 0x20, mmu::PROT_FW_PRIV_RW),
             shared: alloc::SimpleAllocator::new(dev, uat.kernel_vm(), 0x20, mmu::PROT_FW_SHARED_RW),
             gpu: alloc::SimpleAllocator::new(
                 dev,
