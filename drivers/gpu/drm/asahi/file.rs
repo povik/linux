@@ -130,8 +130,8 @@ impl File {
         let mut bo = gem::new_object(device, data.size as usize, data.flags)?;
 
         if data.flags & bindings::ASAHI_BO_PIPELINE != 0 {
-            let start = 0x11_00000000 + ((file.inner().id & 0x1f) << 27);
-            let end = start + 0x7ffffff;
+            let start = 0x11_00000000;
+            let end = start + 0xffffffff;
             let iova = bo.map_into_range(
                 &file.inner().vm,
                 start,
@@ -141,9 +141,8 @@ impl File {
             )?;
             data.offset = iova as u64 - 0x11_00000000;
         } else {
-            // DEBUG: use different VM ranges for different files
-            let start = 0x20_00000000 + ((file.inner().id & 0x1f) << 32);
-            let end = start + 0xffffffff;
+            let start = 0x20_00000000;
+            let end = start + 0x3f_ffffffff;
 
             let iova = bo.map_into_range(
                 &file.inner().vm,
@@ -210,8 +209,8 @@ impl File {
 
         let mut bo = gem::ObjectRef::new(gem::Object::lookup_handle(file, data.handle)?);
 
-        let start = 0x20_80000000 + ((file.inner().id & 0x1f) << 32);
-        let end = start + 0xffffffff;
+        let start = 0x20_00000000;
+        let end = start + 0x3f_ffffffff;
 
         // This can race other threads. Only one will win the map and the
         // others will return EBUSY.
