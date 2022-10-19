@@ -355,7 +355,7 @@ impl<T: Sized + Default, U: Allocation<T>> GpuArray<T, U> {
             alloc.device(),
             "Allocating {} * {:#x} @ {:#x}",
             core::any::type_name::<T>(),
-            bytes,
+            count,
             alloc.gpu_ptr(),
         );
         if alloc.size() < bytes {
