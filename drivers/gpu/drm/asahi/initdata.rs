@@ -544,7 +544,7 @@ impl<'a> InitDataBuilder::ver<'a> {
             unkptr_1c0: self.alloc.shared.array_empty(0x300)?,
             unkptr_1c8: self.alloc.shared.array_empty(0x1000)?,
 
-            buffer_mgr_ctl: self.alloc.gpu.array_empty(126)?,
+            buffer_mgr_ctl: self.alloc.gpu.array_empty(127)?,
         })?;
 
         self.alloc.shared.new_boxed(pointers, |inner, ptr| {
