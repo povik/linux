@@ -5,7 +5,6 @@
 
 //! Apple AGX UAT (MMU) support
 
-use core::arch::asm;
 use core::fmt::Debug;
 use core::mem::{size_of, ManuallyDrop};
 use core::ops::Deref;
@@ -20,13 +19,13 @@ use kernel::{
     io_pgtable::{prot, AppleUAT, AppleUATCfg, IOPagetable},
     prelude::*,
     str::CString,
-    sync::smutex::Mutex,
     sync::Arc,
+    sync::{smutex::Mutex, Guard},
     PointerWrapper,
 };
 
 use crate::no_debug;
-use crate::{driver, gem, slotalloc};
+use crate::{driver, fw, gem, mem, slotalloc};
 
 const PPL_MAGIC: u64 = 0x4b1d000000000002;
 
@@ -98,7 +97,7 @@ struct Handoff {
     lock_fw: AtomicU8,
     // Implicit padding: 2 bytes
     turn: AtomicU32,
-    unk: AtomicU32,
+    cur_slot: AtomicU32,
     // Implicit padding: 4 bytes
     flush: [FlushInfo; UAT_NUM_CTX + 1],
 
@@ -127,7 +126,7 @@ struct VmInner {
     max_va: usize,
     page_table: AppleUAT<Uat>,
     mm: mm::Allocator<MappingInner>,
-    uat_inner: Arc<Mutex<UatInner>>,
+    uat_inner: Arc<UatInner>,
     active_users: usize,
     binding: Option<slotalloc::Guard<SlotInner>>,
     bind_token: Option<slotalloc::SlotToken>,
@@ -137,17 +136,21 @@ struct VmInner {
 impl VmInner {
     fn slot(&self) -> Option<u32> {
         if self.is_kernel {
-            Some(0x40)
+            // The GFX ASC does not care about the ASID. Pick an arbitrary one.
+            // TODO: This needs to be a persistently reserved ASID once we integrate
+            // with the ARM64 kernel ASID machinery to avoid overlap.
+            Some(0)
         } else {
-            // TODO: check if we lost the slot, don't really own it in that case.
+            // We don't check whether we lost the slot, which could cause unnecessary
+            // invalidations against another Vm. However, this situation should be very
+            // rare (e.g. a Vm lost its slot, which means 63 other Vms bound in the
+            // interim, and then it gets killed / drops its mappings without doing any
+            // final rendering). Anything doing active maps/unmaps is probably also
+            // rendering and therefore likely bound.
             self.bind_token
                 .as_ref()
                 .map(|token| (token.last_slot() as u32 + UAT_USER_CTX_START as u32))
         }
-    }
-
-    fn asid_ttb(&self) -> Option<u64> {
-        self.slot().map(|slot| (slot as u64) << TTBR_ASID_SHIFT)
     }
 
     fn ttb(&self) -> u64 {
@@ -286,15 +289,124 @@ impl Mapping {
     pub(crate) fn iova(&self) -> usize {
         self.0.start() as usize
     }
+
     pub(crate) fn size(&self) -> usize {
-        self.0.size() as usize
+        self.0.size() as usize - UAT_PGSZ // Exclude guard page
+    }
+
+    fn remap_uncached_and_flush(&mut self) {
+        let mut owner = self.0.owner.lock();
+        dev_info!(
+            owner.dev,
+            "MMU: remap as uncached {:#x}:{:#x}",
+            self.iova(),
+            self.size()
+        );
+
+        // The IOMMU API does not allow us to remap things in-place...
+        // just do an unmap and map again for now.
+        // Do not try to unmap guard page (-1)
+        if owner
+            .unmap_pages(self.iova(), UAT_PGSZ, self.size() >> UAT_PGBIT)
+            .is_err()
+        {
+            dev_err!(
+                owner.dev,
+                "MMU: unmap for remap {:#x}:{:#x} failed",
+                self.iova(),
+                self.size()
+            );
+        }
+
+        let prot = self.0.prot | prot::CACHE;
+        if owner.map_node(&self.0, prot).is_err() {
+            dev_err!(
+                owner.dev,
+                "MMU: remap {:#x}:{:#x} failed",
+                self.iova(),
+                self.size()
+            );
+        }
+
+        // If we don't have (and have never had) a VM slot, just return
+        let slot = match owner.slot() {
+            None => return,
+            Some(slot) => slot,
+        };
+
+        let flush_slot = if owner.is_kernel {
+            // If this is a kernel mapping, always flush on index 64
+            UAT_NUM_CTX as u32
+        } else {
+            // Otherwise, check if this slot is the active one, otherwise return
+            let uat_inner = self.0.uat_inner.lock();
+            uat_inner.handoff().lock();
+            let cur_slot = uat_inner.handoff().current_slot();
+            uat_inner.handoff().unlock();
+            if cur_slot == Some(slot) {
+                slot
+            } else {
+                return;
+            }
+        };
+
+        // Lock this flush slot, and write the range to it
+        let flush = self.0.uat_inner.lock_flush(flush_slot);
+        flush.begin_flush(self.iova() as u64, self.size() as u64);
+
+        let cmd = fw::channels::FwCtlMsg {
+            addr: fw::types::U64(self.iova() as u64),
+            unk_8: 0,
+            slot: flush_slot,
+            unk_10: 1,
+            unk_12: 2,
+        };
+
+        // Tell the firmware to do a cache flush
+        if owner.dev.data().gpu.fwctl(cmd).is_err() {
+            dev_err!(
+                owner.dev,
+                "MMU: ASC cache flush {:#x}:{:#x} timed out",
+                self.iova(),
+                self.size()
+            );
+        }
+
+        // Finish the flush
+        flush.end_flush();
+
+        // Slot is unlocked here
     }
 }
 
 impl Drop for Mapping {
     fn drop(&mut self) {
-        let mut owner = self.0.owner.lock();
+        // This is the main unmap function for UAT mappings.
+        // The sequence of operations here is finicky, due to the interaction
+        // between cached GFX ASC mappings and the page tables. These mappings
+        // always have to be flushed from the cache before being unmapped.
 
+        // For uncached mappings, just unmapping and flushing the TLB is sufficient.
+
+        // For cached mappings, this is the required sequence:
+        // 1. Remap it as uncached
+        // 2. Flush the TLB range
+        // 3. If kernel VA mapping OR user VA mapping and handoff.current_slot() == slot:
+        //    a. Take a lock for this slot
+        //    b. Write the flush range to the right context slot in handoff area
+        //    c. Issue a cache invalidation request via FwCtl queue
+        //    d. Poll for completion via queue
+        //    e. Check for completion flag in the handoff area
+        //    f. Drop the lock
+        // 4. Unmap
+        // 5. Flush the TLB range again
+
+        // prot::CACHE means "cache coherent" which means *uncached* here.
+        if self.0.prot & prot::CACHE == 0 {
+            self.remap_uncached_and_flush();
+        }
+
+        let mut owner = self.0.owner.lock();
         dev_info!(
             owner.dev,
             "MMU: unmap {:#x}:{:#x}",
@@ -302,17 +414,8 @@ impl Drop for Mapping {
             self.size()
         );
 
-        let mut slot_inner = owner.slot().map(|slot| (slot, self.0.uat_inner.lock()));
-
-        if let Some((slot, uat_inner)) = slot_inner.as_mut() {
-            uat_inner
-                .handoff()
-                .begin_flush(*slot, self.iova() as u64, self.size() as u64);
-        }
-
-        // Do not try to unmap guard page (-1)
         if owner
-            .unmap_pages(self.iova(), UAT_PGSZ, (self.size() >> UAT_PGBIT) - 1)
+            .unmap_pages(self.iova(), UAT_PGSZ, self.size() >> UAT_PGBIT)
             .is_err()
         {
             dev_err!(
@@ -323,64 +426,26 @@ impl Drop for Mapping {
             );
         }
 
-        unsafe {
-            asm!(
-                ".arch armv8.4-a",
-                "dsb sy",
-                "tlbi vmalle1os",
-                "dsb sy",
-                "isb"
+        if let Some(asid) = owner.slot() {
+            mem::tlbi_range(asid as u8, self.iova(), self.size());
+            dev_info!(
+                owner.dev,
+                "MMU: flush range: asid={:#x} start={:#x} len={:#x}",
+                asid,
+                self.iova(),
+                self.size()
             );
-            //asm!("dsb sy");
-        }
-
-        if let Some(asid) = owner.asid_ttb() {
-            dev_info!(owner.dev, "MMU: flush ASID: {:#x}", asid);
-            unsafe {
-                asm!(
-                    ".arch armv8.4-a",
-                    "dsb sy",
-                    "tlbi aside1os, {x}",
-                    "dsb sy",
-                    "isb",
-                    x = in(reg) asid
-                );
-            }
-        }
-
-        /*
-        if let Some(asid) = owner.asid_ttb() {
-            let mut page = (0xfffffffffff & (self.iova() as u64 >> 12)) | asid;
-            let mut count = self.size() >> UAT_PGBIT;
-            while count != 0 {
-                unsafe {
-                    asm!(
-                        ".arch armv8.4-a",
-                        "tlbi vae1os, {x}",
-                        x = in(reg) page,
-                    );
-                }
-                count -= 1;
-                page += 4;
-            }
-            unsafe {
-                asm!("dsb sy");
-            }
-        }
-        */
-
-        if let Some((slot, uat_inner)) = slot_inner.as_mut() {
-            uat_inner.handoff().end_flush(*slot);
+            mem::sync();
         }
     }
 }
 
-struct UatInner {
+struct UatShared {
     handoff_rgn: UatRegion,
     ttbs_rgn: UatRegion,
 }
 
-impl UatInner {
+impl UatShared {
     fn handoff(&self) -> &Handoff {
         // SAFETY: pointer is non-null per the type invariant
         unsafe { (self.handoff_rgn.map.as_ptr() as *mut Handoff).as_ref() }.unwrap()
@@ -392,13 +457,28 @@ impl UatInner {
     }
 }
 
-unsafe impl Send for UatInner {}
+unsafe impl Send for UatShared {}
+
+struct UatInner {
+    shared: Mutex<UatShared>,
+    handoff_flush: [Mutex<HandoffFlush>; UAT_NUM_CTX + 1],
+}
+
+impl UatInner {
+    fn lock(&self) -> Guard<'_, Mutex<UatShared>> {
+        self.shared.lock()
+    }
+
+    fn lock_flush(&self, slot: u32) -> Guard<'_, Mutex<HandoffFlush>> {
+        self.handoff_flush[slot as usize].lock()
+    }
+}
 
 pub(crate) struct Uat {
     dev: driver::AsahiDevice,
     pagetables_rgn: UatRegion,
 
-    inner: Arc<Mutex<UatInner>>,
+    inner: Arc<UatInner>,
     slots: slotalloc::SlotAllocator<SlotInner>,
 
     kernel_vm: Vm,
@@ -433,36 +513,18 @@ impl Handoff {
         self.lock_ap.store(0, Ordering::Release);
     }
 
-    fn begin_flush(&self, slot: u32, start: u64, size: u64) {
-        let flush = &self.flush[slot as usize];
-        assert_eq!(flush.state.load(Ordering::Relaxed), 0);
-        flush.addr.store(start, Ordering::Relaxed);
-        flush.size.store(size, Ordering::Relaxed);
-
-        let a = self.unk.load(Ordering::Relaxed); // ?
-        let b = self.unk2.load(Ordering::Relaxed); // ?
-
-        pr_info!("Handoff: {} {}\n", a, b);
-
-        flush.addr.load(Ordering::Relaxed);
-        flush.addr.store(start, Ordering::Relaxed);
-        flush.addr.load(Ordering::Relaxed);
-        flush.addr.store(
-            (start & 0xffff_ffff_ffff) | 0xdead_0000_0000_0000,
-            Ordering::Relaxed,
-        );
-        flush.state.store(2, Ordering::Relaxed);
-    }
-
-    fn end_flush(&self, slot: u32) {
-        let flush = &self.flush[slot as usize];
-        assert_eq!(flush.state.load(Ordering::Relaxed), 2);
-        flush.state.store(0, Ordering::Relaxed);
+    fn current_slot(&self) -> Option<u32> {
+        let slot = self.cur_slot.load(Ordering::Relaxed);
+        if slot == 0 || slot == u32::MAX {
+            None
+        } else {
+            Some(slot)
+        }
     }
 
     fn init(&self) {
         self.magic_ap.store(PPL_MAGIC, Ordering::Relaxed);
-        self.unk.store(0xffffffff, Ordering::Relaxed);
+        self.cur_slot.store(0, Ordering::Relaxed);
         self.unk3.store(0, Ordering::Relaxed);
         fence(Ordering::SeqCst);
 
@@ -481,57 +543,58 @@ impl Handoff {
     }
 }
 
+struct HandoffFlush(*const FlushInfo);
+
+unsafe impl Send for HandoffFlush {}
+
+impl HandoffFlush {
+    fn begin_flush(&self, start: u64, size: u64) {
+        let flush = unsafe { self.0.as_ref().unwrap() };
+
+        let state = flush.state.load(Ordering::Relaxed);
+        if state != 0 {
+            pr_err!("Handoff: expected flush state 0, got {}", state);
+        }
+        flush.addr.store(start, Ordering::Relaxed);
+        flush.size.store(size, Ordering::Relaxed);
+        flush.state.store(1, Ordering::Relaxed);
+    }
+
+    fn end_flush(&self) {
+        let flush = unsafe { self.0.as_ref().unwrap() };
+        let state = flush.state.load(Ordering::Relaxed);
+        if state != 2 {
+            pr_err!("Handoff: expected flush state 2, got {}", state);
+        }
+        flush.state.store(0, Ordering::Relaxed);
+    }
+}
+
+// We do not implement FlushOps, since we flush manually in this module after
+// page table operations. Just provide dummy implementations.
 impl io_pgtable::FlushOps for Uat {
     type Data = ();
 
-    fn tlb_flush_all(_data: <Self::Data as PointerWrapper>::Borrowed<'_>) {
-        unsafe {
-            asm!(
-                ".arch armv8.4-a",
-                "dsb sy",
-                "tlbi vmalle1os",
-                "dsb sy",
-                "isb"
-            );
-        }
-    }
+    fn tlb_flush_all(_data: <Self::Data as PointerWrapper>::Borrowed<'_>) {}
     fn tlb_flush_walk(
         _data: <Self::Data as PointerWrapper>::Borrowed<'_>,
         _iova: usize,
         _size: usize,
         _granule: usize,
     ) {
-        unsafe {
-            asm!(
-                ".arch armv8.4-a",
-                "dsb sy",
-                "tlbi vmalle1os",
-                "dsb sy",
-                "isb"
-            );
-        }
     }
     fn tlb_add_page(
         _data: <Self::Data as PointerWrapper>::Borrowed<'_>,
         _iova: usize,
         _granule: usize,
     ) {
-        unsafe {
-            asm!(
-                ".arch armv8.4-a",
-                "dsb sy",
-                "tlbi vmalle1os",
-                "dsb sy",
-                "isb"
-            );
-        }
     }
 }
 
 impl Vm {
     fn new(
         dev: driver::AsahiDevice,
-        uat_inner: Arc<Mutex<UatInner>>,
+        uat_inner: Arc<UatInner>,
         is_kernel: bool,
         id: u64,
     ) -> Result<Vm> {
@@ -693,40 +756,32 @@ impl Drop for VmInner {
 
             let uat_inner = self.uat_inner.lock();
             uat_inner.handoff().lock();
+            let handoff_cur = uat_inner.handoff().current_slot();
             let ttb_cur = uat_inner.ttbs()[idx].ttb0.load(Ordering::SeqCst);
             let inval = ttb_cur == ttb;
             if inval {
+                if handoff_cur == Some(idx as u32) {
+                    pr_err!(
+                        "VmInner::drop owning slot {}, but it is currently in use by the ASC?",
+                        idx
+                    );
+                }
                 uat_inner.ttbs()[idx].ttb0.store(0, Ordering::SeqCst);
             }
             uat_inner.handoff().unlock();
             core::mem::drop(uat_inner);
 
+            // In principle we dropped all the Mappings already, but we might as
+            // well play it safe and invalidate the whole ASID.
             if inval {
-                let asid = (idx as u64) << TTBR_ASID_SHIFT;
-
                 pr_info!(
                     "VmInner::Drop [{}]: need inval for ASID {:#x}\n",
                     self.id,
-                    asid
+                    idx
                 );
-                unsafe {
-                    asm!(
-                        ".arch armv8.4-a",
-                        "tlbi aside1os, {x}",
-                        x = in(reg) asid,
-                    );
-                }
+                mem::tlbi_asid(idx as u8);
+                mem::sync();
             }
-        }
-
-        unsafe {
-            asm!(
-                ".arch armv8.4-a",
-                "dsb sy",
-                "tlbi vmalle1os",
-                "dsb sy",
-                "isb"
-            );
         }
     }
 }
@@ -834,19 +889,20 @@ impl Uat {
                 let uat_inner = self.inner.lock();
                 let ttbs = uat_inner.ttbs();
                 uat_inner.handoff().lock();
+                if uat_inner.handoff().current_slot() == Some(idx as u32) {
+                    pr_err!(
+                        "Vm::bind to slot {}, but it is currently in use by the ASC?",
+                        idx
+                    );
+                }
                 ttbs[idx].ttb0.store(ttb, Ordering::Relaxed);
                 ttbs[idx].ttb1.store(0, Ordering::Relaxed);
                 uat_inner.handoff().unlock();
                 core::mem::drop(uat_inner);
 
-                let asid = (idx as u64) << TTBR_ASID_SHIFT;
-                unsafe {
-                    asm!(
-                        ".arch armv8.4-a",
-                        "tlbi aside1os, {x}",
-                        x = in(reg) asid,
-                    );
-                }
+                // Make sure all TLB entries from the previous owner of this ASID are gone
+                mem::tlbi_asid(idx as u8);
+                mem::sync();
             }
 
             inner.bind_token = Some(slot.token());
@@ -874,10 +930,17 @@ impl Uat {
 
         dev_info!(dev, "MMU: Initializing kernel page table\n");
 
-        let inner = Arc::try_new(Mutex::new(UatInner {
-            handoff_rgn,
-            ttbs_rgn,
-        }))?;
+        let inner = Arc::try_new(UatInner {
+            handoff_flush: core::array::from_fn(|i| {
+                let handoff =
+                    unsafe { &(handoff_rgn.map.as_ptr() as *mut Handoff).as_ref() }.unwrap();
+                Mutex::new(HandoffFlush(&handoff.flush[i]))
+            }),
+            shared: Mutex::new(UatShared {
+                handoff_rgn,
+                ttbs_rgn,
+            }),
+        })?;
 
         let kernel_lower_vm = Vm::new(dev.clone(), inner.clone(), false, 1)?;
         let kernel_vm = Vm::new(dev.clone(), inner.clone(), true, 0)?;
@@ -935,15 +998,8 @@ impl Drop for Uat {
 
         // Make sure we flush the TLBs
         fence(Ordering::SeqCst);
-        unsafe {
-            asm!(
-                ".arch armv8.4-a",
-                "dsb sy",
-                "tlbi vmalle1os",
-                "dsb sy",
-                "isb"
-            );
-        }
+        mem::tlbi_all();
+        mem::sync();
     }
 }
 
