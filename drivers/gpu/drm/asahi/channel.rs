@@ -7,7 +7,7 @@
 use crate::fw::channels::*;
 use crate::fw::initdata::{raw, ChannelRing};
 use crate::fw::types::*;
-use crate::{event, gpu};
+use crate::{event, gpu, mem};
 use core::time::Duration;
 use kernel::{dbg, delay::coarse_sleep, prelude::*, sync::Arc, time};
 
@@ -96,6 +96,7 @@ where
                 }
             }
             self.ring.ring[self.wptr as usize] = *msg;
+            mem::sync();
             T::set_wptr(raw, next_wptr);
             self.wptr = next_wptr;
         });
@@ -109,6 +110,7 @@ where
                 if T::rptr(raw) == wptr {
                     return Ok(());
                 }
+                mem::sync();
             }
             Err(ETIMEDOUT)
         })
