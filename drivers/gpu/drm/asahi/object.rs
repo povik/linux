@@ -447,6 +447,7 @@ impl<T: Sized, U: Allocation<T>> IndexMut<usize> for GpuArray<T, U> {
 unsafe impl<T: GpuStruct + Send, U: Allocation<T>> Send for GpuObject<T, U> {}
 unsafe impl<T: Sized + Send, U: Allocation<T>> Send for GpuArray<T, U> {}
 
+/*
 impl<T: GpuStruct, U: Allocation<T>> Drop for GpuObject<T, U> {
     fn drop(&mut self) {
         dev_info!(
@@ -468,6 +469,7 @@ impl<T: Sized, U: Allocation<T>> Drop for GpuArray<T, U> {
         );
     }
 }
+*/
 
 impl<T: Sized + fmt::Debug, U: Allocation<T>> fmt::Debug for GpuArray<T, U> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {

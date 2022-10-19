@@ -80,11 +80,11 @@ pub(crate) struct SimpleAllocation<T> {
 
 impl<T> Drop for SimpleAllocation<T> {
     fn drop(&mut self) {
-        dev_info!(
+        /* dev_info!(
             self.device(),
             "Allocator: drop object @ {:#x}",
             self.gpu_ptr()
-        );
+        ); */
         if let Ok(vmap) = self.obj.vmap() {
             vmap.as_mut_slice().fill(0x42);
         }
