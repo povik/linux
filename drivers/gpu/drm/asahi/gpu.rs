@@ -535,6 +535,7 @@ impl GpuManager for GpuManager::ver {
         dev_err!(self.dev, "  |________|  \n");
         dev_err!(self.dev, "** GPU timeout nya~!!!!! **\n");
         dev_err!(self.dev, "  Event slot: {}\n", event_slot);
+        dev_err!(self.dev, "  Timeout count: {}\n", counter);
         self.show_pending_events();
         self.recover();
     }
