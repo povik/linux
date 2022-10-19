@@ -79,6 +79,20 @@ where
         })
     }
 
+    pub(crate) fn new_uncached(
+        alloc: &mut gpu::KernelAllocators,
+        count: usize,
+    ) -> Result<TxChannel<T, U>> {
+        Ok(TxChannel {
+            ring: ChannelRing {
+                state: alloc.shared.new_default()?,
+                ring: alloc.shared.array_empty(count)?,
+            },
+            wptr: 0,
+            count: count as u32,
+        })
+    }
+
     pub(crate) fn put(&mut self, msg: &U) -> u32 {
         self.ring.state.with(|raw, _inner| {
             let next_wptr = (self.wptr + 1) % self.count;
@@ -160,6 +174,32 @@ impl PipeChannel {
 
     pub(crate) fn send(&mut self, msg: &PipeMsg) {
         self.ch.put(msg);
+    }
+}
+
+pub(crate) struct FwCtlChannel {
+    ch: TxChannel<FwCtlChannelState, FwCtlMsg>,
+}
+
+impl FwCtlChannel {
+    const COMMAND_TIMEOUT_MS: u64 = 100;
+
+    pub(crate) fn new(alloc: &mut gpu::KernelAllocators) -> Result<FwCtlChannel> {
+        Ok(FwCtlChannel {
+            ch: TxChannel::<FwCtlChannelState, FwCtlMsg>::new_uncached(alloc, 0x100)?,
+        })
+    }
+
+    pub(crate) fn to_raw(&self) -> raw::ChannelRing<FwCtlChannelState, FwCtlMsg> {
+        self.ch.ring.to_raw()
+    }
+
+    pub(crate) fn send(&mut self, msg: &FwCtlMsg) -> u32 {
+        self.ch.put(msg)
+    }
+
+    pub(crate) fn wait_for(&mut self, wptr: u32) -> Result {
+        self.ch.wait_for(wptr, Self::COMMAND_TIMEOUT_MS)
     }
 }
 

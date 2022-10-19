@@ -184,6 +184,15 @@ pub(crate) enum DeviceControlMsg {
 }
 default_zeroed!(DeviceControlMsg);
 
+#[derive(Copy, Clone, Default, Debug)]
+pub(crate) struct FwCtlMsg {
+    pub(crate) addr: U64,
+    pub(crate) unk_8: u32,
+    pub(crate) slot: u32,
+    pub(crate) unk_10: u16,
+    pub(crate) unk_12: u16,
+}
+
 pub(crate) const EVENT_SZ: usize = 0x34;
 
 #[derive(Debug, Copy, Clone)]
@@ -214,7 +223,6 @@ pub(crate) union RawEventMsg {
 default_zeroed!(RawEventMsg);
 
 pub(crate) type RawFwLogMsg = Array<0xd8, u8>;
-pub(crate) type FwCtlMsg = Array<0x14, u8>;
 
 #[derive(Debug, Copy, Clone, Default)]
 #[repr(C)]
