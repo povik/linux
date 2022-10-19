@@ -98,6 +98,16 @@ impl ObjectRef {
         mappings.try_push((vm_id, new_mapping))?;
         Ok(iova)
     }
+
+    pub(crate) fn drop_mappings(&mut self, vm_id: u64) {
+        let mut mappings = self.gem.mappings.lock();
+        for (index, (mapped_id, _mapping)) in mappings.iter().enumerate() {
+            if *mapped_id == vm_id {
+                mappings.swap_remove(index);
+                return;
+            }
+        }
+    }
 }
 
 pub(crate) fn new_kernel_object(dev: &AsahiDevice, size: usize) -> Result<ObjectRef> {

@@ -88,6 +88,7 @@ impl<T> Drop for SimpleAllocation<T> {
         if let Ok(vmap) = self.obj.vmap() {
             vmap.as_mut_slice().fill(0x42);
         }
+        self.obj.drop_mappings(self.vm.id());
     }
 }
 
