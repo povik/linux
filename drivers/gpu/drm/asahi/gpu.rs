@@ -17,8 +17,7 @@ use kernel::{
 };
 
 use crate::driver::AsahiDevice;
-use crate::fw::channels::DeviceControlMsg;
-use crate::fw::channels::PipeType;
+use crate::fw::channels::{DeviceControlMsg, FwCtlMsg, PipeType};
 use crate::{alloc, buffer, channel, event, fw, gem, hw, initdata, mmu, render, workqueue};
 
 const EP_FIRMWARE: u8 = 0x20;
@@ -100,6 +99,7 @@ pub(crate) struct GpuManager {
     rtkit: Mutex<Option<rtkit::RTKit<GpuManager::ver>>>,
     rx_channels: Mutex<RxChannels::ver>,
     tx_channels: Mutex<TxChannels>,
+    fwctl_channel: Mutex<channel::FwCtlChannel>,
     pipes: PipeChannels,
     event_manager: Arc<event::EventManager>,
     buffer_mgr: buffer::BufferManager,
@@ -128,6 +128,7 @@ pub(crate) trait GpuManager: Send + Sync {
     fn handle_timeout(&self, counter: u32, event_slot: u32);
     fn handle_fault(&self);
     fn wait_for_poweroff(&self, timeout: usize) -> Result;
+    fn fwctl(&self, msg: FwCtlMsg) -> Result;
 }
 
 #[versions(AGX)]
@@ -232,12 +233,23 @@ impl GpuManager::ver {
             tx_channels: Mutex::new(TxChannels {
                 device_control: channel::DeviceControlChannel::new(&mut alloc)?,
             }),
+            fwctl_channel: Mutex::new(channel::FwCtlChannel::new(&mut alloc)?),
             pipes,
             event_manager,
             buffer_mgr: buffer::BufferManager::new()?,
             alloc: Mutex::new(alloc),
             ids: Default::default(),
         })?;
+
+        {
+            let fwctl = mgr.fwctl_channel.lock();
+            let p_fwctl = fwctl.to_raw();
+            mem::drop(fwctl);
+
+            mgr.initdata.fw_status.with_mut(|raw, _inner| {
+                raw.fwctl_channel = p_fwctl;
+            });
+        }
 
         {
             let txc = mgr.tx_channels.lock();
@@ -552,6 +564,18 @@ impl GpuManager for GpuManager::ver {
             }
             Err(ETIMEDOUT)
         })
+    }
+
+    fn fwctl(&self, msg: fw::channels::FwCtlMsg) -> Result {
+        let mut fwctl = self.fwctl_channel.lock();
+        let token = fwctl.send(&msg);
+        {
+            let mut guard = self.rtkit.lock();
+            let rtk = guard.as_mut().unwrap();
+            rtk.send_message(EP_DOORBELL, MSG_FWCTL)?;
+        }
+        fwctl.wait_for(token)?;
+        Ok(())
     }
 }
 

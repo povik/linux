@@ -5,7 +5,7 @@
 
 use super::channels;
 use super::types::*;
-use crate::no_debug;
+use crate::{no_debug, trivial_gpustruct};
 
 pub(crate) mod raw {
     use super::*;
@@ -44,7 +44,7 @@ pub(crate) mod raw {
         __pad6: Pad<0xc>,
     }
 
-    #[derive(Debug)]
+    #[derive(Debug, Default)]
     #[repr(C)]
     pub(crate) struct FwStatus {
         pub(crate) fwctl_channel: ChannelRing<channels::FwCtlChannelState, channels::FwCtlMsg>,
@@ -1086,14 +1086,7 @@ where
     }
 }
 
-#[derive(Debug)]
-pub(crate) struct FwStatus {
-    pub(crate) channel: ChannelRing<channels::FwCtlChannelState, channels::FwCtlMsg>,
-}
-
-impl GpuStruct for FwStatus {
-    type Raw<'a> = raw::FwStatus;
-}
+trivial_gpustruct!(FwStatus);
 
 #[versions(AGX)]
 #[derive(Debug, Default)]

@@ -5,7 +5,6 @@
 
 //! GPU initialization data builder
 
-use crate::fw::channels;
 use crate::fw::initdata::*;
 use crate::fw::types::*;
 use crate::{box_in_place, const_f32, place};
@@ -597,15 +596,9 @@ impl<'a> InitDataBuilder::ver<'a> {
 
     #[inline(never)]
     fn fw_status(&mut self) -> Result<GpuObject<FwStatus>> {
-        let channel =
-            self.make_channel::<channels::FwCtlChannelState, channels::FwCtlMsg>(0x100, false)?;
-
         self.alloc
             .shared
-            .new_object(FwStatus { channel }, |inner| raw::FwStatus {
-                fwctl_channel: inner.channel.to_raw(),
-                flags: Default::default(),
-            })
+            .new_object(Default::default(), |_inner| Default::default())
     }
 
     #[inline(never)]
