@@ -339,16 +339,52 @@ impl Mapping {
             UAT_NUM_CTX as u32
         } else {
             // Otherwise, check if this slot is the active one, otherwise return
+            // Also check that we actually own this slot
+            let ttb = owner.ttb() | TTBR_VALID | (slot as u64) << TTBR_ASID_SHIFT;
+
             let uat_inner = self.0.uat_inner.lock();
             uat_inner.handoff().lock();
             let cur_slot = uat_inner.handoff().current_slot();
+            let ttb_cur = uat_inner.ttbs()[slot as usize].ttb0.load(Ordering::Relaxed);
             uat_inner.handoff().unlock();
-            if cur_slot == Some(slot) {
+            if cur_slot == Some(slot) && ttb_cur == ttb {
                 slot
             } else {
                 return;
             }
         };
+
+        // FIXME: There is a race here, though it'll probably never happen in practice.
+        // In theory, it's possible for the ASC to finish using our slot, whatever command
+        // it was processing to complete, the slot to be lost to another context, and the ASC
+        // to begin using it again with a different page table, thus faulting when it gets a
+        // flush request here. In practice, the chance of this happening is probably vanishingly
+        // small, as all 62 other slots would have to be recycled or in use before that slot can
+        // be reused, and the ASC using user contexts at all is very rare.
+
+        // Still, the locking around UAT/Handoff/TTBs should probably be redesigned to better
+        // model the interactions with the firmware and avoid these races.
+        // Possibly TTB changes should be tied to slot locks:
+
+        // Flush:
+        //  - Can early check handoff here (no need to lock).
+        //      If user slot and it doesn't match the active ASC slot,
+        //      we can elide the flush as the ASC guarantees it flushes
+        //      TLBs/caches when it switches context. We just need a
+        //      barrier to ensure ordering.
+        //  - Lock TTB slot
+        //      - If user ctx:
+        //          - Lock handoff AP-side
+        //              - Lock handoff dekker
+        //                  - Check TTB & handoff cur ctx
+        //      - Perform flush if necessary
+        //          - This implies taking the fwring lock
+        //
+        // TTB change:
+        //  - lock TTB slot
+        //      - lock handoff AP-side
+        //          - lock handoff dekker
+        //              change TTB
 
         // Lock this flush slot, and write the range to it
         let flush = self.0.uat_inner.lock_flush(flush_slot);
