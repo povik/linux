@@ -154,11 +154,19 @@ impl WorkQueue {
 
         // SAFETY: `cond` is pinned when `queue` is.
         let pinned = unsafe { queue.as_mut().map_unchecked_mut(|s| &mut s.cond) };
-        kernel::condvar_init!(pinned, "WorkQueue::cond");
+        match pipe_type {
+            PipeType::Vertex => kernel::condvar_init!(pinned, "WorkQueue::cond (Vertex)"),
+            PipeType::Fragment => kernel::condvar_init!(pinned, "WorkQueue::cond (Fragment)"),
+            PipeType::Compute => kernel::condvar_init!(pinned, "WorkQueue::cond (Compute)"),
+        }
 
         // SAFETY: `inner` is pinned when `queue` is.
         let pinned = unsafe { queue.as_mut().map_unchecked_mut(|s| &mut s.inner) };
-        kernel::mutex_init!(pinned, "WorkQueue::inner");
+        match pipe_type {
+            PipeType::Vertex => kernel::mutex_init!(pinned, "WorkQueue::inner (Vertex)"),
+            PipeType::Fragment => kernel::mutex_init!(pinned, "WorkQueue::inner (Fragment)"),
+            PipeType::Compute => kernel::mutex_init!(pinned, "WorkQueue::inner (Compute)"),
+        }
 
         Ok(queue.into())
     }
