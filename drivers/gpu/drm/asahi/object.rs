@@ -21,6 +21,9 @@ use core::sync::atomic::{AtomicU32, Ordering};
 use core::{mem, ptr, slice};
 
 use crate::alloc::Allocation;
+use crate::debug::*;
+
+const DEBUG_CLASS: DebugFlags = DebugFlags::Object;
 
 #[repr(C, packed(4))]
 pub(crate) struct GpuPointer<'a, T: ?Sized>(NonZeroU64, PhantomData<&'a T>);
@@ -142,7 +145,7 @@ impl<T: GpuStruct, U: Allocation<T>> GpuObject<T, U> {
         }
         let gpu_ptr =
             GpuWeakPointer::<T>(NonZeroU64::new(alloc.gpu_ptr()).ok_or(EINVAL)?, PhantomData);
-        dev_info!(
+        mod_dev_dbg!(
             alloc.device(),
             "Allocating {} @ {:#x}",
             core::any::type_name::<T>(),
@@ -172,7 +175,7 @@ impl<T: GpuStruct, U: Allocation<T>> GpuObject<T, U> {
         }
         let gpu_ptr =
             GpuWeakPointer::<T>(NonZeroU64::new(alloc.gpu_ptr()).ok_or(EINVAL)?, PhantomData);
-        dev_info!(
+        mod_dev_dbg!(
             alloc.device(),
             "Allocating {} @ {:#x}",
             core::any::type_name::<T>(),
@@ -214,7 +217,7 @@ impl<T: GpuStruct, U: Allocation<T>> GpuObject<T, U> {
         }
         let gpu_ptr =
             GpuWeakPointer::<T>(NonZeroU64::new(alloc.gpu_ptr()).ok_or(EINVAL)?, PhantomData);
-        dev_info!(
+        mod_dev_dbg!(
             alloc.device(),
             "Allocating {} @ {:#x}",
             core::any::type_name::<T>(),
@@ -351,7 +354,7 @@ impl<T: Sized + Default, U: Allocation<T>> GpuArray<T, U> {
     pub(crate) fn empty(alloc: U, count: usize) -> Result<GpuArray<T, U>> {
         let bytes = count * mem::size_of::<T>();
         let gpu_ptr = NonZeroU64::new(alloc.gpu_ptr()).ok_or(EINVAL)?;
-        dev_info!(
+        mod_dev_dbg!(
             alloc.device(),
             "Allocating {} * {:#x} @ {:#x}",
             core::any::type_name::<T>(),
@@ -447,10 +450,9 @@ impl<T: Sized, U: Allocation<T>> IndexMut<usize> for GpuArray<T, U> {
 unsafe impl<T: GpuStruct + Send, U: Allocation<T>> Send for GpuObject<T, U> {}
 unsafe impl<T: Sized + Send, U: Allocation<T>> Send for GpuArray<T, U> {}
 
-/*
 impl<T: GpuStruct, U: Allocation<T>> Drop for GpuObject<T, U> {
     fn drop(&mut self) {
-        dev_info!(
+        mod_dev_dbg!(
             self.alloc.device(),
             "Dropping {} @ {:?}",
             core::any::type_name::<T>(),
@@ -461,7 +463,7 @@ impl<T: GpuStruct, U: Allocation<T>> Drop for GpuObject<T, U> {
 
 impl<T: Sized, U: Allocation<T>> Drop for GpuArray<T, U> {
     fn drop(&mut self) {
-        dev_info!(
+        mod_dev_dbg!(
             self.alloc.device(),
             "Dropping {} @ {:?}",
             core::any::type_name::<T>(),
@@ -469,7 +471,6 @@ impl<T: Sized, U: Allocation<T>> Drop for GpuArray<T, U> {
         );
     }
 }
-*/
 
 impl<T: Sized + fmt::Debug, U: Allocation<T>> fmt::Debug for GpuArray<T, U> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {

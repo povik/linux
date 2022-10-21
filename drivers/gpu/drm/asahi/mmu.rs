@@ -24,8 +24,11 @@ use kernel::{
     PointerWrapper,
 };
 
+use crate::debug::*;
 use crate::no_debug;
 use crate::{driver, fw, gem, mem, slotalloc};
+
+const DEBUG_CLASS: DebugFlags = DebugFlags::Mmu;
 
 const PPL_MAGIC: u64 = 0x4b1d000000000002;
 
@@ -223,7 +226,7 @@ impl VmInner {
                 return Err(EINVAL);
             }
 
-            // dev_info!(self.dev, "MMU: map: {:#x}:{:#x} -> {:#x}", addr, len, iova);
+            mod_dev_dbg!(self.dev, "MMU: map: {:#x}:{:#x} -> {:#x}", addr, len, iova);
 
             self.map_pages(iova, addr, UAT_PGSZ, len >> UAT_PGBIT, prot)?;
 
@@ -296,12 +299,12 @@ impl Mapping {
 
     fn remap_uncached_and_flush(&mut self) {
         let mut owner = self.0.owner.lock();
-        /* dev_info!(
+        mod_dev_dbg!(
             owner.dev,
             "MMU: remap as uncached {:#x}:{:#x}",
             self.iova(),
             self.size()
-        ); */
+        );
 
         // The IOMMU API does not allow us to remap things in-place...
         // just do an unmap and map again for now.
@@ -443,12 +446,12 @@ impl Drop for Mapping {
         }
 
         let mut owner = self.0.owner.lock();
-        /* dev_info!(
+        mod_dev_dbg!(
             owner.dev,
             "MMU: unmap {:#x}:{:#x}",
             self.iova(),
             self.size()
-        ); */
+        );
 
         if owner
             .unmap_pages(self.iova(), UAT_PGSZ, self.size() >> UAT_PGBIT)
@@ -464,13 +467,13 @@ impl Drop for Mapping {
 
         if let Some(asid) = owner.slot() {
             mem::tlbi_range(asid as u8, self.iova(), self.size());
-            /* dev_info!(
+            mod_dev_dbg!(
                 owner.dev,
                 "MMU: flush range: asid={:#x} start={:#x} len={:#x}",
                 asid,
                 self.iova(),
                 self.size()
-            ); */
+            );
             mem::sync();
         }
     }
@@ -779,7 +782,7 @@ impl Drop for VmInner {
     fn drop(&mut self) {
         assert_eq!(self.active_users, 0);
 
-        pr_info!(
+        mod_pr_debug!(
             "VmInner::Drop [{}]: bind_token={:?}\n",
             self.id,
             self.bind_token
@@ -810,7 +813,7 @@ impl Drop for VmInner {
             // In principle we dropped all the Mappings already, but we might as
             // well play it safe and invalidate the whole ASID.
             if inval {
-                pr_info!(
+                mod_pr_debug!(
                     "VmInner::Drop [{}]: need inval for ASID {:#x}\n",
                     self.id,
                     idx
@@ -918,7 +921,7 @@ impl Uat {
 
             let slot = self.slots.get(inner.bind_token)?;
             if slot.changed() {
-                pr_info!("Vm Bind [{}]: bind_token={:?}\n", vm.id, slot.token(),);
+                mod_pr_debug!("Vm Bind [{}]: bind_token={:?}\n", vm.id, slot.token(),);
                 let idx = (slot.slot() as usize) + UAT_USER_CTX_START;
                 let ttb = inner.ttb() | TTBR_VALID | (idx as u64) << TTBR_ASID_SHIFT;
 

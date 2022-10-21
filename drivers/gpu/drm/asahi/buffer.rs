@@ -5,6 +5,7 @@
 
 //! Asahi ring buffer channels
 
+use crate::debug::*;
 use crate::fw::buffer;
 use crate::fw::types::*;
 use crate::{alloc, gpu, mmu, slotalloc, workqueue};
@@ -13,6 +14,8 @@ use core::cmp;
 use core::sync::atomic::Ordering;
 use kernel::sync::{smutex::Mutex, Arc};
 use kernel::{dbg, prelude::*};
+
+const DEBUG_CLASS: DebugFlags = DebugFlags::Buffer;
 
 const NUM_BUFFERS: u32 = 127;
 
@@ -305,7 +308,7 @@ impl Buffer::ver {
             let slot = inner.mgr.0.get(inner.last_token)?;
             rebind = slot.changed();
 
-            pr_info!("Buffer: assigning slot {} (rebind={})", slot.slot(), rebind);
+            mod_pr_debug!("Buffer: assigning slot {} (rebind={})", slot.slot(), rebind);
 
             inner.last_token = Some(slot.token());
             inner.active_slot = Some(slot);
@@ -353,7 +356,7 @@ impl Drop for Scene::ver {
         inner.active_scenes -= 1;
 
         if inner.active_scenes == 0 {
-            pr_info!(
+            mod_pr_debug!(
                 "Buffer: no scenes left, dropping slot {}",
                 inner.active_slot.take().unwrap().slot()
             );

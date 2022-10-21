@@ -6,6 +6,7 @@
 
 //! Asahi File state
 
+use crate::debug::*;
 use crate::driver::AsahiDevice;
 use crate::fw::types::*;
 use crate::{alloc, buffer, driver, gem, gpu, mmu, render};
@@ -13,6 +14,8 @@ use kernel::drm::gem::BaseObject;
 use kernel::prelude::*;
 use kernel::sync::{smutex::Mutex, Arc};
 use kernel::{bindings, drm};
+
+const DEBUG_CLASS: DebugFlags = DebugFlags::File;
 
 pub(crate) struct File {
     id: u64,
@@ -30,7 +33,9 @@ impl drm::file::DriverFile for File {
     type Driver = driver::AsahiDriver;
 
     fn open(device: &AsahiDevice) -> Result<Box<Self>> {
-        dev_info!(device, "DRM device opened");
+        debug::update_debug_flags();
+
+        mod_dev_dbg!(device, "DRM device opened");
         let gpu = &device.data().gpu;
         let vm = gpu.new_vm()?;
         let id = gpu.ids().file.next();
@@ -64,7 +69,7 @@ impl drm::file::DriverFile for File {
             .gpu
             .new_renderer(ualloc.clone(), ualloc_priv.clone())?;
 
-        dev_info!(device, "[File {}]: Opened successfully", id);
+        mod_dev_dbg!(device, "[File {}]: Opened successfully", id);
         Ok(Box::try_new(Self {
             id,
             vm,
@@ -83,8 +88,13 @@ impl File {
         data: &mut bindings::drm_asahi_submit,
         file: &DrmFile,
     ) -> Result<u32> {
-        let id = device.data().gpu.ids().submission.next();
-        dev_info!(
+        debug::update_debug_flags();
+
+        let gpu = &device.data().gpu;
+        gpu.update_globals();
+
+        let id = gpu.ids().submission.next();
+        mod_dev_dbg!(
             device,
             "[File {}]: IOCTL: submit (submission ID: {})",
             file.inner().id,
@@ -111,7 +121,7 @@ impl File {
         _data: &mut bindings::drm_asahi_wait_bo,
         file: &DrmFile,
     ) -> Result<u32> {
-        dev_info!(device, "[File {}]: IOCTL: wait_bo", file.inner().id);
+        mod_dev_dbg!(device, "[File {}]: IOCTL: wait_bo", file.inner().id);
         Ok(0)
     }
 
@@ -120,7 +130,7 @@ impl File {
         data: &mut bindings::drm_asahi_create_bo,
         file: &DrmFile,
     ) -> Result<u32> {
-        dev_info!(
+        mod_dev_dbg!(
             device,
             "[File {}]: IOCTL: create_bo size={:#x?}",
             file.inner().id,
@@ -156,7 +166,7 @@ impl File {
         let handle = bo.gem.create_handle(file)?;
         data.handle = handle;
 
-        dev_info!(
+        mod_dev_dbg!(
             device,
             "[File {}]: IOCTL: create_bo size={:#x} offset={:#x?} handle={:#x?}",
             file.inner().id,
@@ -173,7 +183,7 @@ impl File {
         data: &mut bindings::drm_asahi_mmap_bo,
         file: &DrmFile,
     ) -> Result<u32> {
-        dev_info!(
+        mod_dev_dbg!(
             device,
             "[File {}]: IOCTL: mmap_bo handle={:#x?}",
             file.inner().id,
@@ -191,7 +201,7 @@ impl File {
         _data: &mut bindings::drm_asahi_get_param,
         file: &DrmFile,
     ) -> Result<u32> {
-        dev_info!(device, "[File {}]: IOCTL: get_param", file.inner().id);
+        mod_dev_dbg!(device, "[File {}]: IOCTL: get_param", file.inner().id);
         Ok(0)
     }
 
@@ -200,7 +210,7 @@ impl File {
         data: &mut bindings::drm_asahi_get_bo_offset,
         file: &DrmFile,
     ) -> Result<u32> {
-        dev_info!(
+        mod_dev_dbg!(
             device,
             "[File {}]: IOCTL: get_bo_offset handle={:#x?}",
             file.inner().id,
@@ -225,7 +235,7 @@ impl File {
         if let Some(iova) = bo.iova(file.inner().vm.id()) {
             // If we have a mapping, call it good.
             data.offset = iova as u64;
-            dev_info!(
+            mod_dev_dbg!(
                 device,
                 "[File {}]: IOCTL: get_bo_offset handle={:#x?} offset={:#x?}",
                 file.inner().id,
@@ -236,7 +246,7 @@ impl File {
         } else {
             // Otherwise return the error, or a generic one if something
             // went very wrong and we lost the mapping.
-            dev_info!(
+            dev_err!(
                 device,
                 "[File {}]: IOCTL: get_bo_offset failed",
                 file.inner().id
@@ -253,6 +263,6 @@ impl File {
 
 impl Drop for File {
     fn drop(&mut self) {
-        pr_info!("[File {}]: Closing...", self.id);
+        mod_pr_debug!("[File {}]: Closing...", self.id);
     }
 }

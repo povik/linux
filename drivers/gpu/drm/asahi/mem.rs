@@ -8,6 +8,7 @@
 use core::arch::asm;
 use core::cmp::min;
 
+use crate::debug::*;
 use crate::mmu;
 
 type Asid = u8;
@@ -21,6 +22,12 @@ pub(crate) fn tlbi_all() {
 
 #[inline(always)]
 pub(crate) fn tlbi_asid(asid: Asid) {
+    if debug_enabled(DebugFlags::ConservativeTlbi) {
+        tlbi_all();
+        sync();
+        return;
+    }
+
     unsafe {
         asm!(
             ".arch armv8.4-a",
@@ -32,6 +39,12 @@ pub(crate) fn tlbi_asid(asid: Asid) {
 
 #[inline(always)]
 pub(crate) fn tlbi_page(asid: Asid, va: usize) {
+    if debug_enabled(DebugFlags::ConservativeTlbi) {
+        tlbi_all();
+        sync();
+        return;
+    }
+
     let val: u64 = ((asid as u64) << 48) | ((va as u64 >> 12) & 0xffffffffffc);
     unsafe {
         asm!(
@@ -44,6 +57,12 @@ pub(crate) fn tlbi_page(asid: Asid, va: usize) {
 
 #[inline(always)]
 pub(crate) fn tlbi_range(asid: Asid, va: usize, len: usize) {
+    if debug_enabled(DebugFlags::ConservativeTlbi) {
+        tlbi_all();
+        sync();
+        return;
+    }
+
     if len == 0 {
         return;
     }

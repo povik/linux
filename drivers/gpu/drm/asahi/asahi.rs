@@ -7,6 +7,7 @@
 mod alloc;
 mod buffer;
 mod channel;
+mod debug;
 mod driver;
 mod event;
 mod file;
@@ -30,4 +31,11 @@ module_platform_driver! {
     type: driver::AsahiDriver,
     name: "asahi",
     license: "Dual MIT/GPL",
+    params: {
+        debug_flags: u64 {
+            default: 0,
+            permissions: 0o644,
+            description: "Debug flags",
+        },
+    },
 }

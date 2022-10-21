@@ -5,6 +5,7 @@
 
 //! Asahi ring buffer channels
 
+use crate::debug::*;
 use crate::fw::event::*;
 use crate::fw::initdata::raw;
 use crate::fw::types::*;
@@ -13,6 +14,8 @@ use core::cmp;
 use core::sync::atomic::Ordering;
 use kernel::sync::Arc;
 use kernel::{dbg, prelude::*};
+
+const DEBUG_CLASS: DebugFlags = DebugFlags::Event;
 
 const NUM_EVENTS: u32 = 128;
 
@@ -86,7 +89,7 @@ impl slotalloc::SlotItem for EventInner {
     type Owner = EventManagerInner;
 
     fn release(&mut self, owner: &mut Self::Owner, slot: u32) {
-        pr_info!("EventManager: Released slot {}", slot);
+        mod_pr_debug!("EventManager: Released slot {}", slot);
         owner.owners[slot as usize] = None;
     }
 }
@@ -132,7 +135,7 @@ impl EventManager {
         owner: Arc<workqueue::WorkQueue>,
     ) -> Result<Event> {
         let ev = self.alloc.get_inner(token, |inner, ev| {
-            pr_info!(
+            mod_pr_debug!(
                 "EventManager: Registered owner {:p} on slot {}",
                 &*owner,
                 ev.slot()

@@ -5,12 +5,15 @@
 
 //! Generic slot allocator
 
+use crate::debug::*;
 use core::ops::{Deref, DerefMut};
 use kernel::{
     error::Result,
     prelude::*,
     sync::{Arc, CondVar, Mutex, UniqueArc},
 };
+
+const DEBUG_CLASS: DebugFlags = DebugFlags::SlotAlloc;
 
 pub(crate) trait SlotItem {
     type Owner;

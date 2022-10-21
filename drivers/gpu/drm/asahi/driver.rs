@@ -8,7 +8,7 @@ use kernel::{
     prelude::*, sync::Arc,
 };
 
-use crate::{file, gem, gpu, hw, mmu};
+use crate::{debug, file, gem, gpu, hw, mmu};
 
 use kernel::macros::vtable;
 
@@ -98,6 +98,8 @@ impl platform::Driver for AsahiDriver {
         pdev: &mut platform::Device,
         _id_info: Option<&Self::IdInfo>,
     ) -> Result<Arc<DeviceData>> {
+        debug::update_debug_flags();
+
         let dev = device::Device::from_dev(pdev);
 
         dev_info!(dev, "Probing!\n");
@@ -131,7 +133,6 @@ impl platform::Driver for AsahiDriver {
         let data = Arc::<DeviceData>::from(data);
 
         data.gpu.init()?;
-        data.gpu.test()?;
 
         kernel::drm_device_register!(
             data.registrations().ok_or(ENXIO)?.as_pinned_mut(),

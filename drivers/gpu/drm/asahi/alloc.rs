@@ -11,6 +11,7 @@ use kernel::{
     prelude::*,
 };
 
+use crate::debug::*;
 use crate::driver::AsahiDevice;
 use crate::mmu;
 use crate::object::{GpuArray, GpuObject, GpuStruct, GpuWeakPointer};
@@ -19,6 +20,8 @@ use alloc::fmt;
 use core::fmt::{Debug, Formatter};
 use core::mem;
 use core::mem::MaybeUninit;
+
+const DEBUG_CLASS: DebugFlags = DebugFlags::Alloc;
 
 pub(crate) trait Allocation<T>: Debug {
     fn ptr(&self) -> *mut T;

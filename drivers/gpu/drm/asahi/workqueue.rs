@@ -5,6 +5,7 @@
 
 //! Asahi GPU work queues
 
+use crate::debug::*;
 use crate::fw::channels::{PipeType, RunWorkQueueMsg};
 use crate::fw::event::NotifierList;
 use crate::fw::types::*;
@@ -20,6 +21,8 @@ use kernel::{
     sync::{Arc, CondVar, Guard, Mutex, UniqueArc},
     Opaque,
 };
+
+const DEBUG_CLASS: DebugFlags = DebugFlags::WorkQueue;
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct WorkToken(u64);
@@ -153,7 +156,7 @@ impl WorkQueue {
         let pinned = unsafe { queue.as_mut().map_unchecked_mut(|s| &mut s.cond) };
         kernel::condvar_init!(pinned, "WorkQueue::cond");
 
-        //         // SAFETY: `inner` is pinned when `queue` is.
+        // SAFETY: `inner` is pinned when `queue` is.
         let pinned = unsafe { queue.as_mut().map_unchecked_mut(|s| &mut s.inner) };
         kernel::mutex_init!(pinned, "WorkQueue::inner");
 
@@ -204,7 +207,7 @@ impl WorkQueue {
                 break;
             }
         }
-        pr_info!(
+        mod_pr_debug!(
             "WorkQueue({:?}): completed {} batches",
             inner.pipe_type,
             batches

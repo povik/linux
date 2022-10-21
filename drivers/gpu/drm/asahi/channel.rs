@@ -4,6 +4,7 @@
 
 //! Asahi ring buffer channels
 
+use crate::debug::*;
 use crate::fw::channels::*;
 use crate::fw::initdata::{raw, ChannelRing};
 use crate::fw::types::*;
@@ -149,6 +150,7 @@ impl DeviceControlChannel {
     }
 
     pub(crate) fn send(&mut self, msg: &DeviceControlMsg) -> u32 {
+        cls_pr_debug!(DeviceControlCh, "DeviceControl: {:?}", msg);
         self.ch.put(msg)
     }
 
@@ -173,6 +175,7 @@ impl PipeChannel {
     }
 
     pub(crate) fn send(&mut self, msg: &PipeMsg) {
+        cls_pr_debug!(PipeCh, "Pipe: {:?}", msg);
         self.ch.put(msg);
     }
 }
@@ -195,6 +198,7 @@ impl FwCtlChannel {
     }
 
     pub(crate) fn send(&mut self, msg: &FwCtlMsg) -> u32 {
+        cls_pr_debug!(FwCtlCh, "FwCtl: {:?}", msg);
         self.ch.put(msg)
     }
 
@@ -235,6 +239,8 @@ impl EventChannel {
             match tag {
                 0..=EVENT_MAX => {
                     let msg = unsafe { msg.msg };
+
+                    cls_pr_debug!(EventCh, "Event: {:?}", msg);
                     match msg {
                         EventMsg::Fault => match self.gpu.as_ref() {
                             Some(gpu) => gpu.handle_fault(),
@@ -249,7 +255,6 @@ impl EventChannel {
                             None => pr_crit!("EventChannel: No GPU manager available!"),
                         },
                         EventMsg::Flag { firing, .. } => {
-                            pr_crit!("GPU flag event: {:?}", msg);
                             for (i, flags) in firing.iter().enumerate() {
                                 for j in 0..32 {
                                     if flags & (1u32 << j) != 0 {
@@ -289,7 +294,7 @@ impl FwLogChannel {
     pub(crate) fn poll(&mut self) {
         for i in 0..=FwLogChannelState::SUB_CHANNELS - 1 {
             while let Some(msg) = self.ch.get(i) {
-                pr_info!("FwLog{}: {:?}", i, msg);
+                cls_pr_debug!(FwLogCh, "FwLog{}: {:?}", i, msg);
             }
         }
     }
@@ -312,7 +317,7 @@ impl KTraceChannel {
 
     pub(crate) fn poll(&mut self) {
         while let Some(msg) = self.ch.get(0) {
-            pr_info!("KTrace: {:?}", msg);
+            cls_pr_debug!(KTraceCh, "KTrace: {:?}", msg);
         }
     }
 }
@@ -339,8 +344,8 @@ impl StatsChannel::ver {
             let tag = unsafe { msg.raw.0 };
             match tag {
                 0..=STATS_MAX::ver => {
-                    //let msg = unsafe { msg.msg };
-                    //pr_info!("Stats: {:?}", msg);
+                    let msg = unsafe { msg.msg };
+                    cls_pr_debug!(StatsCh, "Stats: {:?}", msg);
                 }
                 _ => {
                     pr_warn!("Unknown stats message: {:?}", unsafe { msg.raw });

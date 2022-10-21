@@ -5,12 +5,15 @@
 
 //! GPU initialization data builder
 
+use crate::debug::*;
 use crate::fw::initdata::*;
 use crate::fw::types::*;
 use crate::{box_in_place, const_f32, place};
 use crate::{gpu, hw};
 use kernel::error::Result;
 use kernel::macros::versions;
+
+const DEBUG_CLASS: DebugFlags = DebugFlags::Init;
 
 #[versions(AGX)]
 pub(crate) struct InitDataBuilder<'a> {
@@ -465,7 +468,7 @@ impl<'a> InitDataBuilder::ver<'a> {
                         unk_1102c_8: 100,
                         #[ver(V >= V13_0B4)]
                         unk_1102c_c: 1,
-                        idle_to_off_timeout_ms: 50000,
+                        idle_to_off_timeout_ms: AtomicU32::new(2),
                         unk_11034: 40,
                         unk_11038: 5,
                         unk_118e0: 40,

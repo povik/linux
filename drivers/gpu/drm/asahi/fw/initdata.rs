@@ -992,7 +992,7 @@ pub(crate) mod raw {
         pub(crate) unk_1102c_10: u32,
 
         pub(crate) unk_1102c: u32,
-        pub(crate) idle_to_off_timeout_ms: u32,
+        pub(crate) idle_to_off_timeout_ms: AtomicU32,
         pub(crate) unk_11034: u32,
         pub(crate) unk_11038: u32,
         pub(crate) pending_stamps: Array<0x110, PendingStamp>,

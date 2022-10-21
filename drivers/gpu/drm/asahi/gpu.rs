@@ -16,9 +16,12 @@ use kernel::{
     PointerWrapper,
 };
 
+use crate::debug::*;
 use crate::driver::AsahiDevice;
 use crate::fw::channels::{DeviceControlMsg, FwCtlMsg, PipeType};
 use crate::{alloc, buffer, channel, event, fw, gem, hw, initdata, mmu, render, workqueue};
+
+const DEBUG_CLASS: DebugFlags = DebugFlags::Gpu;
 
 const EP_FIRMWARE: u8 = 0x20;
 const EP_DOORBELL: u8 = 0x21;
@@ -109,7 +112,7 @@ pub(crate) struct GpuManager {
 pub(crate) trait GpuManager: Send + Sync {
     fn as_any(&self) -> &dyn Any;
     fn init(&self) -> Result;
-    fn test(&self) -> Result;
+    fn update_globals(&self);
     fn alloc(&self) -> Guard<'_, Mutex<KernelAllocators>>;
     fn new_vm(&self) -> Result<mmu::Vm>;
     fn bind_vm(&self, vm: &mmu::Vm) -> Result<mmu::VmBind>;
@@ -159,12 +162,12 @@ impl rtkit::Operations for GpuManager::ver {
         size: usize,
     ) -> Result<Self::Buffer> {
         let dev = &data.dev;
-        dev_info!(dev, "shmem_alloc() {:#x} bytes\n", size);
+        mod_dev_dbg!(dev, "shmem_alloc() {:#x} bytes\n", size);
 
         let mut obj = gem::new_kernel_object(dev, size)?;
         obj.vmap()?;
         let iova = obj.map_into(data.uat.kernel_vm())?;
-        dev_info!(dev, "shmem_alloc() -> VA {:#x}\n", iova);
+        mod_dev_dbg!(dev, "shmem_alloc() -> VA {:#x}\n", iova);
         Ok(obj)
     }
 }
@@ -365,7 +368,9 @@ impl GpuManager::ver {
             dev_err!(self.dev, "  Halt count: {}\n", halt_count);
             dev_err!(self.dev, "  Halted: {}\n", halted);
 
-            if halted != 0 {
+            if debug_enabled(DebugFlags::NoGpuRecovery) {
+                dev_crit!(self.dev, "  GPU recovery is disabled, wedging forever!\n");
+            } else if halted != 0 {
                 dev_err!(self.dev, "  Attempting recovery...\n");
                 raw.flags.halted.store(0, Ordering::SeqCst);
                 raw.flags.resume.store(1, Ordering::SeqCst);
@@ -400,8 +405,17 @@ impl GpuManager for GpuManager::ver {
         Ok(())
     }
 
-    fn test(&self) -> Result {
-        Ok(())
+    fn update_globals(&self) {
+        let mut timeout: u32 = 2;
+        if debug_enabled(DebugFlags::WaitForPowerOff) {
+            timeout = 0;
+        } else if debug_enabled(DebugFlags::KeepGpuPowered) {
+            timeout = 5000;
+        }
+
+        self.initdata.globals.with(|raw, _inner| {
+            raw.idle_to_off_timeout_ms.store(timeout, Ordering::Relaxed);
+        });
     }
 
     fn alloc(&self) -> Guard<'_, Mutex<KernelAllocators>> {
@@ -480,7 +494,7 @@ impl GpuManager for GpuManager::ver {
         &self,
         context: &fw::types::GpuObject<fw::workqueue::GpuContextData>,
     ) -> Result {
-        dev_info!(
+        mod_dev_dbg!(
             self.dev,
             "Invalidating GPU context @ {:?}\n",
             context.weak_pointer()
@@ -499,7 +513,7 @@ impl GpuManager for GpuManager::ver {
             __pad: Default::default(),
         });
 
-        dev_info!(self.dev, "Context invalidation command: {:?}\n", &dc);
+        mod_dev_dbg!(self.dev, "Context invalidation command: {:?}\n", &dc);
 
         let mut txch = self.tx_channels.lock();
 
@@ -513,7 +527,7 @@ impl GpuManager for GpuManager::ver {
 
         txch.device_control.wait_for(token)?;
 
-        dev_info!(
+        mod_dev_dbg!(
             self.dev,
             "GPU context invalidated: {:?}\n",
             context.weak_pointer()

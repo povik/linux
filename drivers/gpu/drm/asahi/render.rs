@@ -7,6 +7,7 @@
 //! Asahi File state
 
 use crate::alloc::Allocator;
+use crate::debug::*;
 use crate::driver::AsahiDevice;
 use crate::fw::types::*;
 use crate::gpu::GpuManager;
@@ -19,6 +20,9 @@ use kernel::io_buffer::IoBufferReader;
 use kernel::prelude::*;
 use kernel::sync::{smutex::Mutex, Arc};
 use kernel::user_ptr::UserSlicePtr;
+
+const DEBUG_CLASS: DebugFlags = DebugFlags::Render;
+
 pub(crate) trait Renderer: Send + Sync {
     fn render(
         &self,
@@ -191,7 +195,7 @@ impl Renderer for Renderer::ver {
         let mut alloc = gpu.alloc();
         let kalloc = &mut *alloc;
 
-        dev_info!(self.dev, "[Submission {}] Render!\n", id);
+        mod_dev_dbg!(self.dev, "[Submission {}] Render!\n", id);
 
         let mut cmdbuf_reader = unsafe {
             UserSlicePtr::new(
@@ -219,7 +223,7 @@ impl Renderer for Renderer::ver {
 
         let next_vtx = batches_vtx.event_value().next();
         let next_frag = batches_frag.event_value().next();
-        dev_info!(
+        mod_dev_dbg!(
             self.dev,
             "[Submission {}] Vert event #{} {:#x?} -> {:#x?}\n",
             id,
@@ -227,7 +231,7 @@ impl Renderer for Renderer::ver {
             batches_vtx.event_value(),
             next_vtx
         );
-        dev_info!(
+        mod_dev_dbg!(
             self.dev,
             "[Submission {}] Frag event #{} {:#x?} -> {:#x?}\n",
             id,
@@ -238,7 +242,7 @@ impl Renderer for Renderer::ver {
 
         let vm_bind = gpu.bind_vm(vm)?;
 
-        dev_info!(
+        mod_dev_dbg!(
             self.dev,
             "[Submission {}] VM slot = {}\n",
             id,
@@ -248,13 +252,13 @@ impl Renderer for Renderer::ver {
         let uuid_3d = cmdbuf.cmd_3d_id;
         let uuid_ta = cmdbuf.cmd_ta_id;
 
-        dev_info!(
+        mod_dev_dbg!(
             self.dev,
             "[Submission {}] Vert UUID = {:#x?}\n",
             id,
             uuid_ta
         );
-        dev_info!(
+        mod_dev_dbg!(
             self.dev,
             "[Submission {}] Frag UUID = {:#x?}\n",
             id,
@@ -860,25 +864,33 @@ impl Renderer for Renderer::ver {
         batches_vtx.add(Box::try_new(vtx)?)?;
         let batch_vtx = batches_vtx.commit()?;
 
-        dev_info!(self.dev, "[Submission {}] Submit frag!\n", id);
+        mod_dev_dbg!(self.dev, "[Submission {}] Submit frag!\n", id);
         gpu.submit_batch(batches_frag)?;
-        dev_info!(self.dev, "[Submission {}] Submit vert!\n", id);
+        mod_dev_dbg!(self.dev, "[Submission {}] Submit vert!\n", id);
         gpu.submit_batch(batches_vtx)?;
 
-        dev_info!(
+        mod_dev_dbg!(
             self.dev,
             "[Submission {}] Waiting for vertex batch...\n",
             id
         );
         batch_vtx.wait();
-        dev_info!(self.dev, "[Submission {}] Vertex batch completed!\n", id);
-        dev_info!(
+        mod_dev_dbg!(self.dev, "[Submission {}] Vertex batch completed!\n", id);
+        mod_dev_dbg!(
             self.dev,
             "[Submission {}] Waiting for fragment batch...\n",
             id
         );
         batch_frag.wait();
-        dev_info!(self.dev, "[Submission {}] Fragment batch completed!\n", id);
+        mod_dev_dbg!(self.dev, "[Submission {}] Fragment batch completed!\n", id);
+
+        if debug_enabled(debug::DebugFlags::WaitForPowerOff) {
+            mod_dev_dbg!(self.dev, "[Submission {}] Waiting for GPU power-off\n", id);
+            if gpu.wait_for_poweroff(100).is_err() {
+                dev_warn!(self.dev, "[Submission {}] GPU failed to power off\n", id);
+            }
+            mod_dev_dbg!(self.dev, "[Submission {}] GPU powered off\n", id);
+        }
 
         Ok(())
     }

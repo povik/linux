@@ -19,8 +19,11 @@ use kernel::{
 
 use kernel::drm::gem::BaseObject;
 
+use crate::debug::*;
 use crate::driver::AsahiDevice;
 use crate::file::DrmFile;
+
+const DEBUG_CLASS: DebugFlags = DebugFlags::Gem;
 
 pub(crate) struct DriverObject {
     kernel: bool,
@@ -135,6 +138,7 @@ pub(crate) fn new_object(dev: &AsahiDevice, size: usize, flags: u32) -> Result<O
 
 impl gem::BaseDriverObject<Object> for DriverObject {
     fn new(_dev: &AsahiDevice, _size: usize) -> Result<DriverObject> {
+        mod_pr_debug!("DriverObject::new\n");
         Ok(DriverObject {
             kernel: false,
             flags: 0,
@@ -143,7 +147,7 @@ impl gem::BaseDriverObject<Object> for DriverObject {
     }
 
     fn close(obj: &Object, file: &DrmFile) {
-        pr_info!("DriverObject::close\n");
+        mod_pr_debug!("DriverObject::close\n");
         obj.drop_mappings(file.inner().vm_id());
     }
 }
