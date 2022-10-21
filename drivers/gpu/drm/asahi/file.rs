@@ -52,7 +52,7 @@ impl drm::file::DriverFile for File {
             &vm,
             0x61_00000000,
             0x61_ffffffff,
-            mmu::PROT_GPU_FW_SHARED_RW,
+            mmu::PROT_GPU_FW_PRIV_RW,
             buffer::PAGE_SIZE,
         )))?;
         let mut ualloc_extra = alloc::SimpleAllocator::new_with_range(
