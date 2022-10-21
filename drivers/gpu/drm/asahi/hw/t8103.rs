@@ -11,15 +11,6 @@ pub(crate) const HWCONFIG: super::HwConfig = HwConfig {
     chip_id: 0x8103,
     min_volt: 850,
     k: const_f32!(1.02),
-    perf_states: &[
-        PState(0, 0, 400),
-        PState(19, 396000000, 603),
-        PState(26, 528000000, 640),
-        PState(38, 720000000, 690),
-        PState(60, 924000000, 784),
-        PState(87, 1128000000, 862),
-        PState(100, 1278000000, 931),
-    ],
     io_mappings: &[
         Some(IOMapping::new(0x204d00000, 0x1c000, 0x1c000, true)), // Fender
         Some(IOMapping::new(0x20e100000, 0x4000, 0x4000, false)),  // AICTimer

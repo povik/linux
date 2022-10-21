@@ -4,8 +4,13 @@
 //! Hardware configuration
 
 use crate::fw::types::*;
+use alloc::vec::Vec;
 
-pub(crate) struct PState(pub(crate) u32, pub(crate) u32, pub(crate) u32);
+pub(crate) struct PState {
+    pub(crate) voltage: u32,
+    pub(crate) frequency: u32,
+    pub(crate) max_power: u32,
+}
 
 pub(crate) struct IOMapping {
     pub(crate) base: usize,
@@ -34,12 +39,12 @@ pub(crate) struct HwConfig {
     pub(crate) chip_id: u32,
     pub(crate) min_volt: u32,
     pub(crate) k: F32,
-    pub(crate) perf_states: &'static [PState],
     pub(crate) io_mappings: &'static [Option<IOMapping>],
 }
 
 pub(crate) struct HwDynConfig {
-    pub(crate) uat_context_table_base: u64,
+    pub(crate) uat_ttb_base: u64,
+    pub(crate) perf_states: Vec<PState>,
 }
 
 pub(crate) mod t8103;

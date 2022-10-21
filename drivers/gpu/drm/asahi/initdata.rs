@@ -266,7 +266,7 @@ impl<'a> InitDataBuilder::ver<'a> {
                     }
                 );
 
-                for i in 0..self.cfg.perf_states.len() {
+                for i in 0..self.dyncfg.perf_states.len() {
                     raw.unk_74[i] = self.cfg.k;
                 }
 
@@ -296,6 +296,7 @@ impl<'a> InitDataBuilder::ver<'a> {
                         // unmapped?
                         unkptr_38: 0xffffffa0_11800000,
                         // TODO: yuv matrices
+                        chip_id: self.cfg.chip_id,
                         unk_454: 0x1,
                         unk_458: 0x1,
                         unk_460: 0x1,
@@ -316,13 +317,13 @@ impl<'a> InitDataBuilder::ver<'a> {
                         unk_524: 0x1,
                         unk_53c: 0x8,
                         unk_554: 0x1,
-                        uat_context_table_base: self.dyncfg.uat_context_table_base,
+                        uat_ttb_base: self.dyncfg.uat_ttb_base,
                         unk_560: 0xb,
                         unk_564: 0x4,
                         unk_568: 0x8,
-                        max_pstate: 0x4,
+                        max_pstate: self.dyncfg.perf_states.len() as u32 - 1,
                         #[ver(V < V13_0B4)]
-                        num_pstates: 0x7,
+                        num_pstates: self.dyncfg.perf_states.len() as u32,
                         #[ver(V >= V13_0B4)]
                         unk_a84: 0x24,
                         #[ver(V < V13_0B4)]
@@ -358,21 +359,13 @@ impl<'a> InitDataBuilder::ver<'a> {
                     }
                 );
 
-                raw.chip_id = self.cfg.chip_id;
-
-                raw.max_pstate = self.cfg.perf_states.len() as u32 - 1;
-                #[ver(V < V13_0B4)]
-                {
-                    raw.num_pstates = self.cfg.perf_states.len() as u32;
-                    raw.min_volt = self.cfg.min_volt;
-                }
-                for (i, ps) in self.cfg.perf_states.iter().enumerate() {
-                    raw.frequencies[i] = ps.1 / 1000000;
-                    raw.voltages[i] = [ps.2; 8];
-                    let vm = self.cfg.min_volt.max(ps.2);
+                for (i, ps) in self.dyncfg.perf_states.iter().enumerate() {
+                    raw.frequencies[i] = ps.frequency / 1000000;
+                    raw.voltages[i] = [ps.voltage; 8];
+                    let vm = self.cfg.min_volt.max(ps.voltage);
                     raw.voltages_sram[i] = [vm, 0, 0, 0, 0, 0, 0, 0];
                     raw.unk_9b4[i] = self.cfg.k;
-                    raw.perf_levels[i] = ps.0;
+                    raw.power_levels[i] = ps.max_power;
                 }
 
                 Ok(raw)

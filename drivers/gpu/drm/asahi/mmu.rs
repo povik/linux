@@ -907,7 +907,7 @@ impl Uat {
         &self.kernel_vm
     }
 
-    pub(crate) fn context_table_base(&self) -> u64 {
+    pub(crate) fn ttb_base(&self) -> u64 {
         let inner = self.inner.lock();
 
         inner.ttbs_rgn.base as u64
