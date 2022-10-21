@@ -135,7 +135,7 @@ impl Renderer::ver {
         let width: u32 = cmdbuf.fb_width;
         let height: u32 = cmdbuf.fb_height;
 
-        if width > (u16::MAX as u32 + 1) || height > (u16::MAX as u32 + 1) {
+        if width > 65536 || height > 65536 {
             return Err(EINVAL);
         }
 
@@ -158,13 +158,13 @@ impl Renderer::ver {
             tile_blocks,
             params: fw::vertex::raw::TilingParameters {
                 size1: 0x14 * tile_blocks,
-                unk_4: 0x88,
-                unk_8: 0x203, // bit 0: GL clip mode
+                ppp_multisamplectl: 0x88,
+                ppp_ctrl: cmdbuf.ppp_ctrl,
                 x_max: (width - 1) as u16,
                 y_max: (height - 1) as u16,
-                tile_count: ((tiles_y - 1) << 12) | (tiles_x - 1),
-                x_blocks: (12 * tile_blocks_x) | (tile_blocks_x << 12) | (tile_blocks_x << 20),
-                y_blocks: (12 * tile_blocks_y) | (tile_blocks_y << 12) | (tile_blocks_y << 20),
+                te_screen: ((tiles_y - 1) << 12) | (tiles_x - 1),
+                te_mtile1: (12 * tile_blocks_x) | (tile_blocks_x << 12) | (tile_blocks_x << 20),
+                te_mtile2: (12 * tile_blocks_y) | (tile_blocks_y << 12) | (tile_blocks_y << 20),
                 size2: 0x10 * tile_blocks,
                 size3: 0x20 * tile_blocks,
                 unk_24: 0x100,
@@ -213,6 +213,25 @@ impl Renderer for Renderer::ver {
             )?;
         }
         let cmdbuf = unsafe { cmdbuf.assume_init() };
+
+        if cmdbuf.fb_width == 0
+            || cmdbuf.fb_height == 0
+            || cmdbuf.fb_width > 16384
+            || cmdbuf.fb_height > 16384
+        {
+            mod_dev_dbg!(
+                self.dev,
+                "[Submission {}] Invalid dimensions {}x{}\n",
+                id,
+                cmdbuf.fb_width,
+                cmdbuf.fb_height
+            );
+            return Err(EINVAL);
+        }
+
+        // This sequence number increases per new client/VM? assigned to some slot,
+        // but it's unclear *which* slot...
+        let slot_client_seq: u8 = (self.id & 0xff) as u8;
 
         let tile_info = Self::get_tiling_params(&cmdbuf)?;
 
@@ -394,7 +413,6 @@ impl Renderer for Renderer::ver {
                 })?)
             },
             |inner, ptr| {
-                let depth_dimensions: u32 = (cmdbuf.fb_width - 1) | ((cmdbuf.fb_height - 1) << 15);
                 let aux_fb_info = fw::fragment::raw::AuxFBInfo::ver {
                     unk1: 0xc000,
                     unk2: 0,
@@ -443,13 +461,13 @@ impl Renderer for Renderer::ver {
                             scissor_array: U64(cmdbuf.scissor_array),
                             depth_bias_array: U64(cmdbuf.depth_bias_array),
                             aux_fb_info: aux_fb_info,
-                            depth_dimensions: U64(depth_dimensions as u64),
+                            depth_dimensions: U64(cmdbuf.depth_dimensions as u64),
                             unk_48: U64(0x0),
-                            depth_flags: U64(cmdbuf.ds_flags as u64),
-                            depth_buffer_ptr1: U64(cmdbuf.depth_buffer),
-                            depth_buffer_ptr2: U64(cmdbuf.depth_buffer),
-                            stencil_buffer_ptr1: U64(cmdbuf.stencil_buffer),
-                            stencil_buffer_ptr2: U64(cmdbuf.stencil_buffer),
+                            zls_ctrl: U64(cmdbuf.zls_ctrl),
+                            depth_buffer_ptr1: U64(cmdbuf.depth_buffer_1),
+                            depth_buffer_ptr2: U64(cmdbuf.depth_buffer_2),
+                            stencil_buffer_ptr1: U64(cmdbuf.stencil_buffer_1),
+                            stencil_buffer_ptr2: U64(cmdbuf.stencil_buffer_2),
                             unk_68: Default::default(),
                             tvb_tilemap: inner.scene.tvb_tilemap_pointer(),
                             tvb_heapmeta: inner.scene.tvb_heapmeta_pointer(),
@@ -514,19 +532,19 @@ impl Renderer for Renderer::ver {
                                 pipeline_bind: U64(cmdbuf.partial_reload_pipeline_bind as u64),
                                 address: U64(cmdbuf.partial_reload_pipeline as u64 | 4),
                             },
-                            depth_flags: U64(cmdbuf.ds_flags as u64),
+                            zls_ctrl: U64(cmdbuf.zls_ctrl as u64),
                             unk_290: U64(0x0),
-                            depth_buffer_ptr1: U64(cmdbuf.depth_buffer),
+                            depth_buffer_ptr1: U64(cmdbuf.depth_buffer_1),
                             unk_2a0: U64(0x0),
                             unk_2a8: U64(0x0),
-                            depth_buffer_ptr2: U64(cmdbuf.depth_buffer),
-                            depth_buffer_ptr3: U64(cmdbuf.depth_buffer),
+                            depth_buffer_ptr2: U64(cmdbuf.depth_buffer_2),
+                            depth_buffer_ptr3: U64(cmdbuf.depth_buffer_3),
                             unk_2c0: U64(0x0),
-                            stencil_buffer_ptr1: U64(cmdbuf.stencil_buffer),
+                            stencil_buffer_ptr1: U64(cmdbuf.stencil_buffer_1),
                             unk_2d0: U64(0x0),
                             unk_2d8: U64(0x0),
-                            stencil_buffer_ptr2: U64(cmdbuf.stencil_buffer),
-                            stencil_buffer_ptr3: U64(cmdbuf.stencil_buffer),
+                            stencil_buffer_ptr2: U64(cmdbuf.stencil_buffer_2),
+                            stencil_buffer_ptr3: U64(cmdbuf.stencil_buffer_3),
                             unk_2f0: Default::default(),
                             aux_fb_unk0: aux_fb_unk,
                             unk_30c: 0x0,
@@ -551,7 +569,7 @@ impl Renderer for Renderer::ver {
                             unk_388: U64(0x0),
                             #[ver(V >= V13_0B4)]
                             unk_390_0: 0x0,
-                            depth_dimensions: U64(depth_dimensions as u64),
+                            depth_dimensions: U64(cmdbuf.depth_dimensions as u64),
                         },
                         unk_758_flag: 0,
                         unk_75c_flag: 0,
@@ -560,7 +578,9 @@ impl Renderer for Renderer::ver {
                         tvb_overflow_count: 0,
                         unk_878: 0,
                         encoder_params: fw::job::EncoderParams {
-                            unk_8: 0x0,  // fixed
+                            unk_8: (cmdbuf.flags
+                                & bindings::ASAHI_CMDBUF_SET_WHEN_RELOADING_Z_OR_S as u64
+                                != 0) as u32,
                             unk_c: 0x0,  // fixed
                             unk_10: 0x0, // fixed
                             encoder_id: cmdbuf.encoder_id,
@@ -569,7 +589,9 @@ impl Renderer for Renderer::ver {
                             seq_buffer: inner.scene.seq_buf_pointer(),
                             unk_28: U64(0x0), // fixed
                             unk_30: unk_flag as u32,
-                            unk_34: unk_flag as u32,
+                            unk_34: (cmdbuf.flags
+                                & bindings::ASAHI_CMDBUF_NO_CLEAR_PIPELINE_TEXTURES as u64
+                                != 0) as u32,
                             unk_38: 0, // 1 for boot stuff?
                         },
                         unk_pointee: 0,
@@ -594,7 +616,10 @@ impl Renderer for Renderer::ver {
                         unk_914: 0,
                         unk_918: U64(0),
                         unk_920: 0,
-                        unk_924: 1,
+                        unk_924: slot_client_seq,
+                        unk_925: 0,
+                        unk_926: 0,
+                        unk_927: 0,
                         #[ver(V >= V13_0B4)]
                         unk_928_0: 0,
                         #[ver(V >= V13_0B4)]
@@ -834,7 +859,7 @@ impl Renderer for Renderer::ver {
                         unk_5c8: 0,
                         unk_5cc: 0,
                         unk_5d0: 0,
-                        unk_5d4: 1,
+                        unk_5d4: slot_client_seq,
                         pad_5d5: Default::default(),
                         #[ver(V >= V13_0B4)]
                         unk_5e0: 0,

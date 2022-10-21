@@ -16,13 +16,13 @@ pub(crate) mod raw {
     #[repr(C)]
     pub(crate) struct TilingParameters {
         pub(crate) size1: u32,
-        pub(crate) unk_4: u32,
-        pub(crate) unk_8: u32,
+        pub(crate) ppp_multisamplectl: u32,
+        pub(crate) ppp_ctrl: u32,
         pub(crate) x_max: u16,
         pub(crate) y_max: u16,
-        pub(crate) tile_count: u32,
-        pub(crate) x_blocks: u32,
-        pub(crate) y_blocks: u32,
+        pub(crate) te_screen: u32,
+        pub(crate) te_mtile1: u32,
+        pub(crate) te_mtile2: u32,
         pub(crate) size2: u32,
         pub(crate) size3: u32,
         pub(crate) unk_24: u32,

@@ -74,8 +74,8 @@ impl drv::Driver for AsahiDriver {
     kernel::declare_drm_ioctls! {
         (ASAHI_SUBMIT,          drm_asahi_submit,
             ioctl::AUTH | ioctl::RENDER_ALLOW, file::File::submit),
-        (ASAHI_WAIT_BO,         drm_asahi_wait_bo,
-            ioctl::AUTH | ioctl::RENDER_ALLOW, file::File::wait_bo),
+        (ASAHI_WAIT,            drm_asahi_wait,
+            ioctl::AUTH | ioctl::RENDER_ALLOW, file::File::wait),
         (ASAHI_CREATE_BO,       drm_asahi_create_bo,
             ioctl::AUTH | ioctl::RENDER_ALLOW, file::File::create_bo),
         (ASAHI_MMAP_BO,         drm_asahi_mmap_bo,

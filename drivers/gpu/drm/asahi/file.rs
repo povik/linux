@@ -116,12 +116,12 @@ impl File {
         }
     }
 
-    pub(crate) fn wait_bo(
+    pub(crate) fn wait(
         device: &AsahiDevice,
-        _data: &mut bindings::drm_asahi_wait_bo,
+        _data: &mut bindings::drm_asahi_wait,
         file: &DrmFile,
     ) -> Result<u32> {
-        mod_dev_dbg!(device, "[File {}]: IOCTL: wait_bo", file.inner().id);
+        mod_dev_dbg!(device, "[File {}]: IOCTL: wait", file.inner().id);
         Ok(0)
     }
 

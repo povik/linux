@@ -17,12 +17,11 @@ extern "C" {
 #endif
 
 #define DRM_ASAHI_SUBMIT			0x00
-#define DRM_ASAHI_WAIT_BO			0x01
+#define DRM_ASAHI_WAIT				0x01
 #define DRM_ASAHI_CREATE_BO			0x02
 #define DRM_ASAHI_MMAP_BO			0x03
 #define DRM_ASAHI_GET_PARAM			0x04
 #define DRM_ASAHI_GET_BO_OFFSET		0x05
-
 #define ASAHI_MAX_ATTACHMENTS 16
 
 #define ASAHI_ATTACHMENT_C    0
@@ -35,9 +34,8 @@ struct drm_asahi_attachment {
    __u64 pointer;
 };
 
-#define ASAHI_CMDBUF_LOAD_C   (1 << 0)
-#define ASAHI_CMDBUF_LOAD_Z   (1 << 1)
-#define ASAHI_CMDBUF_LOAD_S   (1 << 2)
+#define ASAHI_CMDBUF_NO_CLEAR_PIPELINE_TEXTURES (1UL << 0)
+#define ASAHI_CMDBUF_SET_WHEN_RELOADING_Z_OR_S (1UL << 1)
 
 struct drm_asahi_cmdbuf {
    __u64 flags;
@@ -48,9 +46,16 @@ struct drm_asahi_cmdbuf {
    __u32 cmd_ta_id;
    __u32 cmd_3d_id;
 
-   __u32 ds_flags;
-   __u64 depth_buffer;
-   __u64 stencil_buffer;
+   __u32 ppp_ctrl;
+   __u64 zls_ctrl;
+
+   __u64 depth_buffer_1;
+   __u64 depth_buffer_2;
+   __u64 depth_buffer_3;
+
+   __u64 stencil_buffer_1;
+   __u64 stencil_buffer_2;
+   __u64 stencil_buffer_3;
 
    __u64 scissor_array;
    __u64 depth_bias_array;
@@ -70,6 +75,7 @@ struct drm_asahi_cmdbuf {
    __u32 partial_store_pipeline;
    __u32 partial_store_pipeline_bind;
 
+   __u32 depth_dimensions;
    __u32 depth_clear_value;
    __u8 stencil_clear_value;
    __u8 pad2[3];
@@ -102,18 +108,11 @@ struct drm_asahi_submit {
 	__u32 out_sync;
 };
 
+
 /**
- * struct drm_asahi_wait_bo - ioctl argument for waiting for
- * completion of the last DRM_ASAHI_SUBMIT on a BO.
- *
- * This is useful for cases where multiple processes might be
- * rendering to a BO and you want to wait for all rendering to be
- * completed.
+ * struct drm_asahi_wait - ioctl argument for waiting.
  */
-struct drm_asahi_wait_bo {
-	__u32 handle;
-	__u32 pad;
-	__s64 timeout_ns;	/* absolute */
+struct drm_asahi_wait {
 };
 
 #define ASAHI_BO_PIPELINE	1
@@ -185,7 +184,7 @@ struct drm_asahi_get_bo_offset {
 /* Note: this is an enum so that it can be resolved by Rust bindgen. */
 enum {
    DRM_IOCTL_ASAHI_SUBMIT           = DRM_IOW(DRM_COMMAND_BASE + DRM_ASAHI_SUBMIT, struct drm_asahi_submit),
-   DRM_IOCTL_ASAHI_WAIT_BO          = DRM_IOW(DRM_COMMAND_BASE + DRM_ASAHI_WAIT_BO, struct drm_asahi_wait_bo),
+   DRM_IOCTL_ASAHI_WAIT             = DRM_IOW(DRM_COMMAND_BASE + DRM_ASAHI_WAIT, struct drm_asahi_wait),
    DRM_IOCTL_ASAHI_CREATE_BO        = DRM_IOWR(DRM_COMMAND_BASE + DRM_ASAHI_CREATE_BO, struct drm_asahi_create_bo),
    DRM_IOCTL_ASAHI_MMAP_BO          = DRM_IOWR(DRM_COMMAND_BASE + DRM_ASAHI_MMAP_BO, struct drm_asahi_mmap_bo),
    DRM_IOCTL_ASAHI_GET_PARAM        = DRM_IOWR(DRM_COMMAND_BASE + DRM_ASAHI_GET_PARAM, struct drm_asahi_get_param),
