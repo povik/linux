@@ -967,7 +967,7 @@ pub(crate) mod raw {
         pub(crate) unk_10000: Array<0xe50, u8>,
         pub(crate) unk_10e50: u32,
         pub(crate) unk_10e54: Array<0x2c, u8>,
-        pub(crate) unk_10e80: u32,
+        pub(crate) fault_control: u32,
         pub(crate) do_init: u32,
         pub(crate) unk_10e88: Array<0x188, u8>,
         pub(crate) idle_ts: u64,
