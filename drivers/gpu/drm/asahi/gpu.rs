@@ -387,6 +387,22 @@ impl GpuManager::ver {
         });
     }
 
+    fn show_fault_info(&self) {
+        let data = self.dev.data();
+
+        let res = match data.resources() {
+            Some(res) => res,
+            None => {
+                dev_err!(self.dev, "  Failed to acquire resources\n");
+                return;
+            }
+        };
+
+        if let Some(info) = res.get_fault_info() {
+            dev_err!(self.dev, "  Fault info: {:#x?}\n", info);
+        }
+    }
+
     fn recover(&self) {
         self.initdata.fw_status.with(|raw, _inner| {
             let halt_count = raw.flags.halt_count.load(Ordering::Relaxed);
@@ -577,6 +593,7 @@ impl GpuManager for GpuManager::ver {
         dev_err!(self.dev, "  Event slot: {}\n", event_slot);
         dev_err!(self.dev, "  Timeout count: {}\n", counter);
         self.show_pending_events();
+        self.show_fault_info();
         self.recover();
     }
 
@@ -589,6 +606,7 @@ impl GpuManager for GpuManager::ver {
         dev_err!(self.dev, "  |________|  \n");
         dev_err!(self.dev, "GPU fault nya~!!!!!\n");
         self.show_pending_events();
+        self.show_fault_info();
         self.recover();
     }
 

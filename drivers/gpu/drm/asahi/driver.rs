@@ -4,18 +4,12 @@
 //! Driver for the Apple AGX GPUs found in Apple Silicon SoCs.
 
 use kernel::{
-    c_str, device, drm, drm::drv, drm::ioctl, error::Result, io_mem::IoMem, of, platform,
-    prelude::*, sync::Arc,
+    c_str, device, drm, drm::drv, drm::ioctl, error::Result, of, platform, prelude::*, sync::Arc,
 };
 
-use crate::{debug, file, gem, gpu, hw, mmu};
+use crate::{debug, file, gem, gpu, hw, mmu, regs};
 
 use kernel::macros::vtable;
-
-const ASC_CTL_SIZE: usize = 0x4000;
-const SGX_SIZE: usize = 0x1000000;
-const CPU_CONTROL: usize = 0x44;
-const CPU_RUN: u32 = 0x1 << 4; // BIT(4)
 
 const INFO: drv::DriverInfo = drv::DriverInfo {
     major: 0,
@@ -31,36 +25,13 @@ pub(crate) struct AsahiData {
     pub(crate) gpu: Arc<dyn gpu::GpuManager>,
 }
 
-pub(crate) struct AsahiResources {
-    asc: IoMem<ASC_CTL_SIZE>,
-    pub(crate) sgx: IoMem<SGX_SIZE>,
-}
-
-type DeviceData = device::Data<drv::Registration<AsahiDriver>, AsahiResources, AsahiData>;
+type DeviceData = device::Data<drv::Registration<AsahiDriver>, regs::Resources, AsahiData>;
 
 pub(crate) struct AsahiDriver;
 
 pub(crate) type AsahiDevice = kernel::drm::device::Device<AsahiDriver>;
 
-impl AsahiDriver {
-    fn write32<const N: usize>(res: &mut IoMem<N>, off: usize, val: u32) {
-        res.writel_relaxed(val, off);
-    }
-
-    fn init_mmio(res: &mut AsahiResources) -> Result {
-        // Read: 0x0
-        Self::write32(&mut res.sgx, 0xd14000, 0x70001);
-        Ok(())
-    }
-
-    fn start_cpu(res: &mut AsahiResources) -> Result {
-        let val = res.asc.readl_relaxed(CPU_CONTROL);
-
-        res.asc.writel_relaxed(val | CPU_RUN, CPU_CONTROL);
-
-        Ok(())
-    }
-}
+impl AsahiDriver {}
 
 #[vtable]
 impl drv::Driver for AsahiDriver {
@@ -106,22 +77,13 @@ impl platform::Driver for AsahiDriver {
 
         pdev.set_dma_masks((1 << mmu::UAT_OAS) - 1)?;
 
-        // TODO: add device abstraction to ioremap by name
-        // SAFETY: AGX does DMA via the UAT IOMMU (mostly)
-        let asc_res = unsafe { pdev.ioremap_resource(0)? };
-        let sgx_res = unsafe { pdev.ioremap_resource(1)? };
-
-        let mut res = AsahiResources {
-            // SAFETY: This device does DMA via the UAT IOMMU.
-            asc: asc_res,
-            sgx: sgx_res,
-        };
+        let res = regs::Resources::new(pdev)?;
 
         // Initialize misc MMIO
-        AsahiDriver::init_mmio(&mut res)?;
+        res.init_mmio()?;
 
         // Start the coprocessor CPU, so UAT can initialize the handoff
-        AsahiDriver::start_cpu(&mut res)?;
+        res.start_cpu()?;
 
         let reg = drm::drv::Registration::<AsahiDriver>::new(&dev)?;
         //let gpu = gpu::GpuManagerG13GV13_0B4::new(&reg.device(), &hw::t8103::HWCONFIG)?;
