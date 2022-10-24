@@ -73,7 +73,12 @@ impl Renderer::ver {
     ) -> Result<Renderer::ver> {
         let mut buffer = buffer::Buffer::ver::new(alloc, ualloc, ualloc_priv, mgr)?;
 
-        buffer.add_blocks(0x10)?;
+        let tvb_blocks = {
+            let lock = crate::THIS_MODULE.kernel_param_lock();
+            *crate::initial_tvb_size.read(&lock)
+        };
+
+        buffer.add_blocks(core::cmp::max(8, tvb_blocks))?;
 
         let gpu_context: GpuObject<fw::workqueue::GpuContextData> = alloc
             .shared
