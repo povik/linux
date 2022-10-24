@@ -769,7 +769,7 @@ impl Renderer for Renderer::ver {
                             unk_c: 0x1e3ce508, // fixed
                             tvb_tilemap: inner.scene.tvb_tilemap_pointer(),
                             unkptr_18: U64(0x0),
-                            tvb_something: self.buffer.tvb_something_pointer(),
+                            tvb_something: inner.scene.tvb_something_pointer(),
                             tvb_heapmeta: inner.scene.tvb_heapmeta_pointer().or(0x8000000000000000),
                             iogpu_unk_54: 0x6b0003, // fixed
                             iogpu_unk_55: 0x3a0012, // fixed
@@ -799,8 +799,8 @@ impl Renderer for Renderer::ver {
                         unk_154: Default::default(),
                         tiling_params: tile_info.params,
                         unk_3e8: Default::default(),
-                        tvb_something: self.buffer.tvb_something_pointer(),
-                        tvb_size: U64(0x800 * tile_info.tile_blocks as u64),
+                        tvb_something: inner.scene.tvb_something_pointer(),
+                        tvb_something_size: U64(inner.scene.tvb_something_size() as u64),
                         microsequence: inner.micro_seq.gpu_pointer(),
                         microsequence_size: inner.micro_seq.len() as u32,
                         fragment_stamp_slot: batches_frag.event().slot(),
