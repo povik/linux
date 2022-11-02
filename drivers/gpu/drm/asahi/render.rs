@@ -784,7 +784,7 @@ impl Renderer for Renderer::ver {
                             unk_50: U64(0x88),      // fixed
                             tvb_heapmeta_2: inner.scene.tvb_heapmeta_pointer(),
                             unk_60: U64(0x0), // fixed
-                            unk_68: U64(0x0), // fixed
+                            core_mask: U64(gpu.core_mask()),
                             preempt_buf1: inner_ptr!(inner.scene.preempt_buf_pointer(), part_1),
                             preempt_buf2: inner_ptr!(inner.scene.preempt_buf_pointer(), part_2),
                             unk_80: U64(0x1), // fixed

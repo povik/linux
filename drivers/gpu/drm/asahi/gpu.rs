@@ -107,6 +107,7 @@ pub(crate) struct GpuManager {
     event_manager: Arc<event::EventManager>,
     buffer_mgr: buffer::BufferManager,
     ids: SequenceIDs,
+    core_mask: u64,
 }
 
 pub(crate) trait GpuManager: Send + Sync {
@@ -234,6 +235,7 @@ impl GpuManager::ver {
             buffer_mgr: buffer::BufferManager::new()?,
             alloc: Mutex::new(alloc),
             ids: Default::default(),
+            core_mask: (!0u64) >> (64 - cfg.num_cores),
         })?;
 
         {
@@ -403,6 +405,10 @@ impl GpuManager::ver {
                 dev_err!(self.dev, "  Cannot recover.\n");
             }
         });
+    }
+
+    pub(crate) fn core_mask(&self) -> u64 {
+        self.core_mask
     }
 }
 
