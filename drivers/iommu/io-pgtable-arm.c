@@ -1136,7 +1136,7 @@ apple_uat_alloc_pgtable(struct io_pgtable_cfg *cfg, void *cookie)
 	if (cfg->quirks)
 		return NULL;
 
-	if (cfg->ias > 48 || cfg->oas > 40)
+	if (cfg->ias > 48 || cfg->oas > 42)
 		return NULL;
 
 	cfg->pgsize_bitmap &= SZ_16K;
