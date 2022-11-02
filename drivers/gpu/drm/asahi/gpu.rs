@@ -176,7 +176,7 @@ impl rtkit::Operations for GpuManager::ver {
 #[versions(AGX)]
 impl GpuManager::ver {
     pub(crate) fn new(dev: &AsahiDevice, cfg: &'static hw::HwConfig) -> Result<Arc<GpuManager::ver>> {
-        let uat = mmu::Uat::new(dev)?;
+        let uat = mmu::Uat::new(dev, cfg)?;
         let mut alloc = KernelAllocators {
             private: alloc::SimpleAllocator::new(dev, uat.kernel_vm(), 0x20, mmu::PROT_FW_PRIV_RW),
             shared: alloc::SimpleAllocator::new(dev, uat.kernel_vm(), 0x20, mmu::PROT_FW_SHARED_RW),

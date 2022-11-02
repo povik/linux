@@ -26,7 +26,7 @@ use kernel::{
 
 use crate::debug::*;
 use crate::no_debug;
-use crate::{driver, fw, gem, mem, slotalloc};
+use crate::{driver, fw, gem, hw, mem, slotalloc};
 
 const DEBUG_CLASS: DebugFlags = DebugFlags::Mmu;
 
@@ -45,7 +45,6 @@ const UAT_NPTE: usize = UAT_PGSZ / size_of::<Pte>();
 
 pub(crate) const UAT_IAS: usize = 39;
 pub(crate) const UAT_IAS_KERN: usize = 36;
-pub(crate) const UAT_OAS: usize = 36;
 
 const IOVA_USER_BASE: usize = UAT_PGSZ;
 const IOVA_USER_TOP: usize = (1 << UAT_IAS) - 1;
@@ -515,6 +514,7 @@ impl UatInner {
 
 pub(crate) struct Uat {
     dev: driver::AsahiDevice,
+    cfg: &'static hw::HwConfig,
     pagetables_rgn: UatRegion,
 
     inner: Arc<UatInner>,
@@ -634,6 +634,7 @@ impl Vm {
     fn new(
         dev: driver::AsahiDevice,
         uat_inner: Arc<UatInner>,
+        cfg: &'static hw::HwConfig,
         is_kernel: bool,
         id: u64,
     ) -> Result<Vm> {
@@ -642,7 +643,7 @@ impl Vm {
             io_pgtable::Config {
                 pgsize_bitmap: UAT_PGSZ,
                 ias: if is_kernel { UAT_IAS_KERN } else { UAT_IAS },
-                oas: UAT_OAS,
+                oas: cfg.uat_oas,
                 coherent_walk: true,
                 quirks: 0,
             },
@@ -957,10 +958,10 @@ impl Uat {
     }
 
     pub(crate) fn new_vm(&self, id: u64) -> Result<Vm> {
-        Vm::new(self.dev.clone(), self.inner.clone(), false, id)
+        Vm::new(self.dev.clone(), self.inner.clone(), self.cfg, false, id)
     }
 
-    pub(crate) fn new(dev: &driver::AsahiDevice) -> Result<Self> {
+    pub(crate) fn new(dev: &driver::AsahiDevice, cfg: &'static hw::HwConfig) -> Result<Self> {
         dev_info!(dev, "MMU: Initializing...\n");
 
         let handoff_rgn = Self::map_region(dev, c_str!("handoff"), HANDOFF_SIZE, false)?;
@@ -981,14 +982,15 @@ impl Uat {
             }),
         })?;
 
-        let kernel_lower_vm = Vm::new(dev.clone(), inner.clone(), false, 1)?;
-        let kernel_vm = Vm::new(dev.clone(), inner.clone(), true, 0)?;
+        let kernel_lower_vm = Vm::new(dev.clone(), inner.clone(), cfg, false, 1)?;
+        let kernel_vm = Vm::new(dev.clone(), inner.clone(), cfg, true, 0)?;
 
         let ttb0 = kernel_lower_vm.ttb();
         let ttb1 = kernel_vm.ttb();
 
         let uat = Self {
             dev: dev.clone(),
+            cfg,
             pagetables_rgn,
             kernel_vm,
             kernel_lower_vm,

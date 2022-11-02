@@ -45,6 +45,7 @@ const fn iomaps(mcc_count: usize, has_die1: bool) -> [Option<IOMapping>; 20] {
 pub(crate) const HWCONFIG_T6002: super::HwConfig = HwConfig {
     chip_id: 0x6002,
     base_clock_hz: 24_000_000,
+    uat_oas: 42,
     num_clusters: 8,
     num_cores: 64,
     da: HwConfigA {

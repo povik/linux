@@ -74,6 +74,7 @@ pub(crate) struct HwConfigB {
 pub(crate) struct HwConfig {
     pub(crate) chip_id: u32,
     pub(crate) base_clock_hz: u32,
+    pub(crate) uat_oas: usize,
     pub(crate) num_clusters: u32,
     pub(crate) num_cores: u32,
 

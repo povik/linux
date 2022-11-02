@@ -10,6 +10,7 @@ use super::*;
 pub(crate) const HWCONFIG: super::HwConfig = HwConfig {
     chip_id: 0x8103,
     base_clock_hz: 24_000_000,
+    uat_oas: 36,
     num_clusters: 1,
     num_cores: 8,
     da: HwConfigA {

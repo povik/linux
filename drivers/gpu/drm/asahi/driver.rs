@@ -7,7 +7,7 @@ use kernel::{
     c_str, device, drm, drm::drv, drm::ioctl, error::Result, of, platform, prelude::*, sync::Arc,
 };
 
-use crate::{debug, file, gem, gpu, hw, mmu, regs};
+use crate::{debug, file, gem, gpu, hw, regs};
 
 use kernel::macros::vtable;
 
@@ -81,7 +81,7 @@ impl platform::Driver for AsahiDriver {
 
         let cfg = id_info.ok_or(ENODEV)?;
 
-        pdev.set_dma_masks((1 << mmu::UAT_OAS) - 1)?;
+        pdev.set_dma_masks((1 << cfg.uat_oas) - 1)?;
 
         let res = regs::Resources::new(pdev)?;
 
