@@ -19,7 +19,7 @@ const DEBUG_CLASS: DebugFlags = DebugFlags::Init;
 pub(crate) struct InitDataBuilder<'a> {
     alloc: &'a mut gpu::KernelAllocators,
     cfg: &'a hw::HwConfig,
-    dyncfg: &'a hw::HwDynConfig,
+    dyncfg: &'a hw::DynConfig,
 }
 
 #[versions(AGX)]
@@ -27,39 +27,50 @@ impl<'a> InitDataBuilder::ver<'a> {
     pub(crate) fn new(
         alloc: &'a mut gpu::KernelAllocators,
         cfg: &'a hw::HwConfig,
-        dyncfg: &'a hw::HwDynConfig,
+        dyncfg: &'a hw::DynConfig,
     ) -> InitDataBuilder::ver<'a> {
         InitDataBuilder::ver { alloc, cfg, dyncfg }
     }
 
     #[inline(never)]
-    fn hw_shared1() -> raw::HwDataShared1 {
-        raw::HwDataShared1 {
-            unk_0: 0,
-            unk_4: 0xffffffff,
-            unk_8: 0x7282,
-            unk_c: 0x50ea,
-            unk_10: 0x370a,
-            unk_14: 0x25be,
-            unk_18: 0x1c1f,
-            unk_1c: 0x16fb,
-            unk_20: Array::new([0xff; 0x26]),
+    fn hw_shared1(cfg: &hw::HwConfig) -> raw::HwDataShared1 {
+        let mut ret = raw::HwDataShared1 {
+            unk_40: 0xffff,
             unk_a4: 0xffff,
-            unk_a8: 0,
             ..Default::default()
+        };
+        for (i, val) in cfg.shared1_tab.iter().enumerate() {
+            ret.table[i] = *val;
         }
+        ret
     }
 
     #[inline(never)]
-    fn hw_shared2() -> Result<Box<raw::HwDataShared2>> {
-        Ok(box_in_place!(raw::HwDataShared2 {
-            unk_ac: 0x800,
-            unk_b0: 0x1555,
-            unk_b4: Array::new([0xff; 24]),
-            unk_d4: Array::new([0xff; 16]),
-            unk_5b4: 0xc0007,
+    fn hw_shared2(cfg: &hw::HwConfig) -> Result<Box<raw::HwDataShared2>> {
+        let mut ret = box_in_place!(raw::HwDataShared2 {
+            unk_28: Array::new([0xff; 16]),
+            unk_508: cfg.shared2_unk_508,
             ..Default::default()
-        })?)
+        })?;
+
+        for (i, val) in cfg.shared2_tab.iter().enumerate() {
+            ret.table[i] = *val;
+        }
+        Ok(ret)
+    }
+
+    fn t8103_data() -> raw::T8103Data {
+        raw::T8103Data {
+            unk_d8c: 0x80000000,
+            unk_d90: 4,
+            unk_d9c: f32!(0.6),
+            unk_da4: f32!(0.4),
+            unk_dac: f32!(0.38552),
+            unk_db8: f32!(65536.0),
+            unk_dbc: f32!(13.56),
+            unk_dcc: 600,
+            ..Default::default()
+        }
     }
 
     #[inline(never)]
@@ -67,148 +78,156 @@ impl<'a> InitDataBuilder::ver<'a> {
         self.alloc
             .shared
             .new_inplace(Default::default(), |_inner, ptr| {
+                let pwr = &self.dyncfg.pwr;
+                let period_ms = pwr.power_sample_period;
+                let period_s = F32::from(period_ms) / f32!(1000.0);
+                let ppm_filter_tc_periods = pwr.ppm_filter_time_constant_ms / period_ms;
+                let ppm_filter_a = f32!(1.0) / ppm_filter_tc_periods.into();
+                let perf_filter_a = f32!(1.0) / pwr.perf_filter_time_constant.into();
+                let perf_filter_a2 = f32!(1.0) / pwr.perf_filter_time_constant2.into();
+                let avg_power_target_filter_a = f32!(1.0) / pwr.avg_power_target_filter_tc.into();
+                let avg_power_filter_tc_periods = pwr.avg_power_filter_tc_ms / period_ms;
+                let avg_power_filter_a = f32!(1.0) / avg_power_filter_tc_periods.into();
+                let pwr_filter_a = f32!(1.0) / pwr.pwr_filter_time_constant.into();
+
+                let base_ps = pwr.perf_base_pstate;
+                let base_ps_scaled = 100 * base_ps;
+                let max_ps = pwr.perf_max_pstate;
+                let max_ps_scaled = 100 * max_ps;
+                let boost_ps_count = max_ps - base_ps;
+
+                let base_clock_khz = self.cfg.base_clock_hz / 1000;
+                #[ver(V >= V13_0B4)]
+                let base_clock_mhz = self.cfg.base_clock_hz / 1_000_000;
+                let clocks_per_period = base_clock_khz * period_ms;
+
                 let raw = place!(
                     ptr,
                     raw::HwDataA::ver {
-                        unk_4: 192000,
+                        clocks_per_period: clocks_per_period,
                         #[ver(V >= V13_0B4)]
-                        unk_8_0: 192000,
+                        clocks_per_period_2: clocks_per_period,
                         pwr_status: AtomicU32::new(4),
                         unk_10: f32!(1.0),
                         actual_pstate: 1,
                         tgt_pstate: 1,
-                        unk_3c: 300,
+                        base_pstate_scaled: base_ps_scaled,
                         unk_40: 1,
-                        unk_44: 600,
-                        unk_4c: 100,
-                        // perf related,
+                        max_pstate_scaled: max_ps_scaled,
+                        min_pstate_scaled: 100,
                         unk_64c: 625,
-                        unk_658: f32!(0.99680513),
-                        unk_660: f32!(0.0031948888),
-                        // gpu-pwr-integral-gain
-                        unk_668: f32!(0.0202129),
-                        unk_674: f32!(19551.0),
-                        // gpu-pwr-proportional-gain
-                        unk_678: f32!(5.2831855),
-                        unk_680: 0xbcfb676e,
-                        unk_684: 0xfffffdd0,
-                        unk_68c: 600,
-                        unk_698: 19551,
-                        unk_6b8: 600,
-                        unk_6d4: 48,
-                        unk_6e0: f32!(0.9166667),
-                        unk_6e8: f32!(0.08333333),
-                        // gpu-ppm-ki / gpu-avg-power-target-filter-tc?
-                        unk_6f0: f32!(0.732),
+                        pwr_filter_a_neg: f32!(1.0) - pwr_filter_a,
+                        pwr_filter_a: pwr_filter_a,
+                        pwr_integral_gain: pwr.pwr_integral_gain,
+                        pwr_integral_min_clamp: pwr.pwr_integral_min_clamp.into(),
+                        max_power_1: pwr.max_power_mw.into(),
+                        pwr_proportional_gain: pwr.pwr_proportional_gain,
+                        pwr_pstate_related_k: -F32::from(max_ps_scaled) / pwr.max_power_mw.into(),
+                        pwr_pstate_max_dc_offset: pwr.pwr_min_duty_cycle as i32 - max_ps_scaled as i32,
+                        max_pstate_scaled_2: max_ps_scaled,
+                        max_power_2: pwr.max_power_mw,
+                        max_pstate_scaled_3: max_ps_scaled,
+                        ppm_filter_tc_periods_x4: ppm_filter_tc_periods * 4,
+                        ppm_filter_a_neg: f32!(1.0) - ppm_filter_a,
+                        ppm_filter_a: ppm_filter_a,
+                        ppm_ki_dt: pwr.ppm_ki * period_s,
                         #[ver(V >= V13_0B4)]
                         unk_6fc: f32!(65536.0),
                         #[ver(V < V13_0B4)]
-                        unk_6fc: f32!(0.0),
-                        // gpu-ppm-kp
-                        unk_700: f32!(6.9),
-                        // gpu-pwr-min-duty-cycle?
-                        unk_70c: 40,
-                        unk_710: 600,
+                        unk_6fc: if self.cfg.chip_id != 0x8103 {
+                            f32!(65536.0)
+                        } else {
+                            f32!(0.0)
+                        },
+                        ppm_kp: pwr.ppm_kp,
+                        pwr_min_duty_cycle: pwr.pwr_min_duty_cycle,
+                        max_pstate_scaled_4: max_ps_scaled,
                         unk_71c: f32!(0.0),
-                        unk_720: 19551,
+                        max_power_3: pwr.max_power_mw,
                         cur_power_mw_2: 0x0,
-                        unk_728: 100,
+                        ppm_filter_tc_ms: pwr.ppm_filter_time_constant_ms,
                         #[ver(V >= V13_0B4)]
                         unk_730_0: 0x232800,
-                        // gpu-perf-tgt-utilization
-                        unk_75c: 85,
-                        unk_764: 100,
-                        unk_768: 25,
-                        unk_76c: 6,
-                        pad_770: 0x0,
+                        perf_tgt_utilization: pwr.perf_tgt_utilization,
+                        perf_boost_min_util: pwr.perf_boost_min_util,
+                        perf_boost_ce_step: pwr.perf_boost_ce_step,
+                        perf_reset_iters: pwr.perf_reset_iters,
                         unk_774: 6,
                         unk_778: 1,
-                        unk_780: f32!(0.8),
-                        unk_784: f32!(0.98),
-                        unk_788: f32!(0.2),
-                        unk_78c: f32!(0.02),
-                        unk_790: f32!(7.8956833),
-                        // gpu-perf-integral-gain2
-                        unk_794: f32!(0.197392),
+                        perf_filter_drop_threshold: pwr.perf_filter_drop_threshold,
+                        perf_filter_a_neg: f32!(1.0) - perf_filter_a,
+                        perf_filter_a2_neg: f32!(1.0) - perf_filter_a2,
+                        perf_filter_a: perf_filter_a,
+                        perf_filter_a2: perf_filter_a2,
+                        perf_ki: pwr.perf_integral_gain,
+                        perf_ki2: pwr.perf_integral_gain2,
+                        perf_integral_min_clamp: pwr.perf_integral_min_clamp.into(),
                         unk_79c: f32!(95.0),
-                        unk_7a0: f32!(14.707963),
-                        // gpu-perf-proportional-gain2
-                        unk_7a4: f32!(6.853981),
-                        unk_7a8: f32!(3.1578948),
-                        unk_7ac: 300,
-                        unk_7b0: 600,
-                        unk_7b4: 300,
-                        unk_7c0: 0x55,
-                        unk_7e0: 300,
+                        perf_kp: pwr.perf_proportional_gain,
+                        perf_kp2: pwr.perf_proportional_gain2,
+                        boost_state_unk_k: F32::from(boost_ps_count) / f32!(0.95),
+                        base_pstate_scaled_2: base_ps_scaled,
+                        max_pstate_scaled_5: max_ps_scaled,
+                        base_pstate_scaled_3: base_ps_scaled,
+                        perf_tgt_utilization_2: pwr.perf_tgt_utilization,
+                        base_pstate_scaled_4: base_ps_scaled,
                         unk_7fc: f32!(65536.0),
-                        unk_800: f32!(40.0),
-                        unk_804: f32!(600.0),
-                        unk_808: 0x4fe,
-                        // gpu-pwr-min-duty-cycle?
-                        unk_818: 40,
-                        unk_824: f32!(100.0),
-                        unk_828: 600,
-                        unk_830: f32!(0.8),
-                        unk_834: f32!(0.2),
-                        unk_870: 0x12,
-                        unk_878: 0x1f40,
-                        unk_87c: 0xffffff24,
+                        pwr_min_duty_cycle_2: pwr.pwr_min_duty_cycle.into(),
+                        max_pstate_scaled_6: max_ps_scaled.into(),
+                        max_freq_mhz: pwr.max_freq_mhz,
+                        pwr_min_duty_cycle_3: pwr.pwr_min_duty_cycle,
+                        min_pstate_scaled_4: f32!(100.0),
+                        max_pstate_scaled_7: max_ps_scaled,
+                        unk_alpha_neg: f32!(0.8),
+                        unk_alpha: f32!(0.2),
+                        fast_die0_sensor_mask: U64(self.cfg.fast_die0_sensor_mask),
+                        fast_die0_release_temp_cc: 100 * pwr.fast_die0_release_temp,
+                        unk_87c: self.cfg.da.unk_87c,
                         unk_880: 0x4,
                         unk_894: f32!(1.0),
 
-                        unk_89c: f32!(1.6),
+                        fast_die0_ki_dt: pwr.fast_die0_integral_gain * period_s,
                         unk_8a8: f32!(65536.0),
-                        // gpu-fast-die0-proportional-gain?
-                        unk_8ac: f32!(5.0),
-                        // gpu-pwr-min-duty-cycle?,
-                        unk_8b8: 40,
-                        unk_8bc: 600,
-                        unk_8c0: 600,
-                        unk_8cc: 9880,
-                        unk_8ec: 600,
-                        unk_b94: 600,
+                        fast_die0_kp: pwr.fast_die0_proportional_gain,
+                        pwr_min_duty_cycle_4: pwr.pwr_min_duty_cycle,
+                        max_pstate_scaled_8: max_ps_scaled,
+                        max_pstate_scaled_9: max_ps_scaled,
+                        fast_die0_prop_tgt_delta: 100 * pwr.fast_die0_prop_tgt_delta,
+                        unk_8cc: self.cfg.da.unk_8cc,
+                        max_pstate_scaled_10: max_ps_scaled,
+                        max_pstate_scaled_11: max_ps_scaled,
                         unk_c2c: 1,
-                        unk_c30: 1,
-                        unk_c34: 19551,
-                        unk_c38: 19551,
-                        unk_c3c: 19551,
-                        unk_c48: f32!(0.992),
-                        unk_c4c: f32!(0.008),
-                        unk_c50: 500,
-                        unk_c54: 1000,
+                        power_zone_count: pwr.power_zones.len() as u32,
+                        max_power_4: pwr.max_power_mw,
+                        max_power_5: pwr.max_power_mw,
+                        max_power_6: pwr.max_power_mw,
+                        avg_power_target_filter_a_neg: f32!(1.0) - avg_power_target_filter_a,
+                        avg_power_target_filter_a: avg_power_target_filter_a,
+                        avg_power_target_filter_tc_x4: 4 * pwr.avg_power_target_filter_tc,
+                        avg_power_target_filter_tc_xperiod: period_ms
+                            * pwr.avg_power_target_filter_tc,
                         #[ver(V >= V13_0B4)]
-                        unk_c58_0: 24000000,
-                        unk_c5c: 30000,
-                        unk_c60: 29900,
-                        unk_c64: 27500,
-                        unk_c68: 55000,
-                        #[ver(V >= V13_0B4)]
-                        unk_c6c_0: 1320000000,
-                        unk_c6c: f32!(0.99985456),
-                        unk_c70: f32!(0.00014545454),
-                        unk_cf8: 500,
-                        unk_d04: f32!(0.992),
-                        unk_d0c: f32!(0.008),
-                        unk_d14: f32!(0.06),
+                        base_clock_mhz: base_clock_mhz,
+                        avg_power_filter_tc_periods_x4: 4 * avg_power_filter_tc_periods,
+                        avg_power_filter_a_neg: f32!(1.0) - avg_power_filter_a,
+                        avg_power_filter_a: avg_power_filter_a,
+                        avg_power_ki_dt: pwr.avg_power_ki_only * period_s,
                         unk_d20: f32!(65536.0),
-                        unk_d24: f32!(4.0),
-                        unk_d30: 0x28,
-                        unk_d34: 600,
-                        unk_d38: 600,
-                        unk_d40: f32!(19551.0),
-                        unk_d44: 19551,
-                        unk_d4c: 1000,
+                        avg_power_kp: pwr.avg_power_kp,
+                        avg_power_min_duty_cycle: pwr.avg_power_min_duty_cycle,
+                        max_pstate_scaled_12: max_ps_scaled,
+                        max_pstate_scaled_13: max_ps_scaled,
+                        max_power_7: pwr.max_power_mw.into(),
+                        max_power_8: pwr.max_power_mw,
+                        unk_d4c: pwr.avg_power_filter_tc_ms,
                         #[ver(V >= V13_0B4)]
-                        unk_d54_0: 24000000,
-                        unk_d64: 600,
-                        unk_d8c: 0x80000000,
-                        unk_d90: 4,
-                        unk_d9c: f32!(0.6),
-                        unk_da4: f32!(0.4),
-                        unk_dac: f32!(0.38552),
-                        unk_db8: f32!(65536.0),
-                        unk_dbc: f32!(13.56),
-                        unk_dcc: 600,
+                        base_clock_mhz_2: base_clock_mhz,
+                        max_pstate_scaled_14: max_ps_scaled,
+                        t8103_data: if self.cfg.chip_id == 0x8103 {
+                            Self::t8103_data()
+                        } else {
+                            Default::default()
+                        },
                         #[ver(V >= V13_0B4)]
                         unk_e10_0: raw::HwDataA130Extra {
                             unk_38: 4,
@@ -241,33 +260,49 @@ impl<'a> InitDataBuilder::ver<'a> {
                             unk_128: 600,
                             ..Default::default()
                         },
-                        unk_e10: Array::new([
-                            0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x12, 0x0,
-                            0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x70, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x0,
-                            0x0, 0x0, 0x0, 0x0,
-                        ]),
-                        unk_1610: Array::new([
-                            0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
-                            0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
-                            0x12, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x0,
-                        ]),
+                        fast_die0_sensor_mask_2: U64(self.cfg.fast_die0_sensor_mask),
+                        unk_e24: self.cfg.da.unk_e24,
+                        unk_e28: 1,
+                        fast_die0_sensor_mask_alt: U64(self.cfg.fast_die0_sensor_mask_alt),
+                        fast_die0_sensor_present: self.cfg.fast_die0_sensor_present,
                         #[ver(V < V13_0B4)]
                         unk_1638: Array::new([0, 0, 0, 0, 1, 0, 0, 0]),
-                        hws1: Self::hw_shared1(),
-                        hws2: *Self::hw_shared2()?,
-                        unk_3ce0: Array::new([
-                            0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x0, 0x0, 0x0,
-                            0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x7a, 0x44, 0x0, 0x0, 0x0, 0x0,
-                            0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
-                            0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x34, 0x42,
-                            0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
-                        ]),
+                        hws1: Self::hw_shared1(self.cfg),
+                        hws2: *Self::hw_shared2(self.cfg)?,
+                        unk_3ce8: 1,
                         ..Default::default()
                     }
                 );
 
-                for i in 0..self.dyncfg.perf_states.len() {
-                    raw.unk_74[i] = self.cfg.k;
+                for i in 0..self.dyncfg.pwr.perf_states.len() {
+                    raw.sram_k[i] = self.cfg.sram_k;
+                }
+
+                for (i, coef) in pwr.core_leak_coef.iter().enumerate() {
+                    raw.core_leak_coef[i] = *coef;
+                }
+                for (i, coef) in pwr.sram_leak_coef.iter().enumerate() {
+                    raw.sram_leak_coef[i] = *coef;
+                }
+                for (i, coef) in self.cfg.unk_coef_a.iter().enumerate() {
+                    raw.unk_coef_a1[i][0] = *coef;
+                    raw.unk_coef_a2[i][0] = *coef;
+                }
+                for (i, coef) in self.cfg.unk_coef_b.iter().enumerate() {
+                    raw.unk_coef_b1[i][0] = *coef;
+                    raw.unk_coef_b2[i][0] = *coef;
+                }
+
+                for (i, pz) in pwr.power_zones.iter().enumerate() {
+                    raw.power_zones[i].target = pz.target;
+                    raw.power_zones[i].target_off = pz.target - pz.target_offset;
+                    raw.power_zones[i].filter_tc_x4 = 4 * pz.filter_tc;
+                    raw.power_zones[i].filter_tc_xperiod = period_ms * pz.filter_tc;
+                    let filter_a = f32!(1.0) / pz.filter_tc.into();
+                    raw.power_zones[i].filter_a = filter_a;
+                    raw.power_zones[i].filter_a_neg = f32!(1.0) - filter_a;
+                    #[ver(V >= V13_0B4)]
+                    raw.power_zones[i].unk_10 = 1320000000;
                 }
 
                 Ok(raw)
@@ -305,38 +340,33 @@ impl<'a> InitDataBuilder::ver<'a> {
                         unk_47c: 0x1,
                         unk_484: 0x1,
                         unk_48c: 0x1,
-                        unk_490: 24000,
-                        unk_494: 0x8,
+                        base_clock_khz: self.cfg.base_clock_hz / 1000,
+                        power_sample_period: self.dyncfg.pwr.power_sample_period,
                         unk_49c: 0x1,
                         unk_4a0: 0x1,
                         unk_4a4: 0x1,
                         unk_4c0: 0x1f,
+                        unk_4e0: self.cfg.db.unk_4e0,
                         unk_4f0: 0x1,
                         unk_4f4: 0x1,
                         unk_504: 0x31,
-                        unk_524: 0x1,
-                        unk_53c: 0x8,
+                        unk_524: 0x1, // use_secure_cache_flush
+                        unk_534: self.cfg.db.unk_534,
+                        num_cores: self.cfg.num_cores,
                         unk_554: 0x1,
                         uat_ttb_base: self.dyncfg.uat_ttb_base,
-                        unk_560: 0xb,
-                        unk_564: 0x4,
-                        unk_568: 0x8,
-                        max_pstate: self.dyncfg.perf_states.len() as u32 - 1,
+                        unk_560: self.cfg.db.unk_560,
+                        unk_564: self.cfg.db.unk_564,
+                        num_cores_2: self.cfg.num_cores,
+                        max_pstate: self.dyncfg.pwr.perf_states.len() as u32 - 1,
                         #[ver(V < V13_0B4)]
-                        num_pstates: self.dyncfg.perf_states.len() as u32,
-                        #[ver(V >= V13_0B4)]
-                        unk_a84: 0x24,
+                        num_pstates: self.dyncfg.pwr.perf_states.len() as u32,
                         #[ver(V < V13_0B4)]
-                        unk_a84: 27,
-                        unk_a88: 73,
-                        unk_a8c: 100,
-
+                        min_sram_volt: self.dyncfg.pwr.min_sram_microvolt / 1000,
                         #[ver(V < V13_0B4)]
-                        min_volt: 850,
+                        unk_ab8: self.cfg.db.unk_ab8,
                         #[ver(V < V13_0B4)]
-                        unk_ab8: 72,
-                        #[ver(V < V13_0B4)]
-                        unk_abc: 8,
+                        unk_abc: self.cfg.db.unk_abc,
                         #[ver(V < V13_0B4)]
                         unk_ac0: 0x1020,
 
@@ -359,13 +389,17 @@ impl<'a> InitDataBuilder::ver<'a> {
                     }
                 );
 
-                for (i, ps) in self.dyncfg.perf_states.iter().enumerate() {
-                    raw.frequencies[i] = ps.frequency / 1000000;
-                    raw.voltages[i] = [ps.voltage; 8];
-                    let vm = self.cfg.min_volt.max(ps.voltage);
-                    raw.voltages_sram[i] = [vm, 0, 0, 0, 0, 0, 0, 0];
-                    raw.unk_9b4[i] = self.cfg.k;
-                    raw.power_levels[i] = ps.max_power;
+                for (i, ps) in self.dyncfg.pwr.perf_states.iter().enumerate() {
+                    raw.frequencies[i] = ps.freq_mhz;
+                    for (j, mv) in ps.volt_mv.iter().enumerate() {
+                        let sram_mv = (*mv).max(self.dyncfg.pwr.min_sram_microvolt / 1000);
+                        raw.voltages[i][j] = *mv;
+                        raw.voltages_sram[i][j] = sram_mv;
+                    }
+                    raw.sram_k[i] = self.cfg.sram_k;
+                    raw.rel_max_powers[i] = ps.pwr_mw * 100 / self.dyncfg.pwr.max_power_mw;
+                    // TODO
+                    raw.rel_boost_powers[i] = ps.pwr_mw * 100 / self.dyncfg.pwr.max_power_mw;
                 }
 
                 Ok(raw)
@@ -377,7 +411,15 @@ impl<'a> InitDataBuilder::ver<'a> {
         self.alloc
             .shared
             .new_inplace(Default::default(), |_inner, ptr| {
-                Ok(place!(
+                let pwr = &self.dyncfg.pwr;
+                let period_ms = pwr.power_sample_period;
+                let period_s = F32::from(period_ms) / f32!(1000.0);
+                let avg_power_filter_tc_periods = pwr.avg_power_filter_tc_ms / period_ms;
+
+                let max_ps = pwr.perf_max_pstate;
+                let max_ps_scaled = 100 * max_ps;
+
+                let raw = place!(
                     ptr,
                     raw::Globals::ver {
                         //ktrace_enable: 0xffffffff,
@@ -402,45 +444,30 @@ impl<'a> InitDataBuilder::ver<'a> {
                             ..Default::default()
                         },
                         unk_8900: 1,
-                        unk_8908: 19551,
-                        unk_890c: 600,
-                        unk_8910: 600,
-                        unk_891c: 600,
-                        unk_8924: 1,
-                        // gpu-avg-power-target-filter-tc?
-                        unk_8928: 125,
-                        // gpu-avg-power-ki-only / gpu-avg-power-target-filter-tc?
-                        unk_892c: f32!(0.06),
-                        // gpu-avg-power-kp
-                        unk_8930: f32!(4.0),
-                        // gpu-avg-power-min-duty-cycle
-                        unk_8934: 40,
-                        // gpu-avg-power-target-filter-tc
-                        unk_8938: 125,
-                        #[ver(V >= V13_0B4)]
-                        unk_893c: 30000,
-                        #[ver(V < V13_0B4)]
-                        unk_893c: 29520,
-                        // gpu-power-zone-target-0 - gpu-power-zone-target-offset-0
-                        unk_8940: 29900,
-                        // gpu-power-zone-filter-tc-0
-                        unk_8944: 6875,
-                        unk_89bc: 9880,
-                        unk_89c0: 8000,
-                        unk_89c4: -220,
-                        // gpu-fast-die0-proportional-gain?
-                        unk_89cc: f32!(5.0),
-                        unk_89d0: f32!(1.6),
+                        max_power: pwr.max_power_mw,
+                        max_pstate_scaled: max_ps_scaled,
+                        max_pstate_scaled_2: max_ps_scaled,
+                        max_pstate_scaled_3: max_ps_scaled,
+                        power_zone_count: pwr.power_zones.len() as u32,
+                        avg_power_filter_tc_periods: avg_power_filter_tc_periods,
+                        avg_power_ki_dt: pwr.avg_power_ki_only * period_s,
+                        avg_power_kp: pwr.avg_power_kp,
+                        avg_power_min_duty_cycle: pwr.avg_power_min_duty_cycle,
+                        avg_power_target_filter_tc: pwr.avg_power_target_filter_tc,
+                        unk_89bc: self.cfg.da.unk_8cc,
+                        fast_die0_release_temp: 100 * pwr.fast_die0_release_temp,
+                        unk_89c4: self.cfg.da.unk_87c,
+                        fast_die0_prop_tgt_delta: 100 * pwr.fast_die0_prop_tgt_delta,
+                        fast_die0_kp: pwr.fast_die0_proportional_gain,
+                        fast_die0_ki_dt: pwr.fast_die0_integral_gain * period_s,
                         unk_89e0: 1,
-                        unk_89e4: 19551,
-                        // gpu-ppm-kp
-                        unk_89e8: f32!(6.9),
-                        // gpu-ppm-ki / gpu-avg-power-target-filter-tc?
-                        unk_89ec: f32!(0.732),
+                        max_power_2: pwr.max_power_mw,
+                        ppm_kp: pwr.ppm_kp,
+                        ppm_ki_dt: pwr.ppm_ki * period_s,
                         #[ver(V >= V13_0B4)]
                         unk_89f4_8: 1,
-                        hws1: Self::hw_shared1(),
-                        hws2: *Self::hw_shared2()?,
+                        hws1: Self::hw_shared1(self.cfg),
+                        hws2: *Self::hw_shared2(self.cfg)?,
                         unk_900c: 1,
                         #[ver(V >= V13_0B4)]
                         unk_9010_0: 1,
@@ -461,9 +488,9 @@ impl<'a> InitDataBuilder::ver<'a> {
                         unk_1102c_8: 100,
                         #[ver(V >= V13_0B4)]
                         unk_1102c_c: 1,
-                        idle_to_off_timeout_ms: AtomicU32::new(2),
-                        unk_11034: 40,
-                        unk_11038: 5,
+                        idle_off_delay_ms: AtomicU32::new(pwr.idle_off_delay_ms),
+                        fender_idle_off_delay_ms: pwr.fender_idle_off_delay_ms,
+                        fw_early_wake_timeout_ms: pwr.fw_early_wake_timeout_ms,
                         unk_118e0: 40,
                         #[ver(V >= V13_0B4)]
                         unk_118e4_0: 50,
@@ -473,7 +500,22 @@ impl<'a> InitDataBuilder::ver<'a> {
                         unk_11efc: 8,
                         ..Default::default()
                     }
-                ))
+                );
+
+                for (i, pz) in pwr.power_zones.iter().enumerate() {
+                    raw.power_zones[i].target = pz.target;
+                    raw.power_zones[i].target_off = pz.target - pz.target_offset;
+                    raw.power_zones[i].filter_tc = pz.filter_tc;
+                }
+
+                if let Some(tab) = self.cfg.global_tab.as_ref() {
+                    for (i, x) in tab.iter().enumerate() {
+                        raw.unk_118ec[i] = *x;
+                    }
+                    raw.unk_118e8 = 1;
+                }
+
+                Ok(raw)
             })
     }
 

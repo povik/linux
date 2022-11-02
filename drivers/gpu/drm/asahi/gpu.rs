@@ -439,7 +439,7 @@ impl GpuManager for GpuManager::ver {
         }
 
         self.initdata.globals.with(|raw, _inner| {
-            raw.idle_to_off_timeout_ms.store(timeout, Ordering::Relaxed);
+            raw.idle_off_delay_ms.store(timeout, Ordering::Relaxed);
         });
     }
 
