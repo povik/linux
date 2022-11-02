@@ -129,6 +129,16 @@ impl Node {
         }
     }
 
+    pub fn is_compatible(&self, compatible: &CStr) -> Option<u32> {
+        let ret =
+            unsafe { bindings::of_device_is_compatible(self.raw_node, compatible.as_char_ptr()) };
+
+        match ret {
+            0 => None,
+            a => Some(a as u32),
+        }
+    }
+
     pub fn parse_phandle(&self, name: &CStr, index: usize) -> Option<Node> {
         unsafe {
             Node::from_raw(bindings::of_parse_phandle(
