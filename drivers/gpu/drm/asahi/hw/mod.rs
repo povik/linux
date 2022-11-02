@@ -12,6 +12,7 @@ use kernel::prelude::*;
 
 const MAX_POWERZONES: usize = 5;
 
+pub(crate) mod t600x;
 pub(crate) mod t8103;
 
 #[derive(Debug)]
