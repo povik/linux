@@ -8,9 +8,7 @@ use core::sync::atomic::{AtomicU64, Ordering};
 use core::time::Duration;
 
 use kernel::{
-    c_str,
     delay::coarse_sleep,
-    device::RawDevice,
     macros::versions,
     prelude::*,
     soc::apple::rtkit,
@@ -189,7 +187,7 @@ impl GpuManager::ver {
             ),
         };
 
-        let dyncfg = GpuManager::ver::get_dyn_config(dev, &uat)?;
+        let dyncfg = GpuManager::ver::get_dyn_config(dev, &uat, cfg)?;
 
         let mut builder = initdata::InitDataBuilder::ver::new(&mut alloc, cfg, &dyncfg);
         let initdata = builder.build()?;
@@ -313,28 +311,13 @@ impl GpuManager::ver {
         Ok(mgr)
     }
 
-    fn get_dyn_config(dev: &AsahiDevice, uat: &mmu::Uat) -> Result<hw::HwDynConfig> {
-        let mut perf_states = Vec::new();
-
-        let node = dev.of_node().ok_or(EIO)?;
-        let opps = node
-            .parse_phandle(c_str!("operating-points-v2"), 0)
-            .ok_or(EIO)?;
-
-        for opp in opps.children() {
-            let frequency: u64 = opp.get_property(c_str!("opp-hz"))?;
-            let microvolt: u32 = opp.get_property(c_str!("opp-microvolt"))?;
-            let max_power: u32 = opp.get_property(c_str!("apple,opp-rel-power"))?;
-
-            perf_states.try_push(hw::PState {
-                voltage: microvolt / 1000,
-                frequency: frequency.try_into()?,
-                max_power,
-            })?;
-        }
-
-        Ok(hw::HwDynConfig {
-            perf_states,
+    fn get_dyn_config(
+        dev: &AsahiDevice,
+        uat: &mmu::Uat,
+        cfg: &hw::HwConfig,
+    ) -> Result<hw::DynConfig> {
+        Ok(hw::DynConfig {
+            pwr: hw::PwrConfig::load(dev, cfg)?,
             uat_ttb_base: uat.ttb_base(),
         })
     }

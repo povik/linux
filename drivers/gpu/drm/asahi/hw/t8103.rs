@@ -9,8 +9,34 @@ use super::*;
 
 pub(crate) const HWCONFIG: super::HwConfig = HwConfig {
     chip_id: 0x8103,
-    min_volt: 850,
-    k: f32!(1.02),
+    base_clock_hz: 24_000_000,
+    num_clusters: 1,
+    num_cores: 8,
+    da: HwConfigA {
+        unk_87c: -220,
+        unk_8cc: 9880,
+        unk_e24: 112,
+    },
+    db: HwConfigB {
+        unk_4e0: 0,
+        unk_534: 0,
+        unk_560: 11,
+        unk_564: 4,
+        unk_ab8: 0x48,
+        unk_abc: 0x8,
+    },
+    shared1_tab: &[
+        -1, 0x7282, 0x50ea, 0x370a, 0x25be, 0x1c1f, 0x16fb, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    ],
+    shared2_tab: &[0x800, 0x1555, -1, -1, -1, -1, -1, -1],
+    shared2_unk_508: 0xc0007,
+    sram_k: f32!(1.02),
+    unk_coef_a: &[],
+    unk_coef_b: &[],
+    global_tab: None,
+    fast_die0_sensor_mask: 0x12,
+    fast_die0_sensor_mask_alt: 0x12,
+    fast_die0_sensor_present: 0x01,
     io_mappings: &[
         Some(IOMapping::new(0x204d00000, 0x1c000, 0x1c000, true)), // Fender
         Some(IOMapping::new(0x20e100000, 0x4000, 0x4000, false)),  // AICTimer
