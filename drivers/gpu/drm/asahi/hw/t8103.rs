@@ -3,14 +3,14 @@
 
 //! Hardware configuration for t8103 platforms
 
-use crate::const_f32;
+use crate::f32;
 
 use super::*;
 
 pub(crate) const HWCONFIG: super::HwConfig = HwConfig {
     chip_id: 0x8103,
     min_volt: 850,
-    k: const_f32!(1.02),
+    k: f32!(1.02),
     io_mappings: &[
         Some(IOMapping::new(0x204d00000, 0x1c000, 0x1c000, true)), // Fender
         Some(IOMapping::new(0x20e100000, 0x4000, 0x4000, false)),  // AICTimer

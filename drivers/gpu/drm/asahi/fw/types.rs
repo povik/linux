@@ -9,6 +9,8 @@ use crate::{alloc, object};
 pub(crate) use kernel::macros::versions;
 
 pub(crate) use crate::object::{GpuPointer, GpuStruct, GpuWeakPointer};
+pub(crate) use crate::float::F32;
+pub(crate) use crate::f32;
 pub(crate) use ::alloc::boxed::Box;
 use core::fmt;
 use core::ops::{Deref, DerefMut, Index, IndexMut};
@@ -29,23 +31,6 @@ pub(crate) struct Stamp(pub(crate) AtomicU32);
 
 #[derive(Debug, Default)]
 pub(crate) struct FwStamp(pub(crate) AtomicU32);
-
-#[derive(Default, Debug, Copy, Clone)]
-pub(crate) struct F32(pub(crate) u32);
-
-impl F32 {
-    pub(crate) const fn new(v: f32) -> F32 {
-        F32(unsafe { core::mem::transmute(v) })
-    }
-}
-
-#[macro_export]
-macro_rules! const_f32 {
-    ($val:expr) => {{
-        const _K: F32 = F32::new($val);
-        _K
-    }};
-}
 
 #[derive(Copy, Clone, Default)]
 #[repr(C, packed(4))]
