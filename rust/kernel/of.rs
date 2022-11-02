@@ -155,6 +155,17 @@ impl Node {
     {
         Ok(self.find_property(propname).ok_or(ENOENT)?.try_into()?)
     }
+
+    pub fn get_opt_property<'a, T: TryFrom<Property<'a>>>(
+        &'a self,
+        propname: &CStr,
+    ) -> Result<Option<T>>
+    where
+        crate::error::Error: From<<T as TryFrom<Property<'a>>>::Error>,
+    {
+        self.find_property(propname)
+            .map_or(Ok(None), |p| Ok(Some(p.try_into()?)))
+    }
 }
 
 #[derive(Copy, Clone)]
