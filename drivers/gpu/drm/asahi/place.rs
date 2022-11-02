@@ -44,7 +44,18 @@ macro_rules! place {
 
     // Check that all fields are specified
     (@STRUCT_CHECK $ptr:ident, {$($typ_init:tt)*} { $($($f:ident $(: $v:expr)?),*,)? ..Default::default() } {$($body:tt)*}) => {
-        {$($body)*}
+        if false {
+            #[allow(clippy::redundant_field_names)]
+            let _x = $($typ_init)* {
+                $($(
+                    $f $(: $v)?
+                ),*
+                ,)?
+                ..Default::default()
+            };
+        } else {
+            {$($body)*}
+        }
     };
     (@STRUCT_CHECK $ptr:ident, {$($typ_init:tt)*} { $($f:ident $(: $v:expr)?),* $(,)? } {$($body:tt)*}) => {
         if false {
