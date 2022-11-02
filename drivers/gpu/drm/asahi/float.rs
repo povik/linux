@@ -43,6 +43,9 @@ impl F32 {
 
 #[macro_export]
 macro_rules! f32 {
+    ([$($val:expr),*]) => {{
+        [$(f32!($val)),*]
+    }};
     ($val:expr) => {{
         const _K: $crate::float::F32 = $crate::float::F32::from_f32($val);
         _K
