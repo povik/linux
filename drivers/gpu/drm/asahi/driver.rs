@@ -60,20 +60,26 @@ impl drv::Driver for AsahiDriver {
 
 impl platform::Driver for AsahiDriver {
     type Data = Arc<DeviceData>;
+    type IdInfo = &'static hw::HwConfig;
 
-    kernel::define_of_id_table! {(), [
-        (of::DeviceId::Compatible(b"apple,agx-t8103"), None),
+    kernel::define_of_id_table! {&'static hw::HwConfig, [
+        (of::DeviceId::Compatible(b"apple,agx-t8103"), Some(&hw::t8103::HWCONFIG)),
+        (of::DeviceId::Compatible(b"apple,agx-t6000"), Some(&hw::t600x::HWCONFIG_T6000)),
+        (of::DeviceId::Compatible(b"apple,agx-t6001"), Some(&hw::t600x::HWCONFIG_T6001)),
+        (of::DeviceId::Compatible(b"apple,agx-t6002"), Some(&hw::t600x::HWCONFIG_T6002)),
     ]}
 
     fn probe(
         pdev: &mut platform::Device,
-        _id_info: Option<&Self::IdInfo>,
+        id_info: Option<&Self::IdInfo>,
     ) -> Result<Arc<DeviceData>> {
         debug::update_debug_flags();
 
         let dev = device::Device::from_dev(pdev);
 
         dev_info!(dev, "Probing!\n");
+
+        let cfg = id_info.ok_or(ENODEV)?;
 
         pdev.set_dma_masks((1 << mmu::UAT_OAS) - 1)?;
 
@@ -86,8 +92,8 @@ impl platform::Driver for AsahiDriver {
         res.start_cpu()?;
 
         let reg = drm::drv::Registration::<AsahiDriver>::new(&dev)?;
-        //let gpu = gpu::GpuManagerG13GV13_0B4::new(&reg.device(), &hw::t8103::HWCONFIG)?;
-        let gpu = gpu::GpuManagerG13GV12_3::new(reg.device(), &hw::t8103::HWCONFIG)?;
+        //let gpu = gpu::GpuManagerG13GV13_0B4::new(&reg.device(), cfg)?;
+        let gpu = gpu::GpuManagerG13GV12_3::new(reg.device(), cfg)?;
 
         let data =
             kernel::new_device_data!(reg, res, AsahiData { dev, gpu }, "Asahi::Registrations")?;
