@@ -982,8 +982,11 @@ impl Uat {
             }),
         })?;
 
+        dev_info!(dev, "MMU: Creating kernel page tables\n");
         let kernel_lower_vm = Vm::new(dev.clone(), inner.clone(), cfg, false, 1)?;
         let kernel_vm = Vm::new(dev.clone(), inner.clone(), cfg, true, 0)?;
+
+        dev_info!(dev, "MMU: Kernel page tables created\n");
 
         let ttb0 = kernel_lower_vm.ttb();
         let ttb1 = kernel_vm.ttb();

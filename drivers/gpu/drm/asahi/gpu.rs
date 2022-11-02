@@ -188,7 +188,9 @@ impl GpuManager::ver {
             ),
         };
 
+        dev_info!(dev, "Getting configuration from device tree...\n");
         let dyncfg = GpuManager::ver::get_dyn_config(dev, &uat, cfg)?;
+        dev_info!(dev, "Dynamic configuration fetched\n");
 
         let mut builder = initdata::InitDataBuilder::ver::new(&mut alloc, cfg, &dyncfg);
         let initdata = builder.build()?;

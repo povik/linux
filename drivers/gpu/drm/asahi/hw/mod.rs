@@ -164,10 +164,18 @@ impl PwrConfig {
 
         macro_rules! prop {
             ($prop:expr, $default:expr) => {{
-                node.get_opt_property(c_str!($prop))?.unwrap_or($default)
+                node.get_opt_property(c_str!($prop))
+                    .map_err(|e| {
+                        dev_err!(dev, "Error reading property {}: {:?}", $prop, e);
+                        e
+                    })?
+                    .unwrap_or($default)
             }};
             ($prop:expr) => {{
-                node.get_property(c_str!($prop))?
+                node.get_property(c_str!($prop)).map_err(|e| {
+                    dev_err!(dev, "Error reading property {}: {:?}", $prop, e);
+                    e
+                })?
             }};
         }
 
