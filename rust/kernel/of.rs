@@ -203,6 +203,42 @@ impl<'a> Property<'a> {
     }
 }
 
+pub trait PropertyUnit: Sized {
+    const UNIT_SIZE: usize;
+
+    fn from_bytes(data: &[u8]) -> Result<Self>;
+}
+
+// This doesn't work...
+// impl<'a, T: PropertyUnit> TryFrom<Property<'a>> for T {
+//     type Error = Error;
+//
+//     fn try_from(p: Property<'_>) -> core::result::Result<T, Self::Error> {
+//         if p.value().len() != T::UNIT_SIZE {
+//             Err(EINVAL)
+//         } else {
+//             Ok(T::from_bytes(p.value())?)
+//         }
+//     }
+// }
+
+impl<'a, T: PropertyUnit> TryFrom<Property<'a>> for Vec<T> {
+    type Error = Error;
+
+    fn try_from(p: Property<'_>) -> core::result::Result<Vec<T>, Self::Error> {
+        if p.len() % T::UNIT_SIZE != 0 {
+            return Err(EINVAL);
+        }
+
+        let mut v = Vec::new();
+        let val = p.value();
+        for off in (0..p.len()).step_by(T::UNIT_SIZE) {
+            v.try_push(T::from_bytes(&val[off..off + T::UNIT_SIZE])?)?;
+        }
+        Ok(v)
+    }
+}
+
 macro_rules! prop_int_type (
     ($type:ty) => {
         impl<'a> TryFrom<Property<'a>> for $type {
@@ -210,6 +246,14 @@ macro_rules! prop_int_type (
 
             fn try_from(p: Property<'_>) -> core::result::Result<$type, Self::Error> {
                 Ok(<$type>::from_be_bytes(p.value().try_into().or(Err(EINVAL))?))
+            }
+        }
+
+        impl PropertyUnit for $type {
+            const UNIT_SIZE: usize = <$type>::BITS as usize / 8;
+
+            fn from_bytes(data: &[u8]) -> Result<Self> {
+                Ok(<$type>::from_be_bytes(data.try_into().or(Err(EINVAL))?))
             }
         }
     }
