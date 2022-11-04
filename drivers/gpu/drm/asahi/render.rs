@@ -490,10 +490,20 @@ impl Renderer for Renderer::ver {
                             depth_buffer_ptr2: U64(cmdbuf.depth_buffer_2),
                             stencil_buffer_ptr1: U64(cmdbuf.stencil_buffer_1),
                             stencil_buffer_ptr2: U64(cmdbuf.stencil_buffer_2),
-                            unk_68: Default::default(),
+                            unk_78: Default::default(),
+                            depth_meta_buffer_ptr1: U64(cmdbuf.depth_meta_buffer_1),
+                            unk_a0: Default::default(),
+                            depth_meta_buffer_ptr2: U64(cmdbuf.depth_meta_buffer_2),
+                            unk_b0: Default::default(),
+                            stencil_meta_buffer_ptr1: U64(cmdbuf.stencil_meta_buffer_1),
+                            unk_c0: Default::default(),
+                            stencil_meta_buffer_ptr2: U64(cmdbuf.stencil_meta_buffer_2),
+                            unk_d0: Default::default(),
                             tvb_tilemap: inner.scene.tvb_tilemap_pointer(),
                             tvb_heapmeta: inner.scene.tvb_heapmeta_pointer(),
-                            mtile_stride_dwords: U64((tile_info.params.mtile_stride_dwords as u64) << 24),
+                            mtile_stride_dwords: U64(
+                                (tile_info.params.mtile_stride_dwords as u64) << 24
+                            ),
                             tvb_heapmeta_2: inner.scene.tvb_heapmeta_pointer(),
                             // 0x10000 - clear empty tiles
                             unk_f8: U64(0x10280), //#0x10280 # TODO: varies 0, 0x280, 0x10000, 0x10280
@@ -561,13 +571,14 @@ impl Renderer for Renderer::ver {
                             unk_2a8: U64(0x0),
                             depth_buffer_ptr2: U64(cmdbuf.depth_buffer_2),
                             depth_buffer_ptr3: U64(cmdbuf.depth_buffer_3),
-                            unk_2c0: U64(0x0),
+                            depth_meta_buffer_ptr3: U64(cmdbuf.depth_meta_buffer_3),
                             stencil_buffer_ptr1: U64(cmdbuf.stencil_buffer_1),
                             unk_2d0: U64(0x0),
                             unk_2d8: U64(0x0),
                             stencil_buffer_ptr2: U64(cmdbuf.stencil_buffer_2),
                             stencil_buffer_ptr3: U64(cmdbuf.stencil_buffer_3),
-                            unk_2f0: Default::default(),
+                            stencil_meta_buffer_ptr3: U64(cmdbuf.stencil_meta_buffer_3),
+                            unk_2f8: Default::default(),
                             aux_fb_unk0: aux_fb_unk,
                             unk_30c: 0x0,
                             aux_fb_info: aux_fb_info,
@@ -798,8 +809,8 @@ impl Renderer for Renderer::ver {
                             iogpu_unk_55: 0x3a0012, // fixed
                             iogpu_unk_56: U64(0x1), // fixed
                             tvb_cluster_meta1: inner.scene.meta_1_pointer(),
-                            unk_48: U64(0xa000),    // fixed - maybe tvb_something_size?
-                            unk_50: U64(0x88),      // fixed
+                            unk_48: U64(0xa000), // fixed - maybe tvb_something_size?
+                            unk_50: U64(0x88),   // fixed
                             tvb_heapmeta_2: inner.scene.tvb_heapmeta_pointer(),
                             unk_60: U64(0x0), // fixed
                             core_mask: Array::new([
