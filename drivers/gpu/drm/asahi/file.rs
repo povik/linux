@@ -29,6 +29,17 @@ pub(crate) struct File {
 
 pub(crate) type DrmFile = drm::file::File<File>;
 
+const VM_SHADER_START: u64 = 0x11_00000000;
+const VM_SHADER_END: u64 = 0x11_ffffffff;
+const VM_USER_START: u64 = 0x20_00000000;
+const VM_USER_END: u64 = 0x5f_00000000;
+
+const VM_DRV_GPU_START: u64 = 0x60_00000000;
+const VM_DRV_GPU_END: u64 = 0x60_ffffffff;
+const VM_DRV_GPUFW_START: u64 = 0x61_00000000;
+const VM_DRV_GPUFW_END: u64 = 0x61_ffffffff;
+const VM_UNK_PAGE: u64 = 0x6f_ffff8000;
+
 impl drm::file::DriverFile for File {
     type Driver = driver::AsahiDriver;
 
@@ -42,24 +53,24 @@ impl drm::file::DriverFile for File {
         let ualloc = Arc::try_new(Mutex::new(alloc::SimpleAllocator::new_with_range(
             device,
             &vm,
-            0x60_00000000,
-            0x60_ffffffff,
+            VM_DRV_GPU_START,
+            VM_DRV_GPU_END,
             mmu::PROT_GPU_SHARED_RW,
             buffer::PAGE_SIZE,
         )))?;
         let ualloc_priv = Arc::try_new(Mutex::new(alloc::SimpleAllocator::new_with_range(
             device,
             &vm,
-            0x61_00000000,
-            0x61_ffffffff,
+            VM_DRV_GPUFW_START,
+            VM_DRV_GPUFW_END,
             mmu::PROT_GPU_FW_PRIV_RW,
             buffer::PAGE_SIZE,
         )))?;
         let mut ualloc_extra = alloc::SimpleAllocator::new_with_range(
             device,
             &vm,
-            0x6f_ffff8000,
-            0x70_00000000,
+            VM_UNK_PAGE,
+            VM_UNK_PAGE + 0x8000,
             mmu::PROT_GPU_SHARED_RW,
             0x4000,
         );
@@ -82,7 +93,42 @@ impl drm::file::DriverFile for File {
     }
 }
 
+macro_rules! param {
+    ($name:ident) => {
+        kernel::macros::concat_idents!(bindings::drm_asahi_param_DRM_ASAHI_PARAM_, $name)
+    };
+}
+
 impl File {
+    pub(crate) fn get_param(
+        device: &AsahiDevice,
+        data: &mut bindings::drm_asahi_get_param,
+        file: &DrmFile,
+    ) -> Result<u32> {
+        mod_dev_dbg!(device, "[File {}]: IOCTL: get_param", file.inner().id);
+
+        let gpu = &device.data().gpu;
+
+        let value: u64 = match data.param {
+            param!(UNSTABLE_UABI_VERSION) => bindings::DRM_ASAHI_UNSTABLE_UABI_VERSION as u64,
+            param!(GPU_GENERATION) => gpu.get_dyncfg().id.gpu_gen as u32 as u64,
+            param!(GPU_VARIANT) => gpu.get_dyncfg().id.gpu_variant as u32 as u64,
+            param!(GPU_REVISION) => gpu.get_dyncfg().id.gpu_rev as u32 as u64,
+            param!(CHIP_ID) => gpu.get_cfg().chip_id as u64,
+            param!(FEAT_COMPAT) => gpu.get_cfg().gpu_feat_compat as u64,
+            param!(FEAT_INCOMPAT) => gpu.get_cfg().gpu_feat_incompat as u64,
+            param!(VM_USER_START) => VM_USER_START,
+            param!(VM_USER_END) => VM_USER_END,
+            param!(VM_SHADER_START) => VM_SHADER_START,
+            param!(VM_SHADER_END) => VM_SHADER_END,
+            _ => return Err(EINVAL),
+        };
+
+        data.value = value;
+
+        Ok(0)
+    }
+
     pub(crate) fn submit(
         device: &AsahiDevice,
         data: &mut bindings::drm_asahi_submit,
@@ -140,24 +186,19 @@ impl File {
         let mut bo = gem::new_object(device, data.size as usize, data.flags)?;
 
         if data.flags & bindings::ASAHI_BO_PIPELINE != 0 {
-            let start = 0x11_00000000;
-            let end = start + 0xffffffff;
             let iova = bo.map_into_range(
                 &file.inner().vm,
-                start,
-                end,
+                VM_SHADER_START,
+                VM_SHADER_END,
                 mmu::UAT_PGSZ as u64,
                 mmu::PROT_GPU_SHARED_RW,
             )?;
-            data.offset = iova as u64 - 0x11_00000000;
+            data.offset = iova as u64 - VM_SHADER_START;
         } else {
-            let start = 0x20_00000000;
-            let end = start + 0x3f_ffffffff;
-
             let iova = bo.map_into_range(
                 &file.inner().vm,
-                start,
-                end,
+                VM_USER_START,
+                VM_USER_END,
                 mmu::UAT_PGSZ as u64,
                 mmu::PROT_GPU_SHARED_RW,
             )?;
@@ -196,15 +237,6 @@ impl File {
         Ok(0)
     }
 
-    pub(crate) fn get_param(
-        device: &AsahiDevice,
-        _data: &mut bindings::drm_asahi_get_param,
-        file: &DrmFile,
-    ) -> Result<u32> {
-        mod_dev_dbg!(device, "[File {}]: IOCTL: get_param", file.inner().id);
-        Ok(0)
-    }
-
     pub(crate) fn get_bo_offset(
         device: &AsahiDevice,
         data: &mut bindings::drm_asahi_get_bo_offset,
@@ -219,15 +251,12 @@ impl File {
 
         let mut bo = gem::ObjectRef::new(gem::Object::lookup_handle(file, data.handle)?);
 
-        let start = 0x20_00000000;
-        let end = start + 0x3f_ffffffff;
-
         // This can race other threads. Only one will win the map and the
         // others will return EBUSY.
         let iova = bo.map_into_range(
             &file.inner().vm,
-            start,
-            end,
+            VM_USER_START,
+            VM_USER_END,
             mmu::UAT_PGSZ as u64,
             mmu::PROT_GPU_SHARED_RW,
         );
