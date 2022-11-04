@@ -6,7 +6,6 @@
 use crate::driver::AsahiDevice;
 use crate::fw::types::*;
 use alloc::vec::Vec;
-use kernel::bindings;
 use kernel::c_str;
 use kernel::device::RawDevice;
 use kernel::prelude::*;
@@ -39,29 +38,29 @@ pub(crate) enum GpuCore {
 #[derive(Debug, PartialEq, Copy, Clone)]
 #[repr(u32)]
 pub(crate) enum GpuGen {
-    G13 = bindings::drm_asahi_generation_DRM_ASAHI_GENERATION_G13,
-    G14 = bindings::drm_asahi_generation_DRM_ASAHI_GENERATION_G14,
+    G13 = 13,
+    G14 = 14,
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
 #[repr(u32)]
 pub(crate) enum GpuVariant {
-    P = bindings::drm_asahi_variant_DRM_ASAHI_VARIANT_P,
-    G = bindings::drm_asahi_variant_DRM_ASAHI_VARIANT_G,
-    S = bindings::drm_asahi_variant_DRM_ASAHI_VARIANT_S,
-    C = bindings::drm_asahi_variant_DRM_ASAHI_VARIANT_C,
-    D = bindings::drm_asahi_variant_DRM_ASAHI_VARIANT_D,
+    P = 'P' as u32,
+    G = 'G' as u32,
+    S = 'S' as u32,
+    C = 'C' as u32,
+    D = 'D' as u32,
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
 #[repr(u32)]
 pub(crate) enum GpuRevision {
-    A0 = bindings::drm_asahi_revision_DRM_ASAHI_REV_A0,
-    A1 = bindings::drm_asahi_revision_DRM_ASAHI_REV_A1,
-    B0 = bindings::drm_asahi_revision_DRM_ASAHI_REV_B0,
-    B1 = bindings::drm_asahi_revision_DRM_ASAHI_REV_B1,
-    C0 = bindings::drm_asahi_revision_DRM_ASAHI_REV_C0,
-    C1 = bindings::drm_asahi_revision_DRM_ASAHI_REV_C1,
+    A0 = 0x00,
+    A1 = 0x01,
+    B0 = 0x10,
+    B1 = 0x11,
+    C0 = 0x20,
+    C1 = 0x21,
 }
 
 pub(crate) mod feat {

@@ -46,28 +46,6 @@ enum drm_asahi_param {
 	DRM_ASAHI_PARAM_VM_SHADER_END,
 };
 
-enum drm_asahi_generation {
-	DRM_ASAHI_GENERATION_G13 = 13,
-	DRM_ASAHI_GENERATION_G14 = 14,
-};
-
-enum drm_asahi_variant {
-	DRM_ASAHI_VARIANT_P = 'P',
-	DRM_ASAHI_VARIANT_G = 'G',
-	DRM_ASAHI_VARIANT_S = 'S',
-	DRM_ASAHI_VARIANT_C = 'C',
-	DRM_ASAHI_VARIANT_D = 'D',
-};
-
-enum drm_asahi_revision {
-	DRM_ASAHI_REV_A0 = 0x00,
-	DRM_ASAHI_REV_A1 = 0x01,
-	DRM_ASAHI_REV_B0 = 0x10,
-	DRM_ASAHI_REV_B1 = 0x11,
-	DRM_ASAHI_REV_C0 = 0x20,
-	DRM_ASAHI_REV_C1 = 0x21,
-};
-
 /*
 enum drm_asahi_feat_compat {
 };
