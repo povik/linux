@@ -43,6 +43,8 @@ impl drv::Driver for AsahiDriver {
     const FEATURES: u32 = drv::FEAT_GEM | drv::FEAT_RENDER;
 
     kernel::declare_drm_ioctls! {
+        (ASAHI_GET_PARAM,       drm_asahi_get_param,
+                          ioctl::RENDER_ALLOW, file::File::get_param),
         (ASAHI_SUBMIT,          drm_asahi_submit,
             ioctl::AUTH | ioctl::RENDER_ALLOW, file::File::submit),
         (ASAHI_WAIT,            drm_asahi_wait,
@@ -51,8 +53,6 @@ impl drv::Driver for AsahiDriver {
             ioctl::AUTH | ioctl::RENDER_ALLOW, file::File::create_bo),
         (ASAHI_MMAP_BO,         drm_asahi_mmap_bo,
             ioctl::AUTH | ioctl::RENDER_ALLOW, file::File::mmap_bo),
-        (ASAHI_GET_PARAM,       drm_asahi_get_param,
-                          ioctl::RENDER_ALLOW, file::File::get_param),
         (ASAHI_GET_BO_OFFSET,   drm_asahi_get_bo_offset,
             ioctl::AUTH | ioctl::RENDER_ALLOW, file::File::get_bo_offset),
     }

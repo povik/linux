@@ -16,12 +16,65 @@
 extern "C" {
 #endif
 
-#define DRM_ASAHI_SUBMIT			0x00
-#define DRM_ASAHI_WAIT				0x01
-#define DRM_ASAHI_CREATE_BO			0x02
-#define DRM_ASAHI_MMAP_BO			0x03
-#define DRM_ASAHI_GET_PARAM			0x04
-#define DRM_ASAHI_GET_BO_OFFSET		0x05
+#define DRM_ASAHI_GET_PARAM			0x00
+#define DRM_ASAHI_SUBMIT			0x01
+#define DRM_ASAHI_WAIT				0x02
+#define DRM_ASAHI_CREATE_BO			0x03
+#define DRM_ASAHI_MMAP_BO			0x04
+#define DRM_ASAHI_GET_BO_OFFSET			0x05
+
+enum drm_asahi_param {
+	// UAPI related
+	DRM_ASAHI_PARAM_UNSTABLE_UABI_VERSION,
+
+	// GPU identification
+	DRM_ASAHI_PARAM_GPU_GENERATION,
+	DRM_ASAHI_PARAM_GPU_VARIANT,
+	DRM_ASAHI_PARAM_GPU_REVISION,
+	DRM_ASAHI_PARAM_CHIP_ID,
+
+	// GPU features
+	DRM_ASAHI_PARAM_FEAT_COMPAT,
+	DRM_ASAHI_PARAM_FEAT_INCOMPAT,
+};
+
+enum drm_asahi_generation {
+	DRM_ASAHI_GENERATION_G13 = 13,
+	DRM_ASAHI_GENERATION_G14 = 14,
+};
+
+enum drm_asahi_variant {
+	DRM_ASAHI_VARIANT_P = 'P',
+	DRM_ASAHI_VARIANT_G = 'G',
+	DRM_ASAHI_VARIANT_S = 'S',
+	DRM_ASAHI_VARIANT_C = 'C',
+	DRM_ASAHI_VARIANT_D = 'D',
+};
+
+enum drm_asahi_revision {
+	DRM_ASAHI_REV_A0 = 0x00,
+	DRM_ASAHI_REV_A1 = 0x01,
+	DRM_ASAHI_REV_B0 = 0x10,
+	DRM_ASAHI_REV_B1 = 0x11,
+	DRM_ASAHI_REV_C0 = 0x20,
+	DRM_ASAHI_REV_C1 = 0x21,
+};
+
+/*
+enum drm_asahi_feat_compat {
+};
+*/
+
+enum drm_asahi_feat_incompat {
+	DRM_ASAHI_FEAT_MANDATORY_ZS_COMPRESSION = (1UL) << 0,
+};
+
+struct drm_asahi_get_param {
+	__u32 param;
+	__u32 pad;
+	__u64 value;
+};
+
 #define ASAHI_MAX_ATTACHMENTS 16
 
 #define ASAHI_ATTACHMENT_C    0
@@ -160,16 +213,6 @@ struct drm_asahi_mmap_bo {
 	__u64 offset;
 };
 
-enum drm_asahi_param {
-   DRM_ASAHI_PARAM_GPU_MAJOR,
-};
-
-struct drm_asahi_get_param {
-	__u32 param;
-	__u32 pad;
-	__u64 value;
-};
-
 /**
  * Returns the offset for the BO in the GPU address space for this DRM fd.
  * This is the same value returned by drm_asahi_create_bo, if that was called
@@ -183,11 +226,11 @@ struct drm_asahi_get_bo_offset {
 
 /* Note: this is an enum so that it can be resolved by Rust bindgen. */
 enum {
+   DRM_IOCTL_ASAHI_GET_PARAM        = DRM_IOWR(DRM_COMMAND_BASE + DRM_ASAHI_GET_PARAM, struct drm_asahi_get_param),
    DRM_IOCTL_ASAHI_SUBMIT           = DRM_IOW(DRM_COMMAND_BASE + DRM_ASAHI_SUBMIT, struct drm_asahi_submit),
    DRM_IOCTL_ASAHI_WAIT             = DRM_IOW(DRM_COMMAND_BASE + DRM_ASAHI_WAIT, struct drm_asahi_wait),
    DRM_IOCTL_ASAHI_CREATE_BO        = DRM_IOWR(DRM_COMMAND_BASE + DRM_ASAHI_CREATE_BO, struct drm_asahi_create_bo),
    DRM_IOCTL_ASAHI_MMAP_BO          = DRM_IOWR(DRM_COMMAND_BASE + DRM_ASAHI_MMAP_BO, struct drm_asahi_mmap_bo),
-   DRM_IOCTL_ASAHI_GET_PARAM        = DRM_IOWR(DRM_COMMAND_BASE + DRM_ASAHI_GET_PARAM, struct drm_asahi_get_param),
    DRM_IOCTL_ASAHI_GET_BO_OFFSET    = DRM_IOWR(DRM_COMMAND_BASE + DRM_ASAHI_GET_BO_OFFSET, struct drm_asahi_get_bo_offset),
 };
 
