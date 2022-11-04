@@ -16,6 +16,8 @@
 extern "C" {
 #endif
 
+#define DRM_ASAHI_UNSTABLE_UABI_VERSION 1
+
 #define DRM_ASAHI_GET_PARAM			0x00
 #define DRM_ASAHI_SUBMIT			0x01
 #define DRM_ASAHI_WAIT				0x02
@@ -36,6 +38,12 @@ enum drm_asahi_param {
 	// GPU features
 	DRM_ASAHI_PARAM_FEAT_COMPAT,
 	DRM_ASAHI_PARAM_FEAT_INCOMPAT,
+
+	// VM ranges
+	DRM_ASAHI_PARAM_VM_USER_START,
+	DRM_ASAHI_PARAM_VM_USER_END,
+	DRM_ASAHI_PARAM_VM_SHADER_START,
+	DRM_ASAHI_PARAM_VM_SHADER_END,
 };
 
 enum drm_asahi_generation {
