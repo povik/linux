@@ -161,12 +161,17 @@ impl Renderer::ver {
         let mtile_stride = tiles_per_mtile_x * tiles_per_mtile_y;
 
         let rgn_entry_size = 5;
-        let mtile_stride_dwords = align(
-            rgn_entry_size * tiles_per_mtile_x * tiles_per_mtile_y / 4,
-            0x20,
-        );
 
-        let tilemap_size = 4 * mtile_stride_dwords as usize * mtiles_x as usize * mtiles_y as usize;
+        // Macrotile stride in 32-bit words
+        let rgn_size = align(rgn_entry_size * tiles_per_mtile_x * tiles_per_mtile_y, 4) / 4;
+
+        let tilemap_size = (4 * rgn_size * mtiles_x * mtiles_y) as usize;
+
+        let tmtiles_x = tiles_per_mtile_x * mtiles_x;
+        let tmtiles_y = tiles_per_mtile_y * mtiles_y;
+
+        let tpc_entry_size = 8;
+        let tpc_size = (tpc_entry_size * tmtiles_x * tmtiles_y) as usize;
 
         Ok(buffer::TileInfo {
             tiles_x,
@@ -178,8 +183,9 @@ impl Renderer::ver {
             tiles_per_mtile_y,
             tiles_per_mtile,
             tilemap_size,
+            tpc_size,
             params: fw::vertex::raw::TilingParameters {
-                mtile_stride_dwords,
+                rgn_size,
                 ppp_multisamplectl: 0x88,
                 ppp_ctrl: cmdbuf.ppp_ctrl,
                 x_max: (width - 1) as u16,
@@ -474,7 +480,7 @@ impl Renderer for Renderer::ver {
                         unk_68: U64(0),
                         tile_count: U64(tile_info.tiles as u64),
                         job_params1: fw::fragment::raw::JobParameters1::ver {
-                            unk_0: U64(0xa000), // - maybe tvb_something_size?
+                            unk_0: U64(0xa000),
                             clear_pipeline: fw::fragment::raw::ClearPipelineBinding {
                                 pipeline_bind: U64(cmdbuf.load_pipeline_bind as u64),
                                 address: U64(cmdbuf.load_pipeline as u64 | 4),
@@ -501,9 +507,7 @@ impl Renderer for Renderer::ver {
                             unk_d0: Default::default(),
                             tvb_tilemap: inner.scene.tvb_tilemap_pointer(),
                             tvb_heapmeta: inner.scene.tvb_heapmeta_pointer(),
-                            mtile_stride_dwords: U64(
-                                (tile_info.params.mtile_stride_dwords as u64) << 24
-                            ),
+                            mtile_stride_dwords: U64((4 * tile_info.params.rgn_size as u64) << 24),
                             tvb_heapmeta_2: inner.scene.tvb_heapmeta_pointer(),
                             // 0x10000 - clear empty tiles
                             unk_f8: U64(0x10280), //#0x10280 # TODO: varies 0, 0x280, 0x10000, 0x10280
@@ -803,13 +807,13 @@ impl Renderer for Renderer::ver {
                             unk_c: 0x1e3ce508, // fixed
                             tvb_tilemap: inner.scene.tvb_tilemap_pointer(),
                             tvb_cluster_tilemaps: inner.scene.cluster_tilemaps_pointer(),
-                            tvb_something: inner.scene.tvb_something_pointer(),
+                            tpc: inner.scene.tpc_pointer(),
                             tvb_heapmeta: inner.scene.tvb_heapmeta_pointer().or(0x8000000000000000),
                             iogpu_unk_54: 0x6b0003, // fixed
                             iogpu_unk_55: 0x3a0012, // fixed
                             iogpu_unk_56: U64(0x1), // fixed
                             tvb_cluster_meta1: inner.scene.meta_1_pointer(),
-                            unk_48: U64(0xa000), // fixed - maybe tvb_something_size?
+                            unk_48: U64(0xa000), // fixed
                             unk_50: U64(0x88),   // fixed
                             tvb_heapmeta_2: inner.scene.tvb_heapmeta_pointer(),
                             unk_60: U64(0x0), // fixed
@@ -836,8 +840,8 @@ impl Renderer for Renderer::ver {
                         unk_154: Default::default(),
                         tiling_params: tile_info.params,
                         unk_3e8: Default::default(),
-                        tvb_something: inner.scene.tvb_something_pointer(),
-                        tvb_something_size: U64(inner.scene.tvb_something_size() as u64),
+                        tpc: inner.scene.tpc_pointer(),
+                        tpc_size: U64(tile_info.tpc_size as u64),
                         microsequence: inner.micro_seq.gpu_pointer(),
                         microsequence_size: inner.micro_seq.len() as u32,
                         fragment_stamp_slot: batches_frag.event().slot(),

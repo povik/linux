@@ -15,7 +15,7 @@ pub(crate) mod raw {
     #[derive(Debug, Default, Copy, Clone)]
     #[repr(C)]
     pub(crate) struct TilingParameters {
-        pub(crate) mtile_stride_dwords: u32,
+        pub(crate) rgn_size: u32,
         pub(crate) ppp_multisamplectl: u32,
         pub(crate) ppp_ctrl: u32,
         pub(crate) x_max: u16,
@@ -37,7 +37,7 @@ pub(crate) mod raw {
         pub(crate) unk_c: u32,
         pub(crate) tvb_tilemap: GpuPointer<'a, &'a [u8]>,
         pub(crate) tvb_cluster_tilemaps: Option<GpuPointer<'a, &'a [u8]>>,
-        pub(crate) tvb_something: GpuPointer<'a, &'a [u8]>,
+        pub(crate) tpc: GpuPointer<'a, &'a [u8]>,
         pub(crate) tvb_heapmeta: GpuPointer<'a, &'a [u8]>,
         pub(crate) iogpu_unk_54: u32,
         pub(crate) iogpu_unk_55: u32,
@@ -105,8 +105,8 @@ pub(crate) mod raw {
         pub(crate) unk_154: Array<0x268, u8>,
         pub(crate) tiling_params: TilingParameters,
         pub(crate) unk_3e8: Array<0x74, u8>,
-        pub(crate) tvb_something: GpuPointer<'a, &'a [u8]>,
-        pub(crate) tvb_something_size: U64,
+        pub(crate) tpc: GpuPointer<'a, &'a [u8]>,
+        pub(crate) tpc_size: U64,
         pub(crate) microsequence: GpuPointer<'a, &'a [u8]>,
         pub(crate) microsequence_size: u32,
         pub(crate) fragment_stamp_slot: u32,

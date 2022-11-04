@@ -138,7 +138,7 @@ pub(crate) struct Scene {
     pub(crate) buffer: Arc<Mutex<crate::buffer::BufferInner::ver>>,
     pub(crate) tvb_heapmeta: GpuArray<u8>,
     pub(crate) tvb_tilemap: GpuArray<u8>,
-    pub(crate) tvb_something: Arc<GpuArray<u8>>,
+    pub(crate) tpc: Arc<GpuArray<u8>>,
     pub(crate) clustering: Option<ClusterBuffers>,
     pub(crate) preempt_buf: GpuArray<u8>,
     pub(crate) seq_buf: GpuArray<u64>,

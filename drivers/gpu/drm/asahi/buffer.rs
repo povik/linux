@@ -38,7 +38,7 @@ pub(crate) struct BufferInner {
     active_scenes: usize,
     active_slot: Option<slotalloc::Guard<SlotInner>>,
     last_token: Option<slotalloc::SlotToken>,
-    tvb_something: Option<Arc<GpuArray<u8>>>,
+    tpc: Option<Arc<GpuArray<u8>>>,
     kernel_buffer: GpuArray<u8>,
     stats: GpuObject<buffer::Stats>,
     preempt1_size: usize,
@@ -56,7 +56,6 @@ pub(crate) struct Buffer {
 #[derive(Debug)]
 pub(crate) struct Scene {
     object: GpuObject<buffer::Scene::ver>,
-    tvb_something_size: usize,
     slot: u32,
     rebind: bool,
     preempt2_off: usize,
@@ -76,6 +75,7 @@ pub(crate) struct TileInfo {
     pub(crate) tiles_per_mtile_y: u32,
     pub(crate) tiles_per_mtile: u32,
     pub(crate) tilemap_size: usize,
+    pub(crate) tpc_size: usize,
     pub(crate) params: fw::vertex::raw::TilingParameters,
 }
 
@@ -113,12 +113,8 @@ impl Scene::ver {
         self.object.tvb_tilemap.gpu_pointer()
     }
 
-    pub(crate) fn tvb_something_pointer(&self) -> GpuPointer<'_, &'_ [u8]> {
-        self.object.tvb_something.gpu_pointer()
-    }
-
-    pub(crate) fn tvb_something_size(&self) -> usize {
-        self.tvb_something_size
+    pub(crate) fn tpc_pointer(&self) -> GpuPointer<'_, &'_ [u8]> {
+        self.object.tpc.gpu_pointer()
     }
 
     pub(crate) fn preempt_buf_1_pointer(&self) -> GpuPointer<'_, &'_ [u8]> {
@@ -273,7 +269,7 @@ impl Buffer::ver {
                 active_scenes: 0,
                 active_slot: None,
                 last_token: None,
-                tvb_something: None,
+                tpc: None,
                 kernel_buffer,
                 stats,
                 preempt1_size,
@@ -351,7 +347,7 @@ impl Buffer::ver {
         });
 
         let tilemap_size = tile_info.tilemap_size;
-        let tvb_something_size = tile_info.tilemap_size; // check
+        let tpc_size = tile_info.tpc_size;
 
         // TODO: what is this exactly?
         mod_pr_debug!("Buffer: Allocating TVB buffers\n");
@@ -370,18 +366,19 @@ impl Buffer::ver {
             seq_buf[i] = (i + 1) as u64;
         }
 
-        let tvb_something =
-            match inner.tvb_something.as_ref() {
-                Some(buf) if buf.len() >= tvb_something_size => buf.clone(),
-                _ => {
-                    let buf =
-                        Arc::try_new(inner.ualloc_priv.lock().array_empty(
-                            (tvb_something_size + mmu::UAT_PGMSK) & !mmu::UAT_PGMSK,
-                        )?)?;
-                    inner.tvb_something = Some(buf.clone());
-                    buf
-                }
-            };
+        let tpc = match inner.tpc.as_ref() {
+            Some(buf) if buf.len() >= tpc_size => buf.clone(),
+            _ => {
+                let buf = Arc::try_new(
+                    inner
+                        .ualloc_priv
+                        .lock()
+                        .array_empty((tpc_size + mmu::UAT_PGMSK) & !mmu::UAT_PGMSK)?,
+                )?;
+                inner.tpc = Some(buf.clone());
+                buf
+            }
+        };
 
         let meta1_size = align(4 * inner.num_clusters, 0x80);
         // check
@@ -410,7 +407,7 @@ impl Buffer::ver {
             buffer: self.inner.clone(),
             tvb_heapmeta: tvb_heapmeta,
             tvb_tilemap: tvb_tilemap,
-            tvb_something: tvb_something,
+            tpc: tpc,
             clustering: clustering,
             preempt_buf: preempt_buf,
             seq_buf: seq_buf,
@@ -452,7 +449,6 @@ impl Buffer::ver {
 
         Ok(Scene::ver {
             object: scene,
-            tvb_something_size,
             slot: inner.active_slot.as_ref().unwrap().slot(),
             rebind,
             preempt2_off: inner.preempt1_size,
