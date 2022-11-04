@@ -134,6 +134,8 @@ pub(crate) trait GpuManager: Send + Sync {
     fn handle_fault(&self);
     fn wait_for_poweroff(&self, timeout: usize) -> Result;
     fn fwctl(&self, msg: FwCtlMsg) -> Result;
+    fn get_cfg(&self) -> &'static hw::HwConfig;
+    fn get_dyncfg(&self) -> &hw::DynConfig;
 }
 
 #[versions(AGX)]
@@ -705,6 +707,13 @@ impl GpuManager for GpuManager::ver {
         }
         fwctl.wait_for(token)?;
         Ok(())
+    }
+
+    fn get_cfg(&self) -> &'static hw::HwConfig {
+        self.cfg
+    }
+    fn get_dyncfg(&self) -> &hw::DynConfig {
+        &self.dyncfg
     }
 }
 
