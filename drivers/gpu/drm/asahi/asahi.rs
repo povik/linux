@@ -25,6 +25,7 @@ mod place;
 mod regs;
 mod render;
 mod slotalloc;
+mod util;
 mod workqueue;
 
 use kernel::module_platform_driver;
