@@ -13,6 +13,7 @@
 #include <drm/drm_gem_shmem_helper.h>
 #include <drm/drm_mm.h>
 #include <linux/amba/bus.h>
+#include <linux/device.h>
 #include <linux/cdev.h>
 #include <linux/clk.h>
 #include <linux/errname.h>
@@ -39,6 +40,8 @@
 #include <linux/of_address.h>
 #include <linux/of_platform.h>
 #include <linux/platform_device.h>
+#include <linux/pm.h>
+#include <linux/pm_domain.h>
 #include <linux/poll.h>
 #include <linux/random.h>
 #include <linux/security.h>
@@ -61,3 +64,13 @@ const __poll_t BINDINGS_EPOLLERR = EPOLLERR;
 const __poll_t BINDINGS_EPOLLHUP = EPOLLHUP;
 
 const loff_t BINDINGS_MAX_LFS_FILESIZE = MAX_LFS_FILESIZE;
+
+const u32 BINDINGS_DL_FLAG_STATELESS = DL_FLAG_STATELESS;
+const u32 BINDINGS_DL_FLAG_AUTOREMOVE_CONSUMER = DL_FLAG_AUTOREMOVE_CONSUMER;
+const u32 BINDINGS_DL_FLAG_PM_RUNTIME = DL_FLAG_PM_RUNTIME;
+const u32 BINDINGS_DL_FLAG_RPM_ACTIVE = DL_FLAG_RPM_ACTIVE;
+const u32 BINDINGS_DL_FLAG_AUTOREMOVE_SUPPLIER = DL_FLAG_AUTOREMOVE_SUPPLIER;
+const u32 BINDINGS_DL_FLAG_AUTOPROBE_CONSUMER = DL_FLAG_AUTOPROBE_CONSUMER;
+const u32 BINDINGS_DL_FLAG_MANAGED = DL_FLAG_MANAGED;
+const u32 BINDINGS_DL_FLAG_SYNC_STATE_ONLY = DL_FLAG_SYNC_STATE_ONLY;
+const u32 BINDINGS_DL_FLAG_INFERRED = DL_FLAG_INFERRED;

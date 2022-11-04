@@ -3,10 +3,17 @@
 //! Power management interfaces.
 //!
 //! C header: [`include/linux/pm.h`](../../../../include/linux/pm.h)
+//! C header: [`include/linux/pm_domain.h`](../../../../include/linux/pm_domain.h)
 
 #![allow(dead_code)]
 
-use crate::{bindings, error::from_kernel_result, types::PointerWrapper, Result};
+use crate::{
+    bindings,
+    device::RawDevice,
+    error::{from_kernel_err_ptr, from_kernel_result},
+    types::PointerWrapper,
+    Result,
+};
 use core::marker::PhantomData;
 
 /// Corresponds to the kernel's `struct dev_pm_ops`.
@@ -116,3 +123,46 @@ unsafe impl<T: PointerWrapper> Sync for NoOperations<T> {}
 
 // SAFETY: `NoOperation` provides no functionality, it is safe to send it to different threads.
 unsafe impl<T: PointerWrapper> Send for NoOperations<T> {}
+
+/// Represents a Generic Power Domain device
+pub struct PmDomain {
+    ptr: *mut bindings::device,
+    power_off_on_detach: bool,
+}
+
+impl PmDomain {
+    /// Attach a genpd to a parent device by index
+    pub fn attach_by_id(parent: &dyn RawDevice, id: u32) -> Result<PmDomain> {
+        let domain_ptr = unsafe {
+            from_kernel_err_ptr(bindings::dev_pm_domain_attach_by_id(
+                parent.raw_device(),
+                id,
+            ))
+        }?;
+        Ok(PmDomain {
+            ptr: domain_ptr,
+            power_off_on_detach: false,
+        })
+    }
+
+    /// Set whether this genpd should be powered off when dropped
+    pub fn set_power_off_on_detach(&mut self, value: bool) {
+        self.power_off_on_detach = value;
+    }
+}
+
+impl Drop for PmDomain {
+    fn drop(&mut self) {
+        unsafe { bindings::dev_pm_domain_detach(self.ptr, self.power_off_on_detach) };
+    }
+}
+
+unsafe impl RawDevice for PmDomain {
+    fn raw_device(&self) -> *mut bindings::device {
+        // SAFETY: By the type invariants, we know that `self.ptr` is non-null and valid.
+        unsafe { &mut *self.ptr }
+    }
+}
+
+unsafe impl Sync for PmDomain {}
+unsafe impl Send for PmDomain {}

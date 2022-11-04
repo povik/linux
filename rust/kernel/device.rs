@@ -9,6 +9,7 @@ use crate::{clk::Clk, error::from_kernel_err_ptr};
 
 use crate::{
     bindings, of,
+    prelude::EINVAL,
     revocable::{Revocable, RevocableGuard},
     str::CStr,
     sync::{LockClassKey, NeedsLockClass, RevocableMutex, RevocableMutexGuard, UniqueArc},
@@ -22,6 +23,16 @@ use core::{
 
 #[cfg(CONFIG_PRINTK)]
 use crate::c_str;
+
+/// Runtime PM mode for new device links.
+pub enum RuntimePmMode {
+    /// No runtime PM
+    Disable,
+    /// Enable runtime PM
+    Enable,
+    /// Enable runtime PM and start with the device marked active
+    Active,
+}
 
 /// A raw device.
 ///
@@ -75,6 +86,36 @@ pub unsafe trait RawDevice {
         let ptr = self.raw_device();
 
         unsafe { of::Node::get_from_raw((*ptr).of_node) }
+    }
+
+    /// Creates a stateful (automatically managed) device link to a supplier.
+    fn link_to_stateful(
+        &self,
+        supplier: &dyn RawDevice,
+        runtime_pm: RuntimePmMode,
+        autoremove_consumer: bool,
+        autoremove_supplier: bool,
+    ) -> Result {
+        let mut flags = match runtime_pm {
+            RuntimePmMode::Disable => 0,
+            RuntimePmMode::Enable => bindings::BINDINGS_DL_FLAG_PM_RUNTIME,
+            RuntimePmMode::Active => {
+                bindings::BINDINGS_DL_FLAG_PM_RUNTIME | bindings::BINDINGS_DL_FLAG_RPM_ACTIVE
+            }
+        };
+        if autoremove_consumer {
+            flags |= bindings::BINDINGS_DL_FLAG_AUTOREMOVE_CONSUMER;
+        }
+        if autoremove_supplier {
+            flags |= bindings::BINDINGS_DL_FLAG_AUTOREMOVE_SUPPLIER;
+        }
+        let ret =
+            unsafe { bindings::device_link_add(self.raw_device(), supplier.raw_device(), flags) };
+        if ret.is_null() {
+            Err(EINVAL)
+        } else {
+            Ok(())
+        }
     }
 
     /// Prints an emergency-level message (level 0) prefixed with device information.
