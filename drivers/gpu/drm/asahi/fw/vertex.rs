@@ -47,7 +47,7 @@ pub(crate) mod raw {
         pub(crate) unk_50: U64,
         pub(crate) tvb_heapmeta_2: GpuPointer<'a, &'a [u8]>,
         pub(crate) unk_60: U64,
-        pub(crate) core_mask: U64,
+        pub(crate) core_mask: Array<2, u32>,
         pub(crate) preempt_buf1: GpuPointer<'a, Array<0x540, u8>>,
         pub(crate) preempt_buf2: GpuPointer<'a, Array<0x280, u8>>,
         pub(crate) unk_80: U64,

@@ -9,10 +9,18 @@ use super::*;
 
 pub(crate) const HWCONFIG: super::HwConfig = HwConfig {
     chip_id: 0x8103,
+    gpu_gen: GpuGen::G13,
+    gpu_variant: GpuVariant::G,
+    gpu_core: GpuCore::G13G,
+    gpu_feat_compat: 0,
+    gpu_feat_incompat: 0,
+
     base_clock_hz: 24_000_000,
     uat_oas: 36,
-    num_clusters: 1,
-    num_cores: 8,
+    max_num_clusters: 1,
+    max_num_cores: 8,
+    max_num_frags: 8,
+    max_num_gps: 4,
     da: HwConfigA {
         unk_87c: -220,
         unk_8cc: 9880,
@@ -21,7 +29,6 @@ pub(crate) const HWCONFIG: super::HwConfig = HwConfig {
     db: HwConfigB {
         unk_4e0: 0,
         unk_534: 0,
-        unk_560: 11,
         unk_564: 4,
         unk_ab8: 0x48,
         unk_abc: 0x8,

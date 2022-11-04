@@ -6,6 +6,7 @@
 use crate::driver::AsahiDevice;
 use crate::fw::types::*;
 use alloc::vec::Vec;
+use kernel::bindings;
 use kernel::c_str;
 use kernel::device::RawDevice;
 use kernel::prelude::*;
@@ -14,6 +15,64 @@ const MAX_POWERZONES: usize = 5;
 
 pub(crate) mod t600x;
 pub(crate) mod t8103;
+
+/* Note: This is a firmware-relevant ID */
+#[derive(Debug, Copy, Clone)]
+#[repr(u32)]
+pub(crate) enum GpuCore {
+    // Unknown = 0,
+    // G5P = 1,
+    // G5G = 2,
+    // G9P = 3,
+    // G9G = 4,
+    // G10P = 5,
+    // G11P = 6,
+    // G11M = 7,
+    // G11G = 8,
+    // G12P = 9,
+    // G13P = 10,
+    G13G = 11,
+    G13S = 12,
+    G13C = 13,
+}
+
+#[derive(Debug, PartialEq, Copy, Clone)]
+#[repr(u32)]
+pub(crate) enum GpuGen {
+    G13 = bindings::drm_asahi_generation_DRM_ASAHI_GENERATION_G13,
+    G14 = bindings::drm_asahi_generation_DRM_ASAHI_GENERATION_G14,
+}
+
+#[derive(Debug, PartialEq, Copy, Clone)]
+#[repr(u32)]
+pub(crate) enum GpuVariant {
+    P = bindings::drm_asahi_variant_DRM_ASAHI_VARIANT_P,
+    G = bindings::drm_asahi_variant_DRM_ASAHI_VARIANT_G,
+    S = bindings::drm_asahi_variant_DRM_ASAHI_VARIANT_S,
+    C = bindings::drm_asahi_variant_DRM_ASAHI_VARIANT_C,
+    D = bindings::drm_asahi_variant_DRM_ASAHI_VARIANT_D,
+}
+
+#[derive(Debug, PartialEq, Copy, Clone)]
+#[repr(u32)]
+pub(crate) enum GpuRevision {
+    A0 = bindings::drm_asahi_revision_DRM_ASAHI_REV_A0,
+    A1 = bindings::drm_asahi_revision_DRM_ASAHI_REV_A1,
+    B0 = bindings::drm_asahi_revision_DRM_ASAHI_REV_B0,
+    B1 = bindings::drm_asahi_revision_DRM_ASAHI_REV_B1,
+    C0 = bindings::drm_asahi_revision_DRM_ASAHI_REV_C0,
+    C1 = bindings::drm_asahi_revision_DRM_ASAHI_REV_C1,
+}
+
+pub(crate) mod feat {
+    pub(crate) mod compat {}
+    pub(crate) mod incompat {
+        use kernel::bindings;
+
+        pub(crate) const MANDATORY_ZS_COMPRESSION: u64 =
+            bindings::drm_asahi_feat_incompat_DRM_ASAHI_FEAT_MANDATORY_ZS_COMPRESSION as u64;
+    }
+}
 
 #[derive(Debug)]
 pub(crate) struct PState {
@@ -64,7 +123,6 @@ pub(crate) struct HwConfigA {
 pub(crate) struct HwConfigB {
     pub(crate) unk_4e0: u64,
     pub(crate) unk_534: u32,
-    pub(crate) unk_560: u32,
     pub(crate) unk_564: u32,
     pub(crate) unk_ab8: u32,
     pub(crate) unk_abc: u32,
@@ -73,10 +131,18 @@ pub(crate) struct HwConfigB {
 #[derive(Debug)]
 pub(crate) struct HwConfig {
     pub(crate) chip_id: u32,
+    pub(crate) gpu_gen: GpuGen,
+    pub(crate) gpu_variant: GpuVariant,
+    pub(crate) gpu_core: GpuCore,
+    pub(crate) gpu_feat_compat: u64,
+    pub(crate) gpu_feat_incompat: u64,
+
     pub(crate) base_clock_hz: u32,
     pub(crate) uat_oas: usize,
-    pub(crate) num_clusters: u32,
-    pub(crate) num_cores: u32,
+    pub(crate) max_num_clusters: u32,
+    pub(crate) max_num_cores: u32,
+    pub(crate) max_num_frags: u32,
+    pub(crate) max_num_gps: u32,
 
     pub(crate) da: HwConfigA,
     pub(crate) db: HwConfigB,
@@ -97,7 +163,23 @@ pub(crate) struct HwConfig {
 #[derive(Debug)]
 pub(crate) struct DynConfig {
     pub(crate) uat_ttb_base: u64,
+    pub(crate) id: GpuIdConfig,
     pub(crate) pwr: PwrConfig,
+}
+
+#[derive(Debug)]
+pub(crate) struct GpuIdConfig {
+    pub(crate) gpu_gen: GpuGen,
+    pub(crate) gpu_variant: GpuVariant,
+    pub(crate) gpu_rev: GpuRevision,
+    pub(crate) max_dies: u32,
+    pub(crate) num_clusters: u32,
+    pub(crate) num_cores: u32,
+    pub(crate) num_active_cores: u32,
+    pub(crate) num_frags: u32,
+    pub(crate) num_gps: u32,
+    pub(crate) core_masks: Vec<u32>,
+    pub(crate) core_masks_packed: Vec<u32>,
 }
 
 #[derive(Debug)]
@@ -184,11 +266,11 @@ impl PwrConfig {
             let mut volt_uv: Vec<u32> = opp.get_property(c_str!("opp-microvolt"))?;
             let pwr_uw: u32 = opp.get_property(c_str!("opp-microwatt"))?;
 
-            if volt_uv.len() != cfg.num_clusters as usize {
+            if volt_uv.len() != cfg.max_num_clusters as usize {
                 dev_err!(
                     dev,
                     "Invalid opp-microvolt length (expected {}, got {})",
-                    cfg.num_clusters,
+                    cfg.max_num_clusters,
                     volt_uv.len()
                 );
                 return Err(EINVAL);
@@ -230,11 +312,11 @@ impl PwrConfig {
         let core_leak_coef: Vec<F32> = prop!("apple,core-leak-coef");
         let sram_leak_coef: Vec<F32> = prop!("apple,sram-leak-coef");
 
-        if core_leak_coef.len() != cfg.num_clusters as usize {
+        if core_leak_coef.len() != cfg.max_num_clusters as usize {
             dev_err!(dev, "Invalid apple,core-leak-coef");
             return Err(EINVAL);
         }
-        if sram_leak_coef.len() != cfg.num_clusters as usize {
+        if sram_leak_coef.len() != cfg.max_num_clusters as usize {
             dev_err!(dev, "Invalid apple,sram_leak_coef");
             return Err(EINVAL);
         }

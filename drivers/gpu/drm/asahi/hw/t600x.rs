@@ -44,10 +44,18 @@ const fn iomaps(mcc_count: usize, has_die1: bool) -> [Option<IOMapping>; 20] {
 
 pub(crate) const HWCONFIG_T6002: super::HwConfig = HwConfig {
     chip_id: 0x6002,
+    gpu_gen: GpuGen::G13,
+    gpu_variant: GpuVariant::D,
+    gpu_core: GpuCore::G13C,
+    gpu_feat_compat: 0,
+    gpu_feat_incompat: feat::incompat::MANDATORY_ZS_COMPRESSION,
+
     base_clock_hz: 24_000_000,
     uat_oas: 42,
-    num_clusters: 8,
-    num_cores: 64,
+    max_num_clusters: 8,
+    max_num_cores: 8,
+    max_num_frags: 8,
+    max_num_gps: 4,
     da: HwConfigA {
         unk_87c: 900,
         unk_8cc: 11000,
@@ -56,7 +64,6 @@ pub(crate) const HWCONFIG_T6002: super::HwConfig = HwConfig {
     db: HwConfigB {
         unk_4e0: 4,
         unk_534: 1,
-        unk_560: 13,
         unk_564: 5,
         unk_ab8: 0x2084,
         unk_abc: 0x80,
@@ -81,26 +88,20 @@ pub(crate) const HWCONFIG_T6002: super::HwConfig = HwConfig {
 
 pub(crate) const HWCONFIG_T6001: super::HwConfig = HwConfig {
     chip_id: 0x6001,
-    num_clusters: 4,
-    num_cores: 32,
-    unk_coef_a: &f32!([9.838, 9.819, 9.826, 9.799]),
-    unk_coef_b: &f32!([13.0, 13.0, 13.0, 13.0]),
-    fast_die0_sensor_mask: 0x80808080,
-    fast_die0_sensor_mask_alt: 0x90909090,
-    fast_die0_sensor_present: 0x0f,
+    gpu_variant: GpuVariant::C,
+    gpu_core: GpuCore::G13C,
+
+    max_num_clusters: 4,
     io_mappings: &iomaps(8, false),
     ..HWCONFIG_T6002
 };
 
 pub(crate) const HWCONFIG_T6000: super::HwConfig = HwConfig {
     chip_id: 0x6000,
-    num_clusters: 2,
-    num_cores: 16,
-    unk_coef_a: &f32!([9.838, 9.819]),
-    unk_coef_b: &f32!([13.0, 13.0]),
-    fast_die0_sensor_mask: 0x8080,
-    fast_die0_sensor_mask_alt: 0x9090,
-    fast_die0_sensor_present: 0x03,
+    gpu_variant: GpuVariant::S,
+    gpu_core: GpuCore::G13S,
+
+    max_num_clusters: 2,
     io_mappings: &iomaps(4, false),
     ..HWCONFIG_T6001
 };

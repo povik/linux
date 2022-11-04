@@ -753,6 +753,7 @@ impl Renderer for Renderer::ver {
                 })?)
             },
             |inner, ptr| {
+                let core_masks = gpu.core_masks_packed();
                 Ok(place!(
                     ptr,
                     fw::vertex::raw::RunVertex::ver {
@@ -784,7 +785,10 @@ impl Renderer for Renderer::ver {
                             unk_50: U64(0x88),      // fixed
                             tvb_heapmeta_2: inner.scene.tvb_heapmeta_pointer(),
                             unk_60: U64(0x0), // fixed
-                            core_mask: U64(gpu.core_mask()),
+                            core_mask: Array::new([
+                                *core_masks.get(0).unwrap_or(&0),
+                                *core_masks.get(1).unwrap_or(&0),
+                            ]),
                             preempt_buf1: inner_ptr!(inner.scene.preempt_buf_pointer(), part_1),
                             preempt_buf2: inner_ptr!(inner.scene.preempt_buf_pointer(), part_2),
                             unk_80: U64(0x1), // fixed

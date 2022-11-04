@@ -436,7 +436,6 @@ pub(crate) mod raw {
         pub(crate) max_pstate_scaled_14: u32,
         pub(crate) unk_d68: Array<0x24, u8>,
 
-
         pub(crate) t8103_data: T8103Data,
 
         pub(crate) unk_dd0: Array<0x40, u8>,
@@ -602,7 +601,7 @@ pub(crate) mod raw {
         #[ver(V >= V13_0B4)]
         pub(crate) unk_53c_0: u32,
 
-        pub(crate) num_cores: u32,
+        pub(crate) num_frags: u32,
         pub(crate) unk_540: u32,
         pub(crate) unk_544: u32,
         pub(crate) unk_548: u32,
@@ -610,9 +609,9 @@ pub(crate) mod raw {
         pub(crate) unk_550: u32,
         pub(crate) unk_554: u32,
         pub(crate) uat_ttb_base: u64,
-        pub(crate) unk_560: u32,
+        pub(crate) gpu_core_id: u32,
         pub(crate) unk_564: u32,
-        pub(crate) num_cores_2: u32,
+        pub(crate) num_cores: u32,
         pub(crate) max_pstate: u32,
 
         #[ver(V < V13_0B4)]

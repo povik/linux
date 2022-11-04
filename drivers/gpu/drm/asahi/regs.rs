@@ -4,7 +4,8 @@
 
 //! Driver for the Apple AGX GPUs found in Apple Silicon SoCs.
 
-use kernel::{io_mem::IoMem, platform, prelude::*};
+use crate::hw;
+use kernel::{device, io_mem::IoMem, platform, prelude::*};
 
 pub(crate) const ASC_CTL_SIZE: usize = 0x4000;
 pub(crate) const SGX_SIZE: usize = 0x1000000;
@@ -13,6 +14,16 @@ const CPU_CONTROL: usize = 0x44;
 const CPU_RUN: u32 = 0x1 << 4; // BIT(4)
 
 const FAULT_INFO: usize = 0x17030;
+
+const ID_VERSION: usize = 0xd04000;
+const ID_UNK08: usize = 0xd04008;
+const ID_COUNTS_1: usize = 0xd04010;
+const ID_COUNTS_2: usize = 0xd04014;
+const ID_UNK18: usize = 0xd04018;
+const ID_CLUSTERS: usize = 0xd0401c;
+
+const CORE_MASK_0: usize = 0xd01500;
+const CORE_MASK_1: usize = 0xd01514;
 
 #[allow(non_camel_case_types)]
 #[allow(clippy::upper_case_acronyms)]
@@ -90,6 +101,7 @@ pub(crate) struct FaultInfo {
 }
 
 pub(crate) struct Resources {
+    dev: device::Device,
     asc: IoMem<ASC_CTL_SIZE>,
     sgx: IoMem<SGX_SIZE>,
 }
@@ -102,6 +114,7 @@ impl Resources {
 
         Ok(Resources {
             // SAFETY: This device does DMA via the UAT IOMMU.
+            dev: device::Device::from_dev(pdev),
             asc: asc_res,
             sgx: sgx_res,
         })
@@ -135,6 +148,114 @@ impl Resources {
         self.asc.writel_relaxed(val | CPU_RUN, CPU_CONTROL);
 
         Ok(())
+    }
+
+    pub(crate) fn get_gpu_id(&self) -> Result<hw::GpuIdConfig> {
+        let id_version = self.sgx_read32(ID_VERSION);
+        let id_unk08 = self.sgx_read32(ID_UNK08);
+        let id_counts_1 = self.sgx_read32(ID_COUNTS_1);
+        let id_counts_2 = self.sgx_read32(ID_COUNTS_2);
+        let id_unk18 = self.sgx_read32(ID_UNK18);
+        let id_clusters = self.sgx_read32(ID_CLUSTERS);
+
+        dev_info!(
+            self.dev,
+            "GPU ID registers: {:#x} {:#x} {:#x} {:#x} {:#x} {:#x}\n",
+            id_version,
+            id_unk08,
+            id_counts_1,
+            id_counts_2,
+            id_unk18,
+            id_clusters
+        );
+
+        let core_mask_0 = self.sgx_read32(CORE_MASK_0);
+        let core_mask_1 = self.sgx_read32(CORE_MASK_1);
+        let mut core_mask = (core_mask_0 as u64) | ((core_mask_1 as u64) << 32);
+
+        dev_info!(self.dev, "Core mask: {:#x}\n", core_mask);
+
+        let num_clusters = (id_clusters >> 12) & 0xff;
+        let num_cores = id_counts_1 & 0xff;
+
+        if num_cores * num_clusters > 64 {
+            dev_err!(
+                self.dev,
+                "Too many total cores ({} x {} > 64)",
+                num_clusters,
+                num_cores
+            );
+            return Err(ENODEV);
+        }
+
+        let mut core_masks = Vec::new();
+        let mut num_active_cores: u32 = 0;
+
+        let max_core_mask = (1u64 << num_cores) - 1;
+        for _i in 0..num_clusters {
+            let mask = core_mask & max_core_mask;
+            core_masks.try_push(mask as u32)?;
+            core_mask >>= num_cores;
+            num_active_cores += mask.count_ones();
+        }
+        let mut core_masks_packed = Vec::new();
+        core_masks_packed.try_push(core_mask_0)?;
+        if core_mask_1 != 0 {
+            core_masks_packed.try_push(core_mask_1)?;
+        }
+
+        if core_mask != 0 {
+            dev_err!(self.dev, "Leftover core mask: {:#x}\n", core_mask);
+            return Err(EIO);
+        }
+
+        Ok(hw::GpuIdConfig {
+            gpu_gen: match (id_version >> 24) & 0xff {
+                4 => hw::GpuGen::G13,
+                5 => hw::GpuGen::G14,
+                a => {
+                    dev_err!(self.dev, "Unknown GPU generation {}", a);
+                    return Err(ENODEV);
+                }
+            },
+            gpu_variant: match (id_version >> 16) & 0xff {
+                1 => hw::GpuVariant::P, // Guess
+                2 => hw::GpuVariant::G,
+                3 => hw::GpuVariant::S,
+                4 => {
+                    if num_clusters > 4 {
+                        hw::GpuVariant::D
+                    } else {
+                        hw::GpuVariant::C
+                    }
+                }
+                a => {
+                    dev_err!(self.dev, "Unknown GPU variant {}", a);
+                    return Err(ENODEV);
+                }
+            },
+            gpu_rev: match (id_unk18 >> 8) & 0xff {
+                // Guess
+                0 => hw::GpuRevision::A0,
+                1 => hw::GpuRevision::A1,
+                2 => hw::GpuRevision::B0,
+                3 => hw::GpuRevision::B1,
+                4 => hw::GpuRevision::C0,
+                5 => hw::GpuRevision::C1,
+                a => {
+                    dev_err!(self.dev, "Unknown GPU revision {}", a);
+                    return Err(ENODEV);
+                }
+            },
+            max_dies: (id_clusters >> 20) & 0xf,
+            num_clusters,
+            num_cores,
+            num_active_cores,
+            num_frags: (id_counts_1 >> 8) & 0xff,
+            num_gps: (id_counts_2 >> 16) & 0xff,
+            core_masks,
+            core_masks_packed,
+        })
     }
 
     pub(crate) fn get_fault_info(&self) -> Option<FaultInfo> {

@@ -9,7 +9,7 @@ use crate::debug::*;
 use crate::fw::initdata::*;
 use crate::fw::types::*;
 use crate::{box_in_place, f32, place};
-use crate::{gpu, hw};
+use crate::{gpu, hw, mmu};
 use kernel::error::Result;
 use kernel::macros::versions;
 
@@ -101,6 +101,9 @@ impl<'a> InitDataBuilder::ver<'a> {
                 let base_clock_mhz = self.cfg.base_clock_hz / 1_000_000;
                 let clocks_per_period = base_clock_khz * period_ms;
 
+                let cluster_mask_8 = (!0u64) >> ((8 - self.dyncfg.id.num_clusters) * 8);
+                let cluster_mask_1 = (!0u32) >> (32 - self.dyncfg.id.num_clusters);
+
                 let raw = place!(
                     ptr,
                     raw::HwDataA::ver {
@@ -123,7 +126,8 @@ impl<'a> InitDataBuilder::ver<'a> {
                         max_power_1: pwr.max_power_mw.into(),
                         pwr_proportional_gain: pwr.pwr_proportional_gain,
                         pwr_pstate_related_k: -F32::from(max_ps_scaled) / pwr.max_power_mw.into(),
-                        pwr_pstate_max_dc_offset: pwr.pwr_min_duty_cycle as i32 - max_ps_scaled as i32,
+                        pwr_pstate_max_dc_offset: pwr.pwr_min_duty_cycle as i32
+                            - max_ps_scaled as i32,
                         max_pstate_scaled_2: max_ps_scaled,
                         max_power_2: pwr.max_power_mw,
                         max_pstate_scaled_3: max_ps_scaled,
@@ -180,7 +184,7 @@ impl<'a> InitDataBuilder::ver<'a> {
                         max_pstate_scaled_7: max_ps_scaled,
                         unk_alpha_neg: f32!(0.8),
                         unk_alpha: f32!(0.2),
-                        fast_die0_sensor_mask: U64(self.cfg.fast_die0_sensor_mask),
+                        fast_die0_sensor_mask: U64(self.cfg.fast_die0_sensor_mask & cluster_mask_8),
                         fast_die0_release_temp_cc: 100 * pwr.fast_die0_release_temp,
                         unk_87c: self.cfg.da.unk_87c,
                         unk_880: 0x4,
@@ -260,11 +264,16 @@ impl<'a> InitDataBuilder::ver<'a> {
                             unk_128: 600,
                             ..Default::default()
                         },
-                        fast_die0_sensor_mask_2: U64(self.cfg.fast_die0_sensor_mask),
+                        fast_die0_sensor_mask_2: U64(
+                            self.cfg.fast_die0_sensor_mask & cluster_mask_8
+                        ),
                         unk_e24: self.cfg.da.unk_e24,
                         unk_e28: 1,
-                        fast_die0_sensor_mask_alt: U64(self.cfg.fast_die0_sensor_mask_alt),
-                        fast_die0_sensor_present: self.cfg.fast_die0_sensor_present,
+                        fast_die0_sensor_mask_alt: U64(
+                            self.cfg.fast_die0_sensor_mask_alt & cluster_mask_8
+                        ),
+                        fast_die0_sensor_present: self.cfg.fast_die0_sensor_present
+                            & cluster_mask_1,
                         #[ver(V < V13_0B4)]
                         unk_1638: Array::new([0, 0, 0, 0, 1, 0, 0, 0]),
                         hws1: Self::hw_shared1(self.cfg),
@@ -281,16 +290,19 @@ impl<'a> InitDataBuilder::ver<'a> {
                 for (i, coef) in pwr.core_leak_coef.iter().enumerate() {
                     raw.core_leak_coef[i] = *coef;
                 }
+
                 for (i, coef) in pwr.sram_leak_coef.iter().enumerate() {
                     raw.sram_leak_coef[i] = *coef;
                 }
-                for (i, coef) in self.cfg.unk_coef_a.iter().enumerate() {
-                    raw.unk_coef_a1[i][0] = *coef;
-                    raw.unk_coef_a2[i][0] = *coef;
-                }
-                for (i, coef) in self.cfg.unk_coef_b.iter().enumerate() {
-                    raw.unk_coef_b1[i][0] = *coef;
-                    raw.unk_coef_b2[i][0] = *coef;
+
+                for i in 0..self.dyncfg.id.num_clusters as usize {
+                    let coef_a = *self.cfg.unk_coef_a.get(i).unwrap_or(&f32!(0.0));
+                    let coef_b = *self.cfg.unk_coef_b.get(i).unwrap_or(&f32!(0.0));
+
+                    raw.unk_coef_a1[i][0] = coef_a;
+                    raw.unk_coef_a2[i][0] = coef_a;
+                    raw.unk_coef_b1[i][0] = coef_b;
+                    raw.unk_coef_b2[i][0] = coef_b;
                 }
 
                 for (i, pz) in pwr.power_zones.iter().enumerate() {
@@ -352,12 +364,12 @@ impl<'a> InitDataBuilder::ver<'a> {
                         unk_504: 0x31,
                         unk_524: 0x1, // use_secure_cache_flush
                         unk_534: self.cfg.db.unk_534,
-                        num_cores: self.cfg.num_cores,
+                        num_frags: self.dyncfg.id.num_frags * self.dyncfg.id.num_clusters,
                         unk_554: 0x1,
                         uat_ttb_base: self.dyncfg.uat_ttb_base,
-                        unk_560: self.cfg.db.unk_560,
+                        gpu_core_id: self.cfg.gpu_core as u32,
                         unk_564: self.cfg.db.unk_564,
-                        num_cores_2: self.cfg.num_cores,
+                        num_cores: self.dyncfg.id.num_cores * self.dyncfg.id.num_clusters,
                         max_pstate: self.dyncfg.pwr.perf_states.len() as u32 - 1,
                         #[ver(V < V13_0B4)]
                         num_pstates: self.dyncfg.pwr.perf_states.len() as u32,
@@ -430,10 +442,8 @@ impl<'a> InitDataBuilder::ver<'a> {
                         #[ver(V >= V13_0B4)]
                         unk_2c_0: 0,
                         unk_2c: 1,
-                        #[ver(V >= V13_0B4)]
+                        // 0 on G13G >=13.0b4 and G13X all versions?
                         unk_30: 0,
-                        #[ver(V < V13_0B4)]
-                        unk_30: 1,
                         unk_34: 120,
                         sub: raw::GlobalsSub::ver {
                             unk_54: 0xffff,
@@ -640,7 +650,11 @@ impl<'a> InitDataBuilder::ver<'a> {
     }
 
     #[inline(never)]
-    fn uat_level_info(index_shift: usize, num_entries: usize) -> raw::UatLevelInfo {
+    fn uat_level_info(
+        cfg: &hw::HwConfig,
+        index_shift: usize,
+        num_entries: usize,
+    ) -> raw::UatLevelInfo {
         raw::UatLevelInfo {
             index_shift: index_shift as _,
             unk_1: 14,
@@ -649,7 +663,7 @@ impl<'a> InitDataBuilder::ver<'a> {
             unk_4: 0x4000,
             num_entries: num_entries as _,
             unk_8: 1,
-            unk_10: 0xffffffc000,
+            unk_10: ((1u64 << cfg.uat_oas) - 1) & !(mmu::UAT_PGMSK as u64),
             index_mask: ((num_entries - 1) << index_shift) as u64,
         }
     }
@@ -679,9 +693,9 @@ impl<'a> InitDataBuilder::ver<'a> {
                     uat_page_bits: 14,
                     uat_num_levels: 3,
                     uat_level_info: Array::new([
-                        Self::uat_level_info(36, 8),
-                        Self::uat_level_info(25, 2048),
-                        Self::uat_level_info(14, 2048),
+                        Self::uat_level_info(self.cfg, 36, 8),
+                        Self::uat_level_info(self.cfg, 25, 2048),
+                        Self::uat_level_info(self.cfg, 14, 2048),
                     ]),
                     __pad0: Default::default(),
                     host_mapped_fw_allocations: 1,

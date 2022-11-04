@@ -19,7 +19,7 @@ use kernel::{
 use crate::debug::*;
 use crate::driver::AsahiDevice;
 use crate::fw::channels::{DeviceControlMsg, FwCtlMsg, PipeType};
-use crate::{alloc, buffer, channel, event, fw, gem, hw, initdata, mmu, render, workqueue};
+use crate::{alloc, buffer, channel, event, fw, gem, hw, initdata, mmu, regs, render, workqueue};
 
 const DEBUG_CLASS: DebugFlags = DebugFlags::Gpu;
 
@@ -94,6 +94,8 @@ pub(crate) struct SequenceIDs {
 #[versions(AGX)]
 pub(crate) struct GpuManager {
     dev: AsahiDevice,
+    cfg: &'static hw::HwConfig,
+    dyncfg: hw::DynConfig,
     initialized: bool,
     pub(crate) initdata: fw::types::GpuObject<fw::initdata::InitData::ver>,
     uat: mmu::Uat,
@@ -107,7 +109,6 @@ pub(crate) struct GpuManager {
     event_manager: Arc<event::EventManager>,
     buffer_mgr: buffer::BufferManager,
     ids: SequenceIDs,
-    core_mask: u64,
 }
 
 pub(crate) trait GpuManager: Send + Sync {
@@ -175,8 +176,103 @@ impl rtkit::Operations for GpuManager::ver {
 
 #[versions(AGX)]
 impl GpuManager::ver {
-    pub(crate) fn new(dev: &AsahiDevice, cfg: &'static hw::HwConfig) -> Result<Arc<GpuManager::ver>> {
+    pub(crate) fn new(
+        dev: &AsahiDevice,
+        res: &regs::Resources,
+        cfg: &'static hw::HwConfig,
+    ) -> Result<Arc<GpuManager::ver>> {
         let uat = mmu::Uat::new(dev, cfg)?;
+
+        let gpu_id = res.get_gpu_id()?;
+
+        dev_info!(dev, "GPU Information:\n");
+        dev_info!(
+            dev,
+            "  Type: {:?}{:?}\n",
+            gpu_id.gpu_gen,
+            gpu_id.gpu_variant
+        );
+        dev_info!(dev, "  Max dies: {}\n", gpu_id.max_dies);
+        dev_info!(dev, "  Clusters: {}\n", gpu_id.num_clusters);
+        dev_info!(
+            dev,
+            "  Cores: {} ({})\n",
+            gpu_id.num_cores,
+            gpu_id.num_cores * gpu_id.num_clusters
+        );
+        dev_info!(
+            dev,
+            "  Frags: {} ({})\n",
+            gpu_id.num_frags,
+            gpu_id.num_frags * gpu_id.num_clusters
+        );
+        dev_info!(
+            dev,
+            "  GPs: {} ({})\n",
+            gpu_id.num_gps,
+            gpu_id.num_gps * gpu_id.num_clusters
+        );
+        dev_info!(dev, "  Core masks: {:#x?}\n", gpu_id.core_masks);
+        dev_info!(dev, "  Active cores: {}\n", gpu_id.num_active_cores);
+
+        dev_info!(dev, "Getting configuration from device tree...\n");
+        let pwr_cfg = hw::PwrConfig::load(dev, cfg)?;
+        dev_info!(dev, "Dynamic configuration fetched\n");
+
+        if gpu_id.gpu_gen != cfg.gpu_gen || gpu_id.gpu_variant != cfg.gpu_variant {
+            dev_err!(
+                dev,
+                "GPU type mismatch (expected {:?}{:?}, found {:?}{:?})\n",
+                cfg.gpu_gen,
+                cfg.gpu_variant,
+                gpu_id.gpu_gen,
+                gpu_id.gpu_variant
+            );
+            return Err(EIO);
+        }
+        if gpu_id.num_clusters > cfg.max_num_clusters {
+            dev_err!(
+                dev,
+                "Too many clusters ({} > {})\n",
+                gpu_id.num_clusters,
+                cfg.max_num_clusters
+            );
+            return Err(EIO);
+        }
+        if gpu_id.num_cores > cfg.max_num_cores {
+            dev_err!(
+                dev,
+                "Too many cores ({} > {})\n",
+                gpu_id.num_cores,
+                cfg.max_num_cores
+            );
+            return Err(EIO);
+        }
+        if gpu_id.num_frags > cfg.max_num_frags {
+            dev_err!(
+                dev,
+                "Too many frags ({} > {})\n",
+                gpu_id.num_frags,
+                cfg.max_num_frags
+            );
+            return Err(EIO);
+        }
+        if gpu_id.num_gps > cfg.max_num_gps {
+            dev_err!(
+                dev,
+                "Too many GPs ({} > {})\n",
+                gpu_id.num_gps,
+                cfg.max_num_gps
+            );
+            return Err(EIO);
+        }
+
+        let dyncfg = hw::DynConfig {
+            pwr: pwr_cfg,
+            uat_ttb_base: uat.ttb_base(),
+            id: gpu_id,
+        };
+
         let mut alloc = KernelAllocators {
             private: alloc::SimpleAllocator::new(dev, uat.kernel_vm(), 0x20, mmu::PROT_FW_PRIV_RW),
             shared: alloc::SimpleAllocator::new(dev, uat.kernel_vm(), 0x20, mmu::PROT_FW_SHARED_RW),
@@ -187,10 +283,6 @@ impl GpuManager::ver {
                 mmu::PROT_GPU_FW_SHARED_RW,
             ),
         };
-
-        dev_info!(dev, "Getting configuration from device tree...\n");
-        let dyncfg = GpuManager::ver::get_dyn_config(dev, &uat, cfg)?;
-        dev_info!(dev, "Dynamic configuration fetched\n");
 
         let mut builder = initdata::InitDataBuilder::ver::new(&mut alloc, cfg, &dyncfg);
         let initdata = builder.build()?;
@@ -217,6 +309,8 @@ impl GpuManager::ver {
 
         let mut mgr = UniqueArc::try_new(GpuManager::ver {
             dev: dev.clone(),
+            cfg,
+            dyncfg,
             initialized: false,
             initdata,
             uat,
@@ -237,7 +331,6 @@ impl GpuManager::ver {
             buffer_mgr: buffer::BufferManager::new()?,
             alloc: Mutex::new(alloc),
             ids: Default::default(),
-            core_mask: (!0u64) >> (64 - cfg.num_cores),
         })?;
 
         {
@@ -313,17 +406,6 @@ impl GpuManager::ver {
         }
 
         Ok(mgr)
-    }
-
-    fn get_dyn_config(
-        dev: &AsahiDevice,
-        uat: &mmu::Uat,
-        cfg: &hw::HwConfig,
-    ) -> Result<hw::DynConfig> {
-        Ok(hw::DynConfig {
-            pwr: hw::PwrConfig::load(dev, cfg)?,
-            uat_ttb_base: uat.ttb_base(),
-        })
     }
 
     fn iomap(&mut self, index: usize, map: &hw::IOMapping) -> Result {
@@ -409,8 +491,8 @@ impl GpuManager::ver {
         });
     }
 
-    pub(crate) fn core_mask(&self) -> u64 {
-        self.core_mask
+    pub(crate) fn core_masks_packed(&self) -> &[u32] {
+        self.dyncfg.id.core_masks_packed.as_slice()
     }
 }
 
