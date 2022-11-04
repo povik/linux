@@ -56,6 +56,11 @@ pub(crate) const HWCONFIG_T6002: super::HwConfig = HwConfig {
     max_num_cores: 8,
     max_num_frags: 8,
     max_num_gps: 4,
+
+    preempt1_size: 0x540,
+    preempt2_size: 0x280,
+    preempt3_size: 0x20,
+
     da: HwConfigA {
         unk_87c: 900,
         unk_8cc: 11000,

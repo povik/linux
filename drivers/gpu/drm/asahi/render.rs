@@ -71,7 +71,8 @@ impl Renderer::ver {
         mgr: &buffer::BufferManager,
         id: u64,
     ) -> Result<Renderer::ver> {
-        let mut buffer = buffer::Buffer::ver::new(alloc, ualloc, ualloc_priv, mgr)?;
+        let data = dev.data();
+        let mut buffer = buffer::Buffer::ver::new(&*data.gpu, alloc, ualloc, ualloc_priv, mgr)?;
 
         let tvb_blocks = {
             let lock = crate::THIS_MODULE.kernel_param_lock();
@@ -789,11 +790,10 @@ impl Renderer for Renderer::ver {
                                 *core_masks.get(0).unwrap_or(&0),
                                 *core_masks.get(1).unwrap_or(&0),
                             ]),
-                            preempt_buf1: inner_ptr!(inner.scene.preempt_buf_pointer(), part_1),
-                            preempt_buf2: inner_ptr!(inner.scene.preempt_buf_pointer(), part_2),
+                            preempt_buf1: inner.scene.preempt_buf_1_pointer(),
+                            preempt_buf2: inner.scene.preempt_buf_2_pointer(),
                             unk_80: U64(0x1), // fixed
-                            preempt_buf3: inner_ptr!(inner.scene.preempt_buf_pointer(), part_3)
-                                .or(0x4000000000000), // check
+                            preempt_buf3: inner.scene.preempt_buf_3_pointer().or(0x4000000000000), // check
                             encoder_addr: U64(cmdbuf.encoder_ptr),
                             unk_98: Default::default(), // fixed
                             unk_a8: U64(0xa041),        // fixed
@@ -820,7 +820,7 @@ impl Renderer for Renderer::ver {
                             unk_480: Default::default(), // fixed
                             unk_498: U64(0x0),           // fixed
                             unk_4a0: 0x0,                // fixed
-                            preempt_buf1: inner_ptr!(inner.scene.preempt_buf_pointer(), part_1),
+                            preempt_buf1: inner.scene.preempt_buf_1_pointer(),
                             unk_4ac: 0x0,      // fixed
                             unk_4b0: U64(0x0), // fixed
                             unk_4b8: 0x0,      // fixed

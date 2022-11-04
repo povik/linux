@@ -81,14 +81,6 @@ pub(crate) mod raw {
         pub(crate) unk_90: Array<0x30, u8>,
     }
 
-    #[derive(Debug, Default)]
-    #[repr(C)]
-    pub(crate) struct PreemptBuffer {
-        pub(crate) part_3: Array<0x20, u8>,
-        pub(crate) part_2: Array<0x280, u8>,
-        pub(crate) part_1: Array<0x540, u8>,
-    }
-
     #[derive(Debug)]
     #[repr(C)]
     pub(crate) struct Scene<'a> {
@@ -120,7 +112,6 @@ pub(crate) mod raw {
 trivial_gpustruct!(BlockControl);
 trivial_gpustruct!(Counter);
 trivial_gpustruct!(Stats);
-trivial_gpustruct!(PreemptBuffer);
 
 #[versions(AGX)]
 #[derive(Debug)]
@@ -143,7 +134,7 @@ pub(crate) struct Scene {
     pub(crate) tvb_heapmeta: GpuArray<u8>,
     pub(crate) tvb_tilemap: GpuArray<u8>,
     pub(crate) tvb_something: Arc<GpuArray<u8>>,
-    pub(crate) preempt_buf: GpuObject<PreemptBuffer>,
+    pub(crate) preempt_buf: GpuArray<u8>,
     pub(crate) seq_buf: GpuArray<u64>,
 }
 

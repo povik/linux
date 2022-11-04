@@ -144,6 +144,10 @@ pub(crate) struct HwConfig {
     pub(crate) max_num_frags: u32,
     pub(crate) max_num_gps: u32,
 
+    pub(crate) preempt1_size: usize,
+    pub(crate) preempt2_size: usize,
+    pub(crate) preempt3_size: usize,
+
     pub(crate) da: HwConfigA,
     pub(crate) db: HwConfigB,
     pub(crate) shared1_tab: &'static [i32],

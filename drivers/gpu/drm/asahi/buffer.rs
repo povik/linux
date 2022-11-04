@@ -40,6 +40,9 @@ pub(crate) struct BufferInner {
     tvb_something: Option<Arc<GpuArray<u8>>>,
     kernel_buffer: GpuArray<u8>,
     stats: GpuObject<buffer::Stats>,
+    preempt1_size: usize,
+    preempt2_size: usize,
+    preempt3_size: usize,
 }
 
 #[versions(AGX)]
@@ -54,6 +57,8 @@ pub(crate) struct Scene {
     tvb_something_size: usize,
     slot: u32,
     rebind: bool,
+    preempt2_off: usize,
+    preempt3_off: usize,
 }
 
 #[versions(AGX)]
@@ -98,8 +103,20 @@ impl Scene::ver {
         self.tvb_something_size
     }
 
-    pub(crate) fn preempt_buf_pointer(&self) -> GpuPointer<'_, buffer::PreemptBuffer> {
+    pub(crate) fn preempt_buf_1_pointer(&self) -> GpuPointer<'_, &'_ [u8]> {
         self.object.preempt_buf.gpu_pointer()
+    }
+
+    pub(crate) fn preempt_buf_2_pointer(&self) -> GpuPointer<'_, &'_ [u8]> {
+        self.object
+            .preempt_buf
+            .gpu_offset_pointer(self.preempt2_off)
+    }
+
+    pub(crate) fn preempt_buf_3_pointer(&self) -> GpuPointer<'_, &'_ [u8]> {
+        self.object
+            .preempt_buf
+            .gpu_offset_pointer(self.preempt3_off)
     }
 
     pub(crate) fn seq_buf_pointer(&self) -> GpuPointer<'_, &'_ [u64]> {
@@ -123,6 +140,7 @@ pub(crate) struct BufferManager(slotalloc::SlotAllocator<SlotInner>);
 #[versions(AGX)]
 impl Buffer::ver {
     pub(crate) fn new(
+        gpu: &dyn gpu::GpuManager,
         alloc: &mut gpu::KernelAllocators,
         ualloc: Arc<Mutex<alloc::SimpleAllocator>>,
         ualloc_priv: Arc<Mutex<alloc::SimpleAllocator>>,
@@ -130,6 +148,9 @@ impl Buffer::ver {
     ) -> Result<Buffer::ver> {
         let max_pages = MAX_SIZE / PAGE_SIZE;
         let max_blocks = MAX_SIZE / BLOCK_SIZE;
+        let preempt1_size = gpu.get_dyncfg().id.num_clusters as usize * gpu.get_cfg().preempt1_size;
+        let preempt2_size = gpu.get_dyncfg().id.num_clusters as usize * gpu.get_cfg().preempt2_size;
+        let preempt3_size = gpu.get_dyncfg().id.num_clusters as usize * gpu.get_cfg().preempt3_size;
 
         let inner = box_in_place!(buffer::Info::ver {
             block_ctl: alloc.shared.new_default::<buffer::BlockControl>()?,
@@ -201,6 +222,9 @@ impl Buffer::ver {
                 tvb_something: None,
                 kernel_buffer,
                 stats,
+                preempt1_size,
+                preempt2_size,
+                preempt3_size,
             }))?,
         })
     }
@@ -278,7 +302,7 @@ impl Buffer::ver {
             .ualloc
             .lock()
             .array_empty(0x800 * tile_blocks as usize)?;
-        let preempt_buf = inner.ualloc.lock().new_default::<buffer::PreemptBuffer>()?;
+        let preempt_buf = inner.ualloc.lock().array_empty(0x800)?;
         let mut seq_buf = inner.ualloc.lock().array_empty(0x800)?;
         for i in 1..0x400 {
             seq_buf[i] = (i + 1) as u64;
@@ -348,6 +372,8 @@ impl Buffer::ver {
             tvb_something_size,
             slot: inner.active_slot.as_ref().unwrap().slot(),
             rebind,
+            preempt2_off: inner.preempt1_size,
+            preempt3_off: inner.preempt1_size + inner.preempt2_size,
         })
     }
 
