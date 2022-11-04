@@ -113,10 +113,16 @@ struct drm_asahi_cmdbuf {
    __u64 depth_buffer_1;
    __u64 depth_buffer_2;
    __u64 depth_buffer_3;
+   __u64 depth_meta_buffer_1;
+   __u64 depth_meta_buffer_2;
+   __u64 depth_meta_buffer_3;
 
    __u64 stencil_buffer_1;
    __u64 stencil_buffer_2;
    __u64 stencil_buffer_3;
+   __u64 stencil_meta_buffer_1;
+   __u64 stencil_meta_buffer_2;
+   __u64 stencil_meta_buffer_3;
 
    __u64 scissor_array;
    __u64 depth_bias_array;
