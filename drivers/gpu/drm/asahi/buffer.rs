@@ -8,7 +8,8 @@
 use crate::debug::*;
 use crate::fw::buffer;
 use crate::fw::types::*;
-use crate::{alloc, gpu, mmu, slotalloc, workqueue};
+use crate::util::*;
+use crate::{alloc, fw, gpu, mmu, slotalloc, workqueue};
 use crate::{box_in_place, place};
 use core::cmp;
 use core::sync::atomic::Ordering;
@@ -43,6 +44,7 @@ pub(crate) struct BufferInner {
     preempt1_size: usize,
     preempt2_size: usize,
     preempt3_size: usize,
+    num_clusters: usize,
 }
 
 #[versions(AGX)]
@@ -59,6 +61,22 @@ pub(crate) struct Scene {
     rebind: bool,
     preempt2_off: usize,
     preempt3_off: usize,
+    meta2_off: usize,
+    meta3_off: usize,
+    meta4_off: usize,
+}
+
+pub(crate) struct TileInfo {
+    pub(crate) tiles_x: u32,
+    pub(crate) tiles_y: u32,
+    pub(crate) tiles: u32,
+    pub(crate) mtiles_x: u32,
+    pub(crate) mtiles_y: u32,
+    pub(crate) tiles_per_mtile_x: u32,
+    pub(crate) tiles_per_mtile_y: u32,
+    pub(crate) tiles_per_mtile: u32,
+    pub(crate) tilemap_size: usize,
+    pub(crate) params: fw::vertex::raw::TilingParameters,
 }
 
 #[versions(AGX)]
@@ -119,6 +137,41 @@ impl Scene::ver {
             .gpu_offset_pointer(self.preempt3_off)
     }
 
+    pub(crate) fn cluster_tilemaps_pointer(&self) -> Option<GpuPointer<'_, &'_ [u8]>> {
+        self.object
+            .clustering
+            .as_ref()
+            .map(|c| c.tilemaps.gpu_pointer())
+    }
+
+    pub(crate) fn meta_1_pointer(&self) -> Option<GpuPointer<'_, &'_ [u8]>> {
+        self.object
+            .clustering
+            .as_ref()
+            .map(|c| c.meta.gpu_pointer())
+    }
+
+    pub(crate) fn meta_2_pointer(&self) -> Option<GpuPointer<'_, &'_ [u8]>> {
+        self.object
+            .clustering
+            .as_ref()
+            .map(|c| c.meta.gpu_offset_pointer(self.meta2_off))
+    }
+
+    pub(crate) fn meta_3_pointer(&self) -> Option<GpuPointer<'_, &'_ [u8]>> {
+        self.object
+            .clustering
+            .as_ref()
+            .map(|c| c.meta.gpu_offset_pointer(self.meta3_off))
+    }
+
+    pub(crate) fn meta_4_pointer(&self) -> Option<GpuPointer<'_, &'_ [u8]>> {
+        self.object
+            .clustering
+            .as_ref()
+            .map(|c| c.meta.gpu_offset_pointer(self.meta4_off))
+    }
+
     pub(crate) fn seq_buf_pointer(&self) -> GpuPointer<'_, &'_ [u64]> {
         self.object.seq_buf.gpu_pointer()
     }
@@ -148,9 +201,10 @@ impl Buffer::ver {
     ) -> Result<Buffer::ver> {
         let max_pages = MAX_SIZE / PAGE_SIZE;
         let max_blocks = MAX_SIZE / BLOCK_SIZE;
-        let preempt1_size = gpu.get_dyncfg().id.num_clusters as usize * gpu.get_cfg().preempt1_size;
-        let preempt2_size = gpu.get_dyncfg().id.num_clusters as usize * gpu.get_cfg().preempt2_size;
-        let preempt3_size = gpu.get_dyncfg().id.num_clusters as usize * gpu.get_cfg().preempt3_size;
+        let num_clusters = gpu.get_dyncfg().id.num_clusters as usize;
+        let preempt1_size = num_clusters * gpu.get_cfg().preempt1_size;
+        let preempt2_size = num_clusters * gpu.get_cfg().preempt2_size;
+        let preempt3_size = num_clusters * gpu.get_cfg().preempt3_size;
 
         let inner = box_in_place!(buffer::Info::ver {
             block_ctl: alloc.shared.new_default::<buffer::BlockControl>()?,
@@ -225,6 +279,7 @@ impl Buffer::ver {
                 preempt1_size,
                 preempt2_size,
                 preempt3_size,
+                num_clusters,
             }))?,
         })
     }
@@ -287,7 +342,7 @@ impl Buffer::ver {
     pub(crate) fn new_scene(
         &self,
         alloc: &mut gpu::KernelAllocators,
-        tile_blocks: u32,
+        tile_info: &TileInfo,
     ) -> Result<Scene::ver> {
         let mut inner = self.inner.lock();
 
@@ -295,20 +350,25 @@ impl Buffer::ver {
             raw.cpu_flag.store(1, Ordering::Relaxed);
         });
 
+        let tilemap_size = tile_info.tilemap_size;
+        let tvb_something_size = tile_info.tilemap_size; // check
+
         // TODO: what is this exactly?
+        mod_pr_debug!("Buffer: Allocating TVB buffers\n");
         let user_buffer = inner.ualloc.lock().array_empty(0x80)?;
         let tvb_heapmeta = inner.ualloc.lock().array_empty(0x200)?;
-        let tvb_tilemap = inner
+        let tvb_tilemap = inner.ualloc.lock().array_empty(tilemap_size)?;
+
+        mod_pr_debug!("Buffer: Allocating misc buffers\n");
+        let preempt_buf = inner
             .ualloc
             .lock()
-            .array_empty(0x800 * tile_blocks as usize)?;
-        let preempt_buf = inner.ualloc.lock().array_empty(0x800)?;
+            .array_empty(inner.preempt1_size + inner.preempt2_size + inner.preempt3_size)?;
+
         let mut seq_buf = inner.ualloc.lock().array_empty(0x800)?;
         for i in 1..0x400 {
             seq_buf[i] = (i + 1) as u64;
         }
-
-        let tvb_something_size = 0x800 * tile_blocks as usize;
 
         let tvb_something =
             match inner.tvb_something.as_ref() {
@@ -323,12 +383,35 @@ impl Buffer::ver {
                 }
             };
 
+        let meta1_size = align(4 * inner.num_clusters, 0x80);
+        // check
+        let meta2_size = align(0x190 * inner.num_clusters, 0x80);
+        let meta3_size = align(0x280 * inner.num_clusters, 0x80);
+        let meta4_size = align(0x30 * inner.num_clusters, 0x80);
+        let meta_size = meta1_size + meta2_size + meta3_size + meta4_size;
+
+        let clustering = if inner.num_clusters > 1 {
+            mod_pr_debug!("Buffer: Allocating clustering buffers\n");
+            let tilemaps = inner
+                .ualloc
+                .lock()
+                .array_empty(inner.num_clusters * tilemap_size)?;
+            let meta = inner
+                .ualloc
+                .lock()
+                .array_empty(inner.num_clusters * meta_size)?;
+            Some(buffer::ClusterBuffers { tilemaps, meta })
+        } else {
+            None
+        };
+
         let scene_inner = box_in_place!(buffer::Scene::ver {
             user_buffer: user_buffer,
             buffer: self.inner.clone(),
             tvb_heapmeta: tvb_heapmeta,
             tvb_tilemap: tvb_tilemap,
             tvb_something: tvb_something,
+            clustering: clustering,
             preempt_buf: preempt_buf,
             seq_buf: seq_buf,
         })?;
@@ -374,6 +457,9 @@ impl Buffer::ver {
             rebind,
             preempt2_off: inner.preempt1_size,
             preempt3_off: inner.preempt1_size + inner.preempt2_size,
+            meta2_off: meta1_size,
+            meta3_off: meta1_size + meta2_size,
+            meta4_off: meta1_size + meta2_size + meta3_size,
         })
     }
 

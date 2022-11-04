@@ -127,6 +127,11 @@ impl GpuStruct for Info::ver {
     type Raw<'a> = raw::Info::ver<'a>;
 }
 
+pub(crate) struct ClusterBuffers {
+    pub(crate) tilemaps: GpuArray<u8>,
+    pub(crate) meta: GpuArray<u8>,
+}
+
 #[versions(AGX)]
 pub(crate) struct Scene {
     pub(crate) user_buffer: GpuArray<u8>,
@@ -134,6 +139,7 @@ pub(crate) struct Scene {
     pub(crate) tvb_heapmeta: GpuArray<u8>,
     pub(crate) tvb_tilemap: GpuArray<u8>,
     pub(crate) tvb_something: Arc<GpuArray<u8>>,
+    pub(crate) clustering: Option<ClusterBuffers>,
     pub(crate) preempt_buf: GpuArray<u8>,
     pub(crate) seq_buf: GpuArray<u64>,
 }

@@ -11,6 +11,7 @@ use crate::debug::*;
 use crate::driver::AsahiDevice;
 use crate::fw::types::*;
 use crate::gpu::GpuManager;
+use crate::util::*;
 use crate::{alloc, buffer, channel, driver, event, fw, gem, gpu, microseq, mmu, workqueue};
 use crate::{box_in_place, inner_ptr, inner_weak_ptr, place};
 use core::mem::MaybeUninit;
@@ -49,16 +50,6 @@ pub(crate) struct Renderer {
 unsafe impl Send for Renderer::ver {}
 #[versions(AGX)]
 unsafe impl Sync for Renderer::ver {}
-
-struct TileInfo {
-    tiles_x: u32,
-    tiles_y: u32,
-    tiles: u32,
-    tile_blocks_x: u32,
-    tile_blocks_y: u32,
-    tile_blocks: u32,
-    params: fw::vertex::raw::TilingParameters,
-}
 
 #[versions(AGX)]
 impl Renderer::ver {
@@ -137,7 +128,7 @@ impl Renderer::ver {
         })
     }
 
-    fn get_tiling_params(cmdbuf: &bindings::drm_asahi_cmdbuf) -> Result<TileInfo> {
+    fn get_tiling_params(cmdbuf: &bindings::drm_asahi_cmdbuf) -> Result<buffer::TileInfo> {
         let width: u32 = cmdbuf.fb_width;
         let height: u32 = cmdbuf.fb_height;
 
@@ -151,28 +142,53 @@ impl Renderer::ver {
         let tiles_y = (height + tile_height - 1) / tile_height;
         let tiles = tiles_x * tiles_y;
 
-        let tile_blocks_x = (tiles_x + 15) / 16;
-        let tile_blocks_y = (tiles_y + 15) / 16;
-        let tile_blocks = tile_blocks_x * tile_blocks_y;
+        let mtiles_x = 4u32;
+        let mtiles_y = 4u32;
 
-        Ok(TileInfo {
+        // TODO: *samples
+        let tiles_per_mtile_x = align((tiles_x + mtiles_x - 1) / mtiles_x, 4);
+        let tiles_per_mtile_y = align((tiles_y + mtiles_y - 1) / mtiles_y, 4);
+        let tiles_per_mtile = tiles_per_mtile_x * tiles_per_mtile_y;
+
+        let mtile_x1 = tiles_per_mtile_x;
+        let mtile_x2 = 2 * tiles_per_mtile_x;
+        let mtile_x3 = 3 * tiles_per_mtile_x;
+
+        let mtile_y1 = tiles_per_mtile_y;
+        let mtile_y2 = 2 * tiles_per_mtile_y;
+        let mtile_y3 = 3 * tiles_per_mtile_y;
+
+        let mtile_stride = tiles_per_mtile_x * tiles_per_mtile_y;
+
+        let rgn_entry_size = 5;
+        let mtile_stride_dwords = align(
+            rgn_entry_size * tiles_per_mtile_x * tiles_per_mtile_y / 4,
+            0x20,
+        );
+
+        let tilemap_size = 4 * mtile_stride_dwords as usize * mtiles_x as usize * mtiles_y as usize;
+
+        Ok(buffer::TileInfo {
             tiles_x,
             tiles_y,
             tiles,
-            tile_blocks_x,
-            tile_blocks_y,
-            tile_blocks,
+            mtiles_x,
+            mtiles_y,
+            tiles_per_mtile_x,
+            tiles_per_mtile_y,
+            tiles_per_mtile,
+            tilemap_size,
             params: fw::vertex::raw::TilingParameters {
-                size1: 0x14 * tile_blocks,
+                mtile_stride_dwords,
                 ppp_multisamplectl: 0x88,
                 ppp_ctrl: cmdbuf.ppp_ctrl,
                 x_max: (width - 1) as u16,
                 y_max: (height - 1) as u16,
                 te_screen: ((tiles_y - 1) << 12) | (tiles_x - 1),
-                te_mtile1: (12 * tile_blocks_x) | (tile_blocks_x << 12) | (tile_blocks_x << 20),
-                te_mtile2: (12 * tile_blocks_y) | (tile_blocks_y << 12) | (tile_blocks_y << 20),
-                size2: 0x10 * tile_blocks,
-                size3: 0x20 * tile_blocks,
+                te_mtile1: mtile_x3 | (mtile_x2 << 9) | (mtile_x1 << 18),
+                te_mtile2: mtile_y3 | (mtile_y2 << 9) | (mtile_y1 << 18),
+                mtile_stride,
+                mtile_stride_x2: 2 * mtile_stride,
                 unk_24: 0x100,
                 unk_28: 0x8000,
             },
@@ -244,7 +260,7 @@ impl Renderer for Renderer::ver {
         let mut batches_vtx = workqueue::WorkQueue::begin_batch(&self.wq_vtx)?;
         let mut batches_frag = workqueue::WorkQueue::begin_batch(&self.wq_frag)?;
 
-        let scene = Arc::try_new(self.buffer.new_scene(kalloc, tile_info.tile_blocks)?)?;
+        let scene = Arc::try_new(self.buffer.new_scene(kalloc, &tile_info)?)?;
 
         let next_vtx = batches_vtx.event_value().next();
         let next_frag = batches_frag.event_value().next();
@@ -449,8 +465,8 @@ impl Renderer for Renderer::ver {
                         tvb_tilemap: inner.scene.tvb_tilemap_pointer(),
                         unk_40: U64(0x88),
                         unk_48: 0x1,
-                        tile_blocks_y: 4 * tile_info.tile_blocks_y as u16,
-                        tile_blocks_x: 4 * tile_info.tile_blocks_x as u16,
+                        tiles_per_mtile_y: tile_info.tiles_per_mtile_y as u16,
+                        tiles_per_mtile_x: tile_info.tiles_per_mtile_x as u16,
                         unk_50: U64(0),
                         unk_58: U64(0),
                         uuid1: 0x3b315cae, // ??,
@@ -477,7 +493,7 @@ impl Renderer for Renderer::ver {
                             unk_68: Default::default(),
                             tvb_tilemap: inner.scene.tvb_tilemap_pointer(),
                             tvb_heapmeta: inner.scene.tvb_heapmeta_pointer(),
-                            unk_e8: U64(0x50000000u64 * (tile_info.tile_blocks as u64)),
+                            mtile_stride_dwords: U64((tile_info.params.mtile_stride_dwords as u64) << 24),
                             tvb_heapmeta_2: inner.scene.tvb_heapmeta_pointer(),
                             // 0x10000 - clear empty tiles
                             unk_f8: U64(0x10280), //#0x10280 # TODO: varies 0, 0x280, 0x10000, 0x10280
@@ -500,8 +516,8 @@ impl Renderer for Renderer::ver {
                             uuid1: 0x3b315cae,
                             uuid2: 0x3b6c7b92,
                             unk_18: U64(0x0),
-                            tile_blocks_y: 4 * tile_info.tile_blocks_y as u16,
-                            tile_blocks_x: 4 * tile_info.tile_blocks_x as u16,
+                            tiles_per_mtile_y: tile_info.tiles_per_mtile_y as u16,
+                            tiles_per_mtile_x: tile_info.tiles_per_mtile_x as u16,
                             unk_24: 0x0,
                             tile_counts: ((tile_info.tiles_y - 1) << 12) | (tile_info.tiles_x - 1),
                             unk_2c: aux_fb_unk,
@@ -775,13 +791,13 @@ impl Renderer for Renderer::ver {
                             unk_8: 0x1e3ce508, // fixed
                             unk_c: 0x1e3ce508, // fixed
                             tvb_tilemap: inner.scene.tvb_tilemap_pointer(),
-                            unkptr_18: U64(0x0),
+                            tvb_cluster_tilemaps: inner.scene.cluster_tilemaps_pointer(),
                             tvb_something: inner.scene.tvb_something_pointer(),
                             tvb_heapmeta: inner.scene.tvb_heapmeta_pointer().or(0x8000000000000000),
                             iogpu_unk_54: 0x6b0003, // fixed
                             iogpu_unk_55: 0x3a0012, // fixed
                             iogpu_unk_56: U64(0x1), // fixed
-                            unk_40: U64(0x0),       // fixed
+                            tvb_cluster_meta1: inner.scene.meta_1_pointer(),
                             unk_48: U64(0xa000),    // fixed - maybe tvb_something_size?
                             unk_50: U64(0x88),      // fixed
                             tvb_heapmeta_2: inner.scene.tvb_heapmeta_pointer(),
@@ -795,11 +811,12 @@ impl Renderer for Renderer::ver {
                             unk_80: U64(0x1), // fixed
                             preempt_buf3: inner.scene.preempt_buf_3_pointer().or(0x4000000000000), // check
                             encoder_addr: U64(cmdbuf.encoder_ptr),
-                            unk_98: Default::default(), // fixed
+                            tvb_cluster_meta2: inner.scene.meta_2_pointer(),
+                            tvb_cluster_meta3: inner.scene.meta_3_pointer(),
                             unk_a8: U64(0xa041),        // fixed
                             unk_b0: Default::default(), // fixed
                             pipeline_base: U64(0x11_00000000),
-                            unk_e8: U64(0x0),            // fixed
+                            tvb_cluster_meta4: inner.scene.meta_4_pointer(),
                             unk_f0: U64(0x1c),           // fixed
                             unk_f8: U64(0x8c60),         // fixed
                             unk_100: Default::default(), // fixed
