@@ -415,7 +415,7 @@ impl<T: Sized, U: Allocation<T>> GpuArray<T, U> {
     }
 
     pub(crate) fn gpu_item_pointer(&self, index: usize) -> GpuPointer<'_, &'_ T> {
-        if index > self.len {
+        if index >= self.len {
             panic!("Index {} out of bounds (len: {})", index, self.len);
         }
         GpuPointer(
@@ -425,7 +425,7 @@ impl<T: Sized, U: Allocation<T>> GpuArray<T, U> {
     }
 
     pub(crate) fn weak_item_pointer(&self, index: usize) -> GpuWeakPointer<T> {
-        if index > self.len {
+        if index >= self.len {
             panic!("Index {} out of bounds (len: {})", index, self.len);
         }
         GpuWeakPointer(
