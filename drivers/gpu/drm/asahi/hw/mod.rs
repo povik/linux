@@ -127,6 +127,11 @@ pub(crate) struct HwConfigB {
     pub(crate) unk_abc: u32,
 }
 
+#[derive(Debug, Copy, Clone)]
+pub(crate) struct HwRenderConfig {
+    pub(crate) tiling_control: u32,
+}
+
 #[derive(Debug)]
 pub(crate) struct HwConfig {
     pub(crate) chip_id: u32,
@@ -146,6 +151,8 @@ pub(crate) struct HwConfig {
     pub(crate) preempt1_size: usize,
     pub(crate) preempt2_size: usize,
     pub(crate) preempt3_size: usize,
+
+    pub(crate) render: HwRenderConfig,
 
     pub(crate) da: HwConfigA,
     pub(crate) db: HwConfigB,

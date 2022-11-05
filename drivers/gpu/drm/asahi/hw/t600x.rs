@@ -61,6 +61,10 @@ pub(crate) const HWCONFIG_T6002: super::HwConfig = HwConfig {
     preempt2_size: 0x280,
     preempt3_size: 0x20,
 
+    render: HwRenderConfig {
+        tiling_control: 0xa540,
+    },
+
     da: HwConfigA {
         unk_87c: 900,
         unk_8cc: 11000,

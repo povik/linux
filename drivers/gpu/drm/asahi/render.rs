@@ -24,6 +24,8 @@ use kernel::user_ptr::UserSlicePtr;
 
 const DEBUG_CLASS: DebugFlags = DebugFlags::Render;
 
+const TILECTL_DISABLE_CLUSTERING: u32 = 1u32 << 0;
+
 pub(crate) trait Renderer: Send + Sync {
     fn render(
         &self,
@@ -70,7 +72,10 @@ impl Renderer::ver {
             *crate::initial_tvb_size.read(&lock)
         };
 
-        buffer.add_blocks(core::cmp::max(8, tvb_blocks))?;
+        // TODO: this seems overly conservative?
+        let min_tvb_blocks = 8 * data.gpu.get_dyncfg().id.num_clusters as usize;
+
+        buffer.add_blocks(core::cmp::max(min_tvb_blocks, tvb_blocks))?;
 
         let gpu_context: GpuObject<fw::workqueue::GpuContextData> = alloc
             .shared
@@ -128,7 +133,10 @@ impl Renderer::ver {
         })
     }
 
-    fn get_tiling_params(cmdbuf: &bindings::drm_asahi_cmdbuf) -> Result<buffer::TileInfo> {
+    fn get_tiling_params(
+        cmdbuf: &bindings::drm_asahi_cmdbuf,
+        num_clusters: u32,
+    ) -> Result<buffer::TileInfo> {
         let width: u32 = cmdbuf.fb_width;
         let height: u32 = cmdbuf.fb_height;
 
@@ -171,7 +179,7 @@ impl Renderer::ver {
         let tmtiles_y = tiles_per_mtile_y * mtiles_y;
 
         let tpc_entry_size = 8;
-        let tpc_size = (tpc_entry_size * tmtiles_x * tmtiles_y) as usize;
+        let tpc_size = (tpc_entry_size * tmtiles_x * tmtiles_y * num_clusters) as usize;
 
         Ok(buffer::TileInfo {
             tiles_x,
@@ -218,6 +226,20 @@ impl Renderer for Renderer::ver {
         };
         let notifier = &self.notifier;
 
+        let nclusters = gpu.get_dyncfg().id.num_clusters;
+
+        // Can be set to false to disable clustering (for simpler jobs), but then the
+        // core masks below should be adjusted to cover a single rolling cluster.
+        let mut clustering = nclusters > 1;
+        clustering = false; // FIXME: breaks
+
+        let render_cfg = gpu.get_cfg().render;
+        let mut tiling_control = render_cfg.tiling_control;
+
+        if !clustering {
+            tiling_control |= TILECTL_DISABLE_CLUSTERING;
+        }
+
         self.buffer.increment();
 
         let mut alloc = gpu.alloc();
@@ -261,7 +283,7 @@ impl Renderer for Renderer::ver {
         // but it's unclear *which* slot...
         let slot_client_seq: u8 = (self.id & 0xff) as u8;
 
-        let tile_info = Self::get_tiling_params(&cmdbuf)?;
+        let tile_info = Self::get_tiling_params(&cmdbuf, if clustering { nclusters } else { 1 })?;
 
         let mut batches_vtx = workqueue::WorkQueue::begin_batch(&self.wq_vtx)?;
         let mut batches_frag = workqueue::WorkQueue::begin_batch(&self.wq_frag)?;
@@ -802,7 +824,7 @@ impl Renderer for Renderer::ver {
                         unk_buffer_buf: inner.scene.kernel_buffer_pointer(),
                         unk_34: 0,
                         job_params1: fw::vertex::raw::JobParameters1 {
-                            unk_0: U64(0x200),
+                            unk_0: U64(0x200), // sometimes 0
                             unk_8: 0x1e3ce508, // fixed
                             unk_c: 0x1e3ce508, // fixed
                             tvb_tilemap: inner.scene.tvb_tilemap_pointer(),
@@ -828,11 +850,12 @@ impl Renderer for Renderer::ver {
                             encoder_addr: U64(cmdbuf.encoder_ptr),
                             tvb_cluster_meta2: inner.scene.meta_2_pointer(),
                             tvb_cluster_meta3: inner.scene.meta_3_pointer(),
-                            unk_a8: U64(0xa041),        // fixed
+                            tiling_control: tiling_control,
+                            unk_ac: Default::default(), // fixed
                             unk_b0: Default::default(), // fixed
                             pipeline_base: U64(0x11_00000000),
                             tvb_cluster_meta4: inner.scene.meta_4_pointer(),
-                            unk_f0: U64(0x1c),           // fixed
+                            unk_f0: U64(if clustering { 0x20 } else { 0x1c }),
                             unk_f8: U64(0x8c60),         // fixed
                             unk_100: Default::default(), // fixed
                             unk_118: 0x1c,               // fixed

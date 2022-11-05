@@ -26,6 +26,11 @@ pub(crate) const HWCONFIG: super::HwConfig = HwConfig {
     preempt2_size: 0x280,
     preempt3_size: 0x20,
 
+    render: HwRenderConfig {
+        // bit 0: disable clustering (always)
+        tiling_control: 0xa041,
+    },
+
     da: HwConfigA {
         unk_87c: -220,
         unk_8cc: 9880,
