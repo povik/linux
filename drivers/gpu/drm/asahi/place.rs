@@ -152,6 +152,7 @@ macro_rules! get_type {
 #[macro_export]
 macro_rules! box_in_place {
     ($($val:tt)*) => {{
+        use $crate::place;
         let b = Box::<$crate::get_type!($($val)*)>::try_new_uninit();
         match b {
             Ok(mut p) => {

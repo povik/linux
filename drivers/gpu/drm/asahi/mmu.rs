@@ -8,7 +8,7 @@
 use core::fmt::Debug;
 use core::mem::{size_of, ManuallyDrop};
 use core::ops::Deref;
-use core::ptr::NonNull;
+use core::ptr::{addr_of_mut, NonNull};
 use core::sync::atomic::{fence, AtomicU32, AtomicU64, AtomicU8, Ordering};
 
 use kernel::{
@@ -19,8 +19,8 @@ use kernel::{
     io_pgtable::{prot, AppleUAT, AppleUATCfg, IOPagetable},
     prelude::*,
     str::CString,
-    sync::Arc,
     sync::{smutex::Mutex, Guard},
+    sync::{Arc, UniqueArc},
     PointerWrapper,
 };
 
@@ -961,26 +961,41 @@ impl Uat {
         Vm::new(self.dev.clone(), self.inner.clone(), self.cfg, false, id)
     }
 
-    pub(crate) fn new(dev: &driver::AsahiDevice, cfg: &'static hw::HwConfig) -> Result<Self> {
-        dev_info!(dev, "MMU: Initializing...\n");
-
+    #[inline(never)]
+    fn make_inner(dev: &driver::AsahiDevice) -> Result<Arc<UatInner>> {
         let handoff_rgn = Self::map_region(dev, c_str!("handoff"), HANDOFF_SIZE, false)?;
         let ttbs_rgn = Self::map_region(dev, c_str!("ttbs"), SLOTS_SIZE, false)?;
-        let pagetables_rgn = Self::map_region(dev, c_str!("pagetables"), PAGETABLES_SIZE, true)?;
 
         dev_info!(dev, "MMU: Initializing kernel page table\n");
 
-        let inner = Arc::try_new(UatInner {
-            handoff_flush: core::array::from_fn(|i| {
-                let handoff =
-                    unsafe { &(handoff_rgn.map.as_ptr() as *mut Handoff).as_ref() }.unwrap();
-                Mutex::new(HandoffFlush(&handoff.flush[i]))
-            }),
-            shared: Mutex::new(UatShared {
+        let mut inner = UniqueArc::<UatInner>::try_new_uninit()?;
+        let ptr = inner.as_mut_ptr();
+
+        Ok(unsafe {
+            let handoff = &(handoff_rgn.map.as_ptr() as *mut Handoff).as_ref().unwrap();
+
+            for i in 0..UAT_NUM_CTX + 1 {
+                addr_of_mut!((*ptr).handoff_flush[i])
+                    .write(Mutex::new(HandoffFlush(&handoff.flush[i])));
+            }
+
+            addr_of_mut!((*ptr).shared).write(Mutex::new(UatShared {
                 handoff_rgn,
                 ttbs_rgn,
-            }),
-        })?;
+            }));
+
+            inner.assume_init()
+        }
+        .into())
+    }
+
+    #[inline(never)]
+    pub(crate) fn new(dev: &driver::AsahiDevice, cfg: &'static hw::HwConfig) -> Result<Self> {
+        dev_info!(dev, "MMU: Initializing...\n");
+
+        let inner = Self::make_inner(dev)?;
+
+        let pagetables_rgn = Self::map_region(dev, c_str!("pagetables"), PAGETABLES_SIZE, true)?;
 
         dev_info!(dev, "MMU: Creating kernel page tables\n");
         let kernel_lower_vm = Vm::new(dev.clone(), inner.clone(), cfg, false, 1)?;

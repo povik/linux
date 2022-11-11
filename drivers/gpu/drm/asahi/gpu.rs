@@ -16,6 +16,7 @@ use kernel::{
     PointerWrapper,
 };
 
+use crate::box_in_place;
 use crate::debug::*;
 use crate::driver::AsahiDevice;
 use crate::fw::channels::{DeviceControlMsg, FwCtlMsg, PipeType};
@@ -95,16 +96,16 @@ pub(crate) struct SequenceIDs {
 pub(crate) struct GpuManager {
     dev: AsahiDevice,
     cfg: &'static hw::HwConfig,
-    dyncfg: hw::DynConfig,
+    dyncfg: Box<hw::DynConfig>,
     initialized: bool,
-    pub(crate) initdata: fw::types::GpuObject<fw::initdata::InitData::ver>,
-    uat: mmu::Uat,
+    pub(crate) initdata: Box<fw::types::GpuObject<fw::initdata::InitData::ver>>,
+    uat: Box<mmu::Uat>,
     alloc: Mutex<KernelAllocators>,
     io_mappings: Vec<mmu::Mapping>,
-    rtkit: Mutex<Option<rtkit::RTKit<GpuManager::ver>>>,
-    rx_channels: Mutex<RxChannels::ver>,
-    tx_channels: Mutex<TxChannels>,
-    fwctl_channel: Mutex<channel::FwCtlChannel>,
+    rtkit: Mutex<Option<Box<rtkit::RTKit<GpuManager::ver>>>>,
+    rx_channels: Mutex<Box<RxChannels::ver>>,
+    tx_channels: Mutex<Box<TxChannels>>,
+    fwctl_channel: Mutex<Box<channel::FwCtlChannel>>,
     pipes: PipeChannels,
     event_manager: Arc<event::EventManager>,
     buffer_mgr: buffer::BufferManager,
@@ -178,13 +179,186 @@ impl rtkit::Operations for GpuManager::ver {
 
 #[versions(AGX)]
 impl GpuManager::ver {
+    #[inline(never)]
     pub(crate) fn new(
         dev: &AsahiDevice,
         res: &regs::Resources,
         cfg: &'static hw::HwConfig,
     ) -> Result<Arc<GpuManager::ver>> {
-        let uat = mmu::Uat::new(dev, cfg)?;
+        let uat = Self::make_uat(dev, cfg)?;
+        let dyncfg = Self::make_dyncfg(dev, res, cfg, &uat)?;
 
+        let mut alloc = KernelAllocators {
+            private: alloc::SimpleAllocator::new(dev, uat.kernel_vm(), 0x20, mmu::PROT_FW_PRIV_RW),
+            shared: alloc::SimpleAllocator::new(dev, uat.kernel_vm(), 0x20, mmu::PROT_FW_SHARED_RW),
+            gpu: alloc::SimpleAllocator::new(
+                dev,
+                uat.kernel_vm(),
+                0x20,
+                mmu::PROT_GPU_FW_SHARED_RW,
+            ),
+        };
+
+        let event_manager = Self::make_event_manager(&mut alloc)?;
+        let initdata = Self::make_initdata(cfg, &dyncfg, &mut alloc)?;
+        let mut mgr = Self::make_mgr(dev, cfg, dyncfg, uat, alloc, event_manager, initdata)?;
+
+        {
+            let fwctl = mgr.fwctl_channel.lock();
+            let p_fwctl = fwctl.to_raw();
+            mem::drop(fwctl);
+
+            mgr.initdata.fw_status.with_mut(|raw, _inner| {
+                raw.fwctl_channel = p_fwctl;
+            });
+        }
+
+        {
+            let txc = mgr.tx_channels.lock();
+            let p_device_control = txc.device_control.to_raw();
+            mem::drop(txc);
+
+            let rxc = mgr.rx_channels.lock();
+            let p_event = rxc.event.to_raw();
+            let p_fw_log = rxc.fw_log.to_raw();
+            let p_ktrace = rxc.ktrace.to_raw();
+            let p_stats = rxc.stats.to_raw();
+            mem::drop(rxc);
+
+            mgr.initdata.runtime_pointers.with_mut(|raw, _inner| {
+                raw.device_control = p_device_control;
+                raw.event = p_event;
+                raw.fw_log = p_fw_log;
+                raw.ktrace = p_ktrace;
+                raw.stats = p_stats;
+            });
+        }
+
+        let mut p_pipes: Vec<fw::initdata::raw::PipeChannels> = Vec::new();
+
+        for ((v, f), c) in mgr
+            .pipes
+            .vtx
+            .iter()
+            .zip(&mgr.pipes.frag)
+            .zip(&mgr.pipes.comp)
+        {
+            p_pipes.try_push(fw::initdata::raw::PipeChannels {
+                vtx: v.lock().to_raw(),
+                frag: f.lock().to_raw(),
+                comp: c.lock().to_raw(),
+            })?;
+        }
+
+        mgr.initdata.runtime_pointers.with_mut(|raw, _inner| {
+            for (i, p) in p_pipes.into_iter().enumerate() {
+                raw.pipes[i].vtx = p.vtx;
+                raw.pipes[i].frag = p.frag;
+                raw.pipes[i].comp = p.comp;
+            }
+        });
+
+        for (i, map) in cfg.io_mappings.iter().enumerate() {
+            if let Some(map) = map.as_ref() {
+                mgr.iomap(i, map)?;
+            }
+        }
+
+        let mgr = Arc::from(mgr);
+
+        let rtkit = Box::try_new(rtkit::RTKit::<GpuManager::ver>::new(
+            dev,
+            None,
+            0,
+            mgr.clone(),
+        )?)?;
+
+        *mgr.rtkit.lock() = Some(rtkit);
+
+        {
+            let mut rxc = mgr.rx_channels.lock();
+            rxc.event.set_manager(mgr.clone());
+        }
+
+        Ok(mgr)
+    }
+
+    fn make_initdata(
+        cfg: &'static hw::HwConfig,
+        dyncfg: &hw::DynConfig,
+        alloc: &mut KernelAllocators,
+    ) -> Result<Box<fw::types::GpuObject<fw::initdata::InitData::ver>>> {
+        let mut builder = initdata::InitDataBuilder::ver::new(alloc, cfg, dyncfg);
+        builder.build()
+    }
+
+    #[inline(never)]
+    fn make_uat(dev: &AsahiDevice, cfg: &'static hw::HwConfig) -> Result<Box<mmu::Uat>> {
+        Ok(Box::try_new(mmu::Uat::new(dev, cfg)?)?)
+    }
+
+    #[inline(never)]
+    fn make_mgr(
+        dev: &AsahiDevice,
+        cfg: &'static hw::HwConfig,
+        dyncfg: Box<hw::DynConfig>,
+        uat: Box<mmu::Uat>,
+        mut alloc: KernelAllocators,
+        event_manager: Arc<event::EventManager>,
+        initdata: Box<fw::types::GpuObject<fw::initdata::InitData::ver>>,
+    ) -> Result<UniqueArc<GpuManager::ver>> {
+        let mut pipes = PipeChannels {
+            vtx: Vec::new(),
+            frag: Vec::new(),
+            comp: Vec::new(),
+        };
+
+        for _i in 0..=NUM_PIPES - 1 {
+            pipes
+                .vtx
+                .try_push(Mutex::new(channel::PipeChannel::new(&mut alloc)?))?;
+            pipes
+                .frag
+                .try_push(Mutex::new(channel::PipeChannel::new(&mut alloc)?))?;
+            pipes
+                .comp
+                .try_push(Mutex::new(channel::PipeChannel::new(&mut alloc)?))?;
+        }
+
+        UniqueArc::try_new(GpuManager::ver {
+            dev: dev.clone(),
+            cfg,
+            dyncfg,
+            initialized: false,
+            initdata,
+            uat,
+            io_mappings: Vec::new(),
+            rtkit: Mutex::new(None),
+            rx_channels: Mutex::new(box_in_place!(RxChannels::ver {
+                event: channel::EventChannel::new(&mut alloc, event_manager.clone())?,
+                fw_log: channel::FwLogChannel::new(&mut alloc)?,
+                ktrace: channel::KTraceChannel::new(&mut alloc)?,
+                stats: channel::StatsChannel::ver::new(&mut alloc)?,
+            })?),
+            tx_channels: Mutex::new(Box::try_new(TxChannels {
+                device_control: channel::DeviceControlChannel::new(&mut alloc)?,
+            })?),
+            fwctl_channel: Mutex::new(Box::try_new(channel::FwCtlChannel::new(&mut alloc)?)?),
+            pipes,
+            event_manager,
+            buffer_mgr: buffer::BufferManager::new()?,
+            alloc: Mutex::new(alloc),
+            ids: Default::default(),
+        })
+    }
+
+    #[inline(never)]
+    fn make_dyncfg(
+        dev: &AsahiDevice,
+        res: &regs::Resources,
+        cfg: &'static hw::HwConfig,
+        uat: &mmu::Uat,
+    ) -> Result<Box<hw::DynConfig>> {
         let gpu_id = res.get_gpu_id()?;
 
         dev_info!(dev, "GPU Information:\n");
@@ -269,145 +443,15 @@ impl GpuManager::ver {
             return Err(EIO);
         }
 
-        let dyncfg = hw::DynConfig {
+        Ok(Box::try_new(hw::DynConfig {
             pwr: pwr_cfg,
             uat_ttb_base: uat.ttb_base(),
             id: gpu_id,
-        };
+        })?)
+    }
 
-        let mut alloc = KernelAllocators {
-            private: alloc::SimpleAllocator::new(dev, uat.kernel_vm(), 0x20, mmu::PROT_FW_PRIV_RW),
-            shared: alloc::SimpleAllocator::new(dev, uat.kernel_vm(), 0x20, mmu::PROT_FW_SHARED_RW),
-            gpu: alloc::SimpleAllocator::new(
-                dev,
-                uat.kernel_vm(),
-                0x20,
-                mmu::PROT_GPU_FW_SHARED_RW,
-            ),
-        };
-
-        let mut builder = initdata::InitDataBuilder::ver::new(&mut alloc, cfg, &dyncfg);
-        let initdata = builder.build()?;
-
-        let mut pipes = PipeChannels {
-            vtx: Vec::new(),
-            frag: Vec::new(),
-            comp: Vec::new(),
-        };
-
-        for _i in 0..=NUM_PIPES - 1 {
-            pipes
-                .vtx
-                .try_push(Mutex::new(channel::PipeChannel::new(&mut alloc)?))?;
-            pipes
-                .frag
-                .try_push(Mutex::new(channel::PipeChannel::new(&mut alloc)?))?;
-            pipes
-                .comp
-                .try_push(Mutex::new(channel::PipeChannel::new(&mut alloc)?))?;
-        }
-
-        let event_manager = Arc::try_new(event::EventManager::new(&mut alloc)?)?;
-
-        let mut mgr = UniqueArc::try_new(GpuManager::ver {
-            dev: dev.clone(),
-            cfg,
-            dyncfg,
-            initialized: false,
-            initdata,
-            uat,
-            io_mappings: Vec::new(),
-            rtkit: Mutex::new(None),
-            rx_channels: Mutex::new(RxChannels::ver {
-                event: channel::EventChannel::new(&mut alloc, event_manager.clone())?,
-                fw_log: channel::FwLogChannel::new(&mut alloc)?,
-                ktrace: channel::KTraceChannel::new(&mut alloc)?,
-                stats: channel::StatsChannel::ver::new(&mut alloc)?,
-            }),
-            tx_channels: Mutex::new(TxChannels {
-                device_control: channel::DeviceControlChannel::new(&mut alloc)?,
-            }),
-            fwctl_channel: Mutex::new(channel::FwCtlChannel::new(&mut alloc)?),
-            pipes,
-            event_manager,
-            buffer_mgr: buffer::BufferManager::new()?,
-            alloc: Mutex::new(alloc),
-            ids: Default::default(),
-        })?;
-
-        {
-            let fwctl = mgr.fwctl_channel.lock();
-            let p_fwctl = fwctl.to_raw();
-            mem::drop(fwctl);
-
-            mgr.initdata.fw_status.with_mut(|raw, _inner| {
-                raw.fwctl_channel = p_fwctl;
-            });
-        }
-
-        {
-            let txc = mgr.tx_channels.lock();
-            let p_device_control = txc.device_control.to_raw();
-            mem::drop(txc);
-
-            let rxc = mgr.rx_channels.lock();
-            let p_event = rxc.event.to_raw();
-            let p_fw_log = rxc.fw_log.to_raw();
-            let p_ktrace = rxc.ktrace.to_raw();
-            let p_stats = rxc.stats.to_raw();
-            mem::drop(rxc);
-
-            mgr.initdata.runtime_pointers.with_mut(|raw, _inner| {
-                raw.device_control = p_device_control;
-                raw.event = p_event;
-                raw.fw_log = p_fw_log;
-                raw.ktrace = p_ktrace;
-                raw.stats = p_stats;
-            });
-        }
-
-        let mut p_pipes: Vec<fw::initdata::raw::PipeChannels> = Vec::new();
-
-        for ((v, f), c) in mgr
-            .pipes
-            .vtx
-            .iter()
-            .zip(&mgr.pipes.frag)
-            .zip(&mgr.pipes.comp)
-        {
-            p_pipes.try_push(fw::initdata::raw::PipeChannels {
-                vtx: v.lock().to_raw(),
-                frag: f.lock().to_raw(),
-                comp: c.lock().to_raw(),
-            })?;
-        }
-
-        mgr.initdata.runtime_pointers.with_mut(|raw, _inner| {
-            for (i, p) in p_pipes.into_iter().enumerate() {
-                raw.pipes[i].vtx = p.vtx;
-                raw.pipes[i].frag = p.frag;
-                raw.pipes[i].comp = p.comp;
-            }
-        });
-
-        for (i, map) in cfg.io_mappings.iter().enumerate() {
-            if let Some(map) = map.as_ref() {
-                mgr.iomap(i, map)?;
-            }
-        }
-
-        let mgr = Arc::from(mgr);
-
-        let rtkit = rtkit::RTKit::<GpuManager::ver>::new(dev, None, 0, mgr.clone())?;
-
-        *mgr.rtkit.lock() = Some(rtkit);
-
-        {
-            let mut rxc = mgr.rx_channels.lock();
-            rxc.event.set_manager(mgr.clone());
-        }
-
-        Ok(mgr)
+    fn make_event_manager(alloc: &mut KernelAllocators) -> Result<Arc<event::EventManager>> {
+        Arc::try_new(event::EventManager::new(alloc)?)
     }
 
     fn iomap(&mut self, index: usize, map: &hw::IOMapping) -> Result {
@@ -713,7 +757,7 @@ impl GpuManager for GpuManager::ver {
         self.cfg
     }
     fn get_dyncfg(&self) -> &hw::DynConfig {
-        &self.dyncfg
+        &*self.dyncfg
     }
 }
 

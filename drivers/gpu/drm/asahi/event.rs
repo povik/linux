@@ -105,6 +105,7 @@ pub(crate) struct EventManager {
 }
 
 impl EventManager {
+    #[inline(never)]
     pub(crate) fn new(alloc: &mut gpu::KernelAllocators) -> Result<EventManager> {
         let mut owners = Vec::new();
         for _i in 0..(NUM_EVENTS as usize) {
