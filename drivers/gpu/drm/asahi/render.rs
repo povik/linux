@@ -139,8 +139,13 @@ impl Renderer::ver {
     ) -> Result<buffer::TileInfo> {
         let width: u32 = cmdbuf.fb_width;
         let height: u32 = cmdbuf.fb_height;
+        let layers: u32 = cmdbuf.layers;
 
         if width > 65536 || height > 65536 {
+            return Err(EINVAL);
+        }
+
+        if layers == 0 || layers > 2048 {
             return Err(EINVAL);
         }
 
@@ -219,7 +224,11 @@ impl Renderer::ver {
                 tiles_per_mtile,
                 tpc_stride: tpc_mtile_stride,
                 unk_24: 0x100,
-                unk_28: 0x8000,
+                unk_28: if layers > 1 {
+                    0xe000 | (layers - 1)
+                } else {
+                    0x8000
+                },
             },
         })
     }

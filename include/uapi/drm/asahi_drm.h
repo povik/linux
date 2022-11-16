@@ -110,6 +110,7 @@ struct drm_asahi_cmdbuf {
    __u32 utile_height;
 
    __u32 samples;
+   __u32 layers;
 
    __u32 encoder_id;
    __u32 cmd_ta_id;
