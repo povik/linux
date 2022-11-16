@@ -38,7 +38,4 @@ pub(crate) struct EncoderParams<'a> {
     pub(crate) unk_1c: u32,
     pub(crate) seq_buffer: GpuPointer<'a, &'a [u64]>,
     pub(crate) unk_28: U64,
-    pub(crate) unk_30: u32,
-    pub(crate) unk_34: u32,
-    pub(crate) unk_38: u32,
 }

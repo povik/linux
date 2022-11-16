@@ -378,8 +378,19 @@ impl Renderer for Renderer::ver {
 
         batches_frag.add(Box::try_new(barrier)?)?;
 
-        let unk0 = 0x0;
-        let unk1 = 0x0;
+        let unk0 = false;
+        let unk1 = false;
+
+        let mut tile_config: u64 = 0;
+        if !unk1 {
+            tile_config |= 0x280;
+        }
+        if cmdbuf.layers > 1 {
+            tile_config |= 1;
+        }
+        if cmdbuf.flags & bindings::ASAHI_CMDBUF_PROCESS_EMPTY_TILES as u64 != 0 {
+            tile_config |= 0x10000;
+        }
 
         let mut utile_config =
             ((tile_info.utile_width / 16) << 12) | ((tile_info.utile_height / 16) << 14);
@@ -505,8 +516,6 @@ impl Renderer for Renderer::ver {
                     unk3: 0x100000,
                 };
 
-                let unk_flag = false;
-
                 Ok(place!(
                     ptr,
                     fw::fragment::raw::RunFragment::ver {
@@ -563,8 +572,7 @@ impl Renderer for Renderer::ver {
                             tvb_heapmeta: inner.scene.tvb_heapmeta_pointer(),
                             mtile_stride_dwords: U64((4 * tile_info.params.rgn_size as u64) << 24),
                             tvb_heapmeta_2: inner.scene.tvb_heapmeta_pointer(),
-                            // 0x10000 - clear empty tiles
-                            unk_f8: U64(0x10280), //#0x10280 # TODO: varies 0, 0x280, 0x10000, 0x10280
+                            tile_config: U64(tile_config),
                             aux_fb: inner.aux_fb.gpu_pointer(),
                             unk_108: Default::default(),
                             pipeline_base: U64(0x11_00000000),
@@ -676,12 +684,14 @@ impl Renderer for Renderer::ver {
                             unk_1c: 0xffffffff,
                             seq_buffer: inner.scene.seq_buf_pointer(),
                             unk_28: U64(0x0), // fixed
-                            unk_30: unk_flag as u32,
-                            unk_34: (cmdbuf.flags
-                                & bindings::ASAHI_CMDBUF_NO_CLEAR_PIPELINE_TEXTURES as u64
-                                != 0) as u32,
-                            unk_38: 0, // 1 for boot stuff?
                         },
+                        process_empty_tiles: (cmdbuf.flags
+                            & bindings::ASAHI_CMDBUF_PROCESS_EMPTY_TILES as u64
+                            != 0) as u32,
+                        no_clear_pipeline_textures: (cmdbuf.flags
+                            & bindings::ASAHI_CMDBUF_NO_CLEAR_PIPELINE_TEXTURES as u64
+                            != 0) as u32,
+                        unk_param: 0, // 1 for boot stuff?
                         unk_pointee: 0,
                         meta: fw::job::JobMeta {
                             unk_4: 0,
@@ -690,10 +700,10 @@ impl Renderer for Renderer::ver {
                             stamp_value: next_frag,
                             stamp_slot: batches_frag.event().slot(),
                             unk_20: 0, // fixed
-                            unk_24: unk0,
+                            unk_24: if unk0 { 1 } else { 0 },
                             uuid: uuid_3d,
                             prev_stamp_value: batches_frag.event_value().counter(),
-                            unk_30: unk1, // sometimes 1?
+                            unk_30: if unk1 { 1 } else { 0 },
                             unk_buf_0: U64(0),
                             unk_buf_8: U64(0),
                             unk_buf_10: U64(0),
@@ -774,8 +784,8 @@ impl Renderer for Renderer::ver {
                     unk_50: 0,
                     unk_pointer: inner_weak_ptr!(ptr, unk_pointee),
                     unk_job_buf: inner_weak_ptr!(ptr, meta.unk_buf_0),
-                    unk_64: 0x0,  // fixed
-                    unk_68: unk1, // sometimes 1?
+                    unk_64: 0x0, // fixed
+                    unk_68: if unk1 { 1 } else { 0 },
                     uuid: uuid_ta,
                     unk_70: 0x0,                // fixed
                     unk_74: Default::default(), // fixed
@@ -925,12 +935,12 @@ impl Renderer for Renderer::ver {
                             unk_1c: 0xffffffff,
                             seq_buffer: inner.scene.seq_buf_pointer(),
                             unk_28: U64(0x0), // fixed
-                            unk_30: 0,
-                            unk_34: 0,
-                            unk_38: (cmdbuf.flags
-                                & bindings::ASAHI_CMDBUF_MEMORYLESS_RTS_USED as u64
-                                != 0) as u32,
                         },
+                        unk_55c: 0,
+                        unk_560: 0,
+                        memoryless_rts_used: (cmdbuf.flags
+                            & bindings::ASAHI_CMDBUF_MEMORYLESS_RTS_USED as u64
+                            != 0) as u32,
                         unk_568: 0,
                         unk_56c: 0,
                         meta: fw::job::JobMeta {
@@ -939,11 +949,11 @@ impl Renderer for Renderer::ver {
                             fw_stamp: batches_vtx.event().fw_stamp_pointer(),
                             stamp_value: next_vtx,
                             stamp_slot: batches_vtx.event().slot(),
-                            unk_20: 0,    // fixed
-                            unk_24: unk0, // 1 for boot stuff?
+                            unk_20: 0, // fixed
+                            unk_24: if unk0 { 1 } else { 0 },
                             uuid: uuid_ta,
                             prev_stamp_value: batches_vtx.event_value().counter(),
-                            unk_30: unk1, // sometimes 1?
+                            unk_30: if unk1 { 1 } else { 0 },
                             unk_buf_0: U64(0),
                             unk_buf_8: U64(0),
                             unk_buf_10: U64(0),
