@@ -81,14 +81,6 @@ struct drm_asahi_cmdbuf {
    __u64 flags;
 
    __u64 encoder_ptr;
-   __u32 encoder_id;
-
-   __u32 cmd_ta_id;
-   __u32 cmd_3d_id;
-
-   __u32 ppp_ctrl;
-   __u64 ppp_multisamplectl;
-   __u64 zls_ctrl;
 
    __u64 depth_buffer_1;
    __u64 depth_buffer_2;
@@ -107,11 +99,21 @@ struct drm_asahi_cmdbuf {
    __u64 scissor_array;
    __u64 depth_bias_array;
 
+   __u64 zls_ctrl;
+   __u64 ppp_multisamplectl;
+   __u32 ppp_ctrl;
+
    __u32 fb_width;
    __u32 fb_height;
 
    __u32 utile_width;
    __u32 utile_height;
+
+   __u32 samples;
+
+   __u32 encoder_id;
+   __u32 cmd_ta_id;
+   __u32 cmd_3d_id;
 
    __u32 iogpu_unk_49;
    __u32 iogpu_unk_212;

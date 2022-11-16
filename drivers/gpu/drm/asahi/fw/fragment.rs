@@ -201,7 +201,7 @@ pub(crate) mod raw {
         pub(crate) unk_buffer_buf: GpuWeakPointer<[u8]>,
         pub(crate) tvb_tilemap: GpuPointer<'a, &'a [u8]>,
         pub(crate) ppp_multisamplectl: U64,
-        pub(crate) unk_48: u32,
+        pub(crate) samples: u32,
         pub(crate) tiles_per_mtile_y: u16,
         pub(crate) tiles_per_mtile_x: u16,
         pub(crate) unk_50: U64,

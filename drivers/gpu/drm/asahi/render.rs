@@ -372,7 +372,14 @@ impl Renderer for Renderer::ver {
         let unk0 = 0x0;
         let unk1 = 0x0;
 
-        let utile_config = (tile_info.utile_width / 16) << 12 | (tile_info.utile_height / 16) << 14;
+        let mut utile_config =
+            ((tile_info.utile_width / 16) << 12) | ((tile_info.utile_height / 16) << 14);
+        utile_config |= match cmdbuf.samples {
+            1 => 0,
+            2 => 1,
+            4 => 2,
+            _ => return Err(EINVAL),
+        };
 
         let frag = GpuObject::new_prealloc(
             kalloc.private.prealloc()?,
@@ -507,7 +514,7 @@ impl Renderer for Renderer::ver {
                         unk_buffer_buf: inner.scene.kernel_buffer_pointer(),
                         tvb_tilemap: inner.scene.tvb_tilemap_pointer(),
                         ppp_multisamplectl: U64(cmdbuf.ppp_multisamplectl),
-                        unk_48: 0x1,
+                        samples: cmdbuf.samples,
                         tiles_per_mtile_y: tile_info.tiles_per_mtile_y as u16,
                         tiles_per_mtile_x: tile_info.tiles_per_mtile_x as u16,
                         unk_50: U64(0),
