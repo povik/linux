@@ -638,7 +638,7 @@ impl Renderer for Renderer::ver {
                             stencil_clear_val2: cmdbuf.stencil_clear_value,
                             unk_375: 3, // sometimes 1
                             unk_376: 0x0,
-                            unk_378: cmdbuf.iogpu_unk_49,
+                            iogpu_unk_49: cmdbuf.iogpu_unk_49,
                             unk_37c: 0x0,
                             unk_380: U64(0x0),
                             unk_388: U64(0x0),
