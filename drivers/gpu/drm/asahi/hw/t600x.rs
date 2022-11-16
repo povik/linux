@@ -73,7 +73,6 @@ pub(crate) const HWCONFIG_T6002: super::HwConfig = HwConfig {
     db: HwConfigB {
         unk_4e0: 4,
         unk_534: 1,
-        unk_564: 5,
         unk_ab8: 0x2084,
         unk_abc: 0x80,
     },

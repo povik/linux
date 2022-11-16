@@ -209,6 +209,19 @@ impl Resources {
             return Err(EIO);
         }
 
+        let (gpu_rev, gpu_rev_id) = match (id_version >> 8) & 0xff {
+            0x00 => (hw::GpuRevision::A0, hw::GpuRevisionID::A0),
+            0x01 => (hw::GpuRevision::A1, hw::GpuRevisionID::A1),
+            0x10 => (hw::GpuRevision::B0, hw::GpuRevisionID::B0),
+            0x11 => (hw::GpuRevision::B1, hw::GpuRevisionID::B1),
+            0x20 => (hw::GpuRevision::C0, hw::GpuRevisionID::C0),
+            0x21 => (hw::GpuRevision::C1, hw::GpuRevisionID::C1),
+            a => {
+                dev_err!(self.dev, "Unknown GPU revision {}", a);
+                return Err(ENODEV);
+            }
+        };
+
         Ok(hw::GpuIdConfig {
             gpu_gen: match (id_version >> 24) & 0xff {
                 4 => hw::GpuGen::G13,
@@ -234,19 +247,8 @@ impl Resources {
                     return Err(ENODEV);
                 }
             },
-            gpu_rev: match (id_unk18 >> 8) & 0xff {
-                // Guess
-                0 => hw::GpuRevision::A0,
-                1 => hw::GpuRevision::A1,
-                2 => hw::GpuRevision::B0,
-                3 => hw::GpuRevision::B1,
-                4 => hw::GpuRevision::C0,
-                5 => hw::GpuRevision::C1,
-                a => {
-                    dev_err!(self.dev, "Unknown GPU revision {}", a);
-                    return Err(ENODEV);
-                }
-            },
+            gpu_rev,
+            gpu_rev_id,
             max_dies: (id_clusters >> 20) & 0xf,
             num_clusters,
             num_cores,

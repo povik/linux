@@ -368,7 +368,7 @@ impl<'a> InitDataBuilder::ver<'a> {
                         unk_554: 0x1,
                         uat_ttb_base: self.dyncfg.uat_ttb_base,
                         gpu_core_id: self.cfg.gpu_core as u32,
-                        unk_564: self.cfg.db.unk_564,
+                        gpu_rev_id: self.dyncfg.id.gpu_rev_id as u32,
                         num_cores: self.dyncfg.id.num_cores * self.dyncfg.id.num_clusters,
                         max_pstate: self.dyncfg.pwr.perf_states.len() as u32 - 1,
                         #[ver(V < V13_0B4)]

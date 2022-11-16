@@ -610,7 +610,7 @@ pub(crate) mod raw {
         pub(crate) unk_554: u32,
         pub(crate) uat_ttb_base: u64,
         pub(crate) gpu_core_id: u32,
-        pub(crate) unk_564: u32,
+        pub(crate) gpu_rev_id: u32,
         pub(crate) num_cores: u32,
         pub(crate) max_pstate: u32,
 

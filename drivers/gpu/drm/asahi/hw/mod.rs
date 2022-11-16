@@ -63,6 +63,18 @@ pub(crate) enum GpuRevision {
     C1 = 0x21,
 }
 
+#[derive(Debug, PartialEq, Copy, Clone)]
+#[repr(u32)]
+pub(crate) enum GpuRevisionID {
+    // Unknown = 0,
+    A0 = 1,
+    A1 = 2,
+    B0 = 3,
+    B1 = 4,
+    C0 = 5,
+    C1 = 6,
+}
+
 pub(crate) mod feat {
     pub(crate) mod compat {}
     pub(crate) mod incompat {
@@ -122,7 +134,6 @@ pub(crate) struct HwConfigA {
 pub(crate) struct HwConfigB {
     pub(crate) unk_4e0: u64,
     pub(crate) unk_534: u32,
-    pub(crate) unk_564: u32,
     pub(crate) unk_ab8: u32,
     pub(crate) unk_abc: u32,
 }
@@ -182,6 +193,7 @@ pub(crate) struct GpuIdConfig {
     pub(crate) gpu_gen: GpuGen,
     pub(crate) gpu_variant: GpuVariant,
     pub(crate) gpu_rev: GpuRevision,
+    pub(crate) gpu_rev_id: GpuRevisionID,
     pub(crate) max_dies: u32,
     pub(crate) num_clusters: u32,
     pub(crate) num_cores: u32,
