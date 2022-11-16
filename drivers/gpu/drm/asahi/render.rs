@@ -573,7 +573,7 @@ impl Renderer for Renderer::ver {
                             unk_24: 0x0,
                             tile_counts: ((tile_info.tiles_y - 1) << 12) | (tile_info.tiles_x - 1),
                             iogpu_unk_212: cmdbuf.iogpu_unk_212,
-                            depth_clear_val1: F32::from_bits(cmdbuf.depth_clear_value),
+                            depth_clear_val1: cmdbuf.depth_clear_value,
                             stencil_clear_val1: cmdbuf.stencil_clear_value,
                             unk_35: 0x7, // clear flags? 2 : depth 4 : stencil?
                             unk_36: 0x0,
@@ -634,7 +634,7 @@ impl Renderer for Renderer::ver {
                                 cmdbuf.partial_store_pipeline_bind,
                                 cmdbuf.partial_store_pipeline | 4
                             ),
-                            depth_clear_val2: F32::from_bits(cmdbuf.depth_clear_value),
+                            depth_clear_val2: cmdbuf.depth_clear_value,
                             stencil_clear_val2: cmdbuf.stencil_clear_value,
                             unk_375: 3, // sometimes 1
                             unk_376: 0x0,
