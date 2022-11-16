@@ -86,6 +86,7 @@ struct drm_asahi_cmdbuf {
    __u32 cmd_3d_id;
 
    __u32 ppp_ctrl;
+   __u64 ppp_multisamplectl;
    __u64 zls_ctrl;
 
    __u64 depth_buffer_1;

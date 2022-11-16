@@ -209,7 +209,7 @@ impl Renderer::ver {
             tpc_size,
             params: fw::vertex::raw::TilingParameters {
                 rgn_size,
-                ppp_multisamplectl: 0x88,
+                unk_4: 0x88,
                 ppp_ctrl: cmdbuf.ppp_ctrl,
                 x_max: (width - 1) as u16,
                 y_max: (height - 1) as u16,
@@ -506,7 +506,7 @@ impl Renderer for Renderer::ver {
                         scene: inner.scene.gpu_pointer(),
                         unk_buffer_buf: inner.scene.kernel_buffer_pointer(),
                         tvb_tilemap: inner.scene.tvb_tilemap_pointer(),
-                        unk_40: U64(0x88),
+                        ppp_multisamplectl: U64(cmdbuf.ppp_multisamplectl),
                         unk_48: 0x1,
                         tiles_per_mtile_y: tile_info.tiles_per_mtile_y as u16,
                         tiles_per_mtile_x: tile_info.tiles_per_mtile_x as u16,
@@ -523,7 +523,7 @@ impl Renderer for Renderer::ver {
                                 pipeline_bind: U64(cmdbuf.load_pipeline_bind as u64),
                                 address: U64(cmdbuf.load_pipeline as u64 | 4),
                             },
-                            unk_18: U64(0x88),
+                            ppp_multisamplectl: U64(cmdbuf.ppp_multisamplectl),
                             scissor_array: U64(cmdbuf.scissor_array),
                             depth_bias_array: U64(cmdbuf.depth_bias_array),
                             aux_fb_info: aux_fb_info,
@@ -853,7 +853,7 @@ impl Renderer for Renderer::ver {
                             tvb_cluster_meta1: inner.scene.meta_1_pointer(),
                             utile_config: utile_config,
                             unk_4c: 0,
-                            unk_50: U64(0x88), // fixed
+                            ppp_multisamplectl: U64(cmdbuf.ppp_multisamplectl), // fixed
                             tvb_heapmeta_2: inner.scene.tvb_heapmeta_pointer(),
                             unk_60: U64(0x0), // fixed
                             core_mask: Array::new([

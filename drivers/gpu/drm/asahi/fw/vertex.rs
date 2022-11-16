@@ -16,7 +16,7 @@ pub(crate) mod raw {
     #[repr(C)]
     pub(crate) struct TilingParameters {
         pub(crate) rgn_size: u32,
-        pub(crate) ppp_multisamplectl: u32,
+        pub(crate) unk_4: u32,
         pub(crate) ppp_ctrl: u32,
         pub(crate) x_max: u16,
         pub(crate) y_max: u16,
@@ -45,7 +45,7 @@ pub(crate) mod raw {
         pub(crate) tvb_cluster_meta1: Option<GpuPointer<'a, &'a [u8]>>,
         pub(crate) utile_config: u32,
         pub(crate) unk_4c: u32,
-        pub(crate) unk_50: U64,
+        pub(crate) ppp_multisamplectl: U64,
         pub(crate) tvb_heapmeta_2: GpuPointer<'a, &'a [u8]>,
         pub(crate) unk_60: U64,
         pub(crate) core_mask: Array<2, u32>,
