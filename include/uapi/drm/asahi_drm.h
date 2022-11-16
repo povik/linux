@@ -119,6 +119,9 @@ struct drm_asahi_cmdbuf {
    __u32 iogpu_unk_212;
    __u32 iogpu_unk_214;
 
+   __u32 merge_upper_x;
+   __u32 merge_upper_y;
+
    __u32 load_pipeline;
    __u32 load_pipeline_bind;
 
