@@ -16,7 +16,7 @@
 extern "C" {
 #endif
 
-#define DRM_ASAHI_UNSTABLE_UABI_VERSION 1
+#define DRM_ASAHI_UNSTABLE_UABI_VERSION 2
 
 #define DRM_ASAHI_GET_PARAM			0x00
 #define DRM_ASAHI_SUBMIT			0x01
@@ -107,6 +107,12 @@ struct drm_asahi_cmdbuf {
 
    __u32 fb_width;
    __u32 fb_height;
+
+   __u32 utile_width;
+   __u32 utile_height;
+
+   __u32 iogpu_unk_49;
+   __u32 iogpu_unk_212;
 
    __u32 load_pipeline;
    __u32 load_pipeline_bind;
