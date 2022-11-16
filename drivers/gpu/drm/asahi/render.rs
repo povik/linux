@@ -481,7 +481,7 @@ impl Renderer for Renderer::ver {
             },
             |inner, ptr| {
                 let aux_fb_info = fw::fragment::raw::AuxFBInfo::ver {
-                    unk1: 0xc000,
+                    iogpu_unk_214: cmdbuf.iogpu_unk_214,
                     unk2: 0,
                     width: cmdbuf.fb_width,
                     height: cmdbuf.fb_height,
