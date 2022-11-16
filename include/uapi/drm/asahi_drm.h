@@ -75,6 +75,7 @@ struct drm_asahi_attachment {
 
 #define ASAHI_CMDBUF_NO_CLEAR_PIPELINE_TEXTURES (1UL << 0)
 #define ASAHI_CMDBUF_SET_WHEN_RELOADING_Z_OR_S (1UL << 1)
+#define ASAHI_CMDBUF_MEMORYLESS_RTS_USED (1UL << 2)
 
 struct drm_asahi_cmdbuf {
    __u64 flags;

@@ -914,7 +914,9 @@ impl Renderer for Renderer::ver {
                             unk_28: U64(0x0), // fixed
                             unk_30: 0,
                             unk_34: 0,
-                            unk_38: 0, // 1 for boot stuff?
+                            unk_38: (cmdbuf.flags
+                                & bindings::ASAHI_CMDBUF_MEMORYLESS_RTS_USED as u64
+                                != 0) as u32,
                         },
                         unk_568: 0,
                         unk_56c: 0,
