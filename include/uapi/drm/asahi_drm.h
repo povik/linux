@@ -135,9 +135,8 @@ struct drm_asahi_cmdbuf {
    __u32 partial_store_pipeline_bind;
 
    __u32 depth_dimensions;
-   __u32 depth_clear_value;
-   __u8 stencil_clear_value;
-   __u8 pad2[3];
+   __u32 isp_bgobjdepth;
+   __u32 isp_bgobjvals;
 
    struct drm_asahi_attachment attachments[ASAHI_MAX_ATTACHMENTS];
    __u32 attachment_count;

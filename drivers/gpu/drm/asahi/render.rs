@@ -580,10 +580,9 @@ impl Renderer for Renderer::ver {
                             unk_24: 0x0,
                             tile_counts: ((tile_info.tiles_y - 1) << 12) | (tile_info.tiles_x - 1),
                             iogpu_unk_212: cmdbuf.iogpu_unk_212,
-                            depth_clear_val1: cmdbuf.depth_clear_value,
-                            stencil_clear_val1: cmdbuf.stencil_clear_value,
-                            unk_35: 0x7, // clear flags? 2 : depth 4 : stencil?
-                            unk_36: 0x0,
+                            isp_bgobjdepth: cmdbuf.isp_bgobjdepth,
+                            // TODO: does this flag need to be exposed to userspace?
+                            isp_bgobjvals: cmdbuf.isp_bgobjvals | 0x400,
                             unk_38: 0x0,
                             unk_3c: 0x1,
                             unk_40: 0,
@@ -641,10 +640,8 @@ impl Renderer for Renderer::ver {
                                 cmdbuf.partial_store_pipeline_bind,
                                 cmdbuf.partial_store_pipeline | 4
                             ),
-                            depth_clear_val2: cmdbuf.depth_clear_value,
-                            stencil_clear_val2: cmdbuf.stencil_clear_value,
-                            unk_375: 3, // sometimes 1
-                            unk_376: 0x0,
+                            isp_bgobjdepth: cmdbuf.isp_bgobjdepth,
+                            isp_bgobjvals: cmdbuf.isp_bgobjvals,
                             iogpu_unk_49: cmdbuf.iogpu_unk_49,
                             unk_37c: 0x0,
                             unk_380: U64(0x0),
