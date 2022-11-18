@@ -18,12 +18,14 @@ use core::sync::atomic;
 pub(crate) use core::sync::atomic::{
     AtomicI16, AtomicI32, AtomicI64, AtomicI8, AtomicU16, AtomicU32, AtomicU64, AtomicU8,
 };
-pub(crate) type GpuObject<T> = object::GpuObject<T, alloc::GenericAlloc<T, alloc::SimpleAllocation>>;
-pub(crate) type GpuArray<T> = object::GpuArray<T, alloc::GenericAlloc<T, alloc::SimpleAllocation>>;
-pub(crate) type GpuOnlyArray<T> = object::GpuOnlyArray<T, alloc::GenericAlloc<T, alloc::SimpleAllocation>>;
+pub(crate) type GpuObject<T> =
+    object::GpuObject<T, alloc::GenericAlloc<T, alloc::DefaultAllocation>>;
+pub(crate) type GpuArray<T> = object::GpuArray<T, alloc::GenericAlloc<T, alloc::DefaultAllocation>>;
+pub(crate) type GpuOnlyArray<T> =
+    object::GpuOnlyArray<T, alloc::GenericAlloc<T, alloc::DefaultAllocation>>;
 pub(crate) use crate::alloc::Allocator as _Allocator;
 pub(crate) use crate::event::EventValue;
-pub(crate) type Allocator = alloc::SimpleAllocator;
+pub(crate) type Allocator = alloc::DefaultAllocator;
 pub(crate) use core::fmt::Debug;
 pub(crate) use core::marker::PhantomData;
 

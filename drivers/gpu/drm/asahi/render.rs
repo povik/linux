@@ -30,7 +30,7 @@ pub(crate) trait Renderer: Send + Sync {
     fn render(
         &self,
         vm: &mmu::Vm,
-        ualloc: &Arc<Mutex<alloc::SimpleAllocator>>,
+        ualloc: &Arc<Mutex<alloc::DefaultAllocator>>,
         cmd: &bindings::drm_asahi_submit,
         id: u64,
     ) -> Result;
@@ -58,8 +58,8 @@ impl Renderer::ver {
     pub(crate) fn new(
         dev: &AsahiDevice,
         alloc: &mut gpu::KernelAllocators,
-        ualloc: Arc<Mutex<alloc::SimpleAllocator>>,
-        ualloc_priv: Arc<Mutex<alloc::SimpleAllocator>>,
+        ualloc: Arc<Mutex<alloc::DefaultAllocator>>,
+        ualloc_priv: Arc<Mutex<alloc::DefaultAllocator>>,
         event_manager: Arc<event::EventManager>,
         mgr: &buffer::BufferManager,
         id: u64,
@@ -239,7 +239,7 @@ impl Renderer for Renderer::ver {
     fn render(
         &self,
         vm: &mmu::Vm,
-        ualloc: &Arc<Mutex<alloc::SimpleAllocator>>,
+        ualloc: &Arc<Mutex<alloc::DefaultAllocator>>,
         cmd: &bindings::drm_asahi_submit,
         id: u64,
     ) -> Result {

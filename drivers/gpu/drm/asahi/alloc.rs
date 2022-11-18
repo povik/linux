@@ -25,6 +25,9 @@ use core::ptr::NonNull;
 
 const DEBUG_CLASS: DebugFlags = DebugFlags::Alloc;
 
+pub(crate) type DefaultAllocator = SimpleAllocator;
+pub(crate) type DefaultAllocation = SimpleAllocation;
+
 pub(crate) trait RawAllocation {
     fn ptr(&self) -> Option<NonNull<u8>>;
     fn gpu_ptr(&self) -> u64;
@@ -218,38 +221,25 @@ pub(crate) struct SimpleAllocator {
 }
 
 impl SimpleAllocator {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
-        dev: &AsahiDevice,
-        vm: &mmu::Vm,
-        min_align: usize,
-        prot: u32,
-    ) -> SimpleAllocator {
-        SimpleAllocator {
-            dev: dev.clone(),
-            vm: vm.clone(),
-            start: 0,
-            end: u64::MAX,
-            prot,
-            min_align,
-        }
-    }
-
-    pub(crate) fn new_with_range(
         dev: &AsahiDevice,
         vm: &mmu::Vm,
         start: u64,
         end: u64,
-        prot: u32,
         min_align: usize,
-    ) -> SimpleAllocator {
-        SimpleAllocator {
+        prot: u32,
+        _block_size: usize,
+        _cpu_maps: bool,
+    ) -> Result<SimpleAllocator> {
+        Ok(SimpleAllocator {
             dev: dev.clone(),
             vm: vm.clone(),
             start,
             end,
             prot,
             min_align,
-        }
+        })
     }
 }
 

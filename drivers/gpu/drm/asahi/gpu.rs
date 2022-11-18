@@ -39,10 +39,17 @@ const MSG_RX_DOORBELL: u64 = 0x42 << 48;
 const DOORBELL_KICKFW: u64 = 0x10;
 const DOORBELL_DEVCTRL: u64 = 0x11;
 
+const IOVA_KERN_PRIV_BASE: u64 = 0xffffffa000000000;
+const IOVA_KERN_PRIV_TOP: u64 = 0xffffffa7ffffffff;
+const IOVA_KERN_SHARED_BASE: u64 = 0xffffffa800000000;
+const IOVA_KERN_SHARED_TOP: u64 = 0xffffffaeffffffff;
+const IOVA_KERN_GPU_BASE: u64 = 0xffffffaf00000000;
+const IOVA_KERN_GPU_TOP: u64 = 0xffffffafffffffff;
+
 pub(crate) struct KernelAllocators {
-    pub(crate) private: alloc::SimpleAllocator,
-    pub(crate) shared: alloc::SimpleAllocator,
-    pub(crate) gpu: alloc::SimpleAllocator,
+    pub(crate) private: alloc::DefaultAllocator,
+    pub(crate) shared: alloc::DefaultAllocator,
+    pub(crate) gpu: alloc::DefaultAllocator,
 }
 
 #[versions(AGX)]
@@ -121,8 +128,8 @@ pub(crate) trait GpuManager: Send + Sync {
     fn bind_vm(&self, vm: &mmu::Vm) -> Result<mmu::VmBind>;
     fn new_renderer(
         &self,
-        ualloc: Arc<Mutex<alloc::SimpleAllocator>>,
-        ualloc_priv: Arc<Mutex<alloc::SimpleAllocator>>,
+        ualloc: Arc<Mutex<alloc::DefaultAllocator>>,
+        ualloc_priv: Arc<Mutex<alloc::DefaultAllocator>>,
     ) -> Result<Box<dyn render::Renderer>>;
     fn submit_batch(&self, batch: workqueue::WorkQueueBatch<'_>) -> Result;
     fn ids(&self) -> &SequenceIDs;
@@ -189,14 +196,36 @@ impl GpuManager::ver {
         let dyncfg = Self::make_dyncfg(dev, res, cfg, &uat)?;
 
         let mut alloc = KernelAllocators {
-            private: alloc::SimpleAllocator::new(dev, uat.kernel_vm(), 0x20, mmu::PROT_FW_PRIV_RW),
-            shared: alloc::SimpleAllocator::new(dev, uat.kernel_vm(), 0x20, mmu::PROT_FW_SHARED_RW),
-            gpu: alloc::SimpleAllocator::new(
+            private: alloc::DefaultAllocator::new(
                 dev,
                 uat.kernel_vm(),
+                IOVA_KERN_PRIV_BASE,
+                IOVA_KERN_PRIV_TOP,
+                0x20,
+                mmu::PROT_FW_PRIV_RW,
+                1024 * 1024,
+                true,
+            )?,
+            shared: alloc::DefaultAllocator::new(
+                dev,
+                uat.kernel_vm(),
+                IOVA_KERN_SHARED_BASE,
+                IOVA_KERN_SHARED_TOP,
+                0x20,
+                mmu::PROT_FW_SHARED_RW,
+                1024 * 1024,
+                true,
+            )?,
+            gpu: alloc::DefaultAllocator::new(
+                dev,
+                uat.kernel_vm(),
+                IOVA_KERN_GPU_BASE,
+                IOVA_KERN_GPU_TOP,
                 0x20,
                 mmu::PROT_GPU_FW_SHARED_RW,
-            ),
+                64 * 1024,
+                true,
+            )?,
         };
 
         let event_manager = Self::make_event_manager(&mut alloc)?;
@@ -593,8 +622,8 @@ impl GpuManager for GpuManager::ver {
 
     fn new_renderer(
         &self,
-        ualloc: Arc<Mutex<alloc::SimpleAllocator>>,
-        ualloc_priv: Arc<Mutex<alloc::SimpleAllocator>>,
+        ualloc: Arc<Mutex<alloc::DefaultAllocator>>,
+        ualloc_priv: Arc<Mutex<alloc::DefaultAllocator>>,
     ) -> Result<Box<dyn render::Renderer>> {
         let mut kalloc = self.alloc();
         let id = self.ids.renderer.next();

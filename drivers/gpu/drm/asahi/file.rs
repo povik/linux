@@ -20,9 +20,9 @@ const DEBUG_CLASS: DebugFlags = DebugFlags::File;
 pub(crate) struct File {
     id: u64,
     vm: mmu::Vm,
-    ualloc: Arc<Mutex<alloc::SimpleAllocator>>,
-    ualloc_priv: Arc<Mutex<alloc::SimpleAllocator>>,
-    ualloc_extra: alloc::SimpleAllocator,
+    ualloc: Arc<Mutex<alloc::DefaultAllocator>>,
+    ualloc_priv: Arc<Mutex<alloc::DefaultAllocator>>,
+    ualloc_extra: alloc::DefaultAllocator,
     unk_page: GpuOnlyArray<u8>,
     renderer: Box<dyn render::Renderer>,
 }
@@ -50,31 +50,37 @@ impl drm::file::DriverFile for File {
         let gpu = &device.data().gpu;
         let vm = gpu.new_vm()?;
         let id = gpu.ids().file.next();
-        let ualloc = Arc::try_new(Mutex::new(alloc::SimpleAllocator::new_with_range(
+        let ualloc = Arc::try_new(Mutex::new(alloc::DefaultAllocator::new(
             device,
             &vm,
             VM_DRV_GPU_START,
             VM_DRV_GPU_END,
-            mmu::PROT_GPU_SHARED_RW,
             buffer::PAGE_SIZE,
-        )))?;
-        let ualloc_priv = Arc::try_new(Mutex::new(alloc::SimpleAllocator::new_with_range(
+            mmu::PROT_GPU_SHARED_RW,
+            1024 * 1024,
+            true,
+        )?))?;
+        let ualloc_priv = Arc::try_new(Mutex::new(alloc::DefaultAllocator::new(
             device,
             &vm,
             VM_DRV_GPUFW_START,
             VM_DRV_GPUFW_END,
-            mmu::PROT_GPU_FW_PRIV_RW,
             buffer::PAGE_SIZE,
-        )))?;
-        let mut ualloc_extra = alloc::SimpleAllocator::new_with_range(
+            mmu::PROT_GPU_FW_PRIV_RW,
+            1024 * 1024,
+            true,
+        )?))?;
+        let mut ualloc_extra = alloc::DefaultAllocator::new(
             device,
             &vm,
             VM_UNK_PAGE,
             VM_UNK_PAGE + 0x8000,
+            0x4000,
             mmu::PROT_GPU_SHARED_RW,
             0x4000,
-        );
-        let unk_page: GpuOnlyArray<u8> = ualloc_extra.array_empty(1)?;
+            false,
+        )?;
+        let unk_page: GpuOnlyArray<u8> = ualloc_extra.array_gpuonly(1)?;
         let renderer = device
             .data()
             .gpu

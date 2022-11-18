@@ -30,8 +30,8 @@ const MAX_SIZE: usize = 1 << 30; // 1 GiB
 #[versions(AGX)]
 pub(crate) struct BufferInner {
     info: GpuObject<buffer::Info::ver>,
-    ualloc: Arc<Mutex<alloc::SimpleAllocator>>,
-    ualloc_priv: Arc<Mutex<alloc::SimpleAllocator>>,
+    ualloc: Arc<Mutex<alloc::DefaultAllocator>>,
+    ualloc_priv: Arc<Mutex<alloc::DefaultAllocator>>,
     blocks: Vec<GpuArray<u8>>,
     max_blocks: usize,
     mgr: BufferManager,
@@ -196,8 +196,8 @@ impl Buffer::ver {
     pub(crate) fn new(
         gpu: &dyn gpu::GpuManager,
         alloc: &mut gpu::KernelAllocators,
-        ualloc: Arc<Mutex<alloc::SimpleAllocator>>,
-        ualloc_priv: Arc<Mutex<alloc::SimpleAllocator>>,
+        ualloc: Arc<Mutex<alloc::DefaultAllocator>>,
+        ualloc_priv: Arc<Mutex<alloc::DefaultAllocator>>,
         mgr: &BufferManager,
     ) -> Result<Buffer::ver> {
         let max_pages = MAX_SIZE / PAGE_SIZE;
