@@ -189,11 +189,11 @@ pub(crate) struct SimpleAllocation {
 
 impl Drop for SimpleAllocation {
     fn drop(&mut self) {
-        /* dev_info!(
+        mod_dev_dbg!(
             self.device(),
-            "Allocator: drop object @ {:#x}",
+            "SimpleAllocator: drop object @ {:#x}",
             self.gpu_ptr()
-        ); */
+        );
         if debug_enabled(DebugFlags::FillAllocations) {
             if let Ok(vmap) = self.obj.vmap() {
                 vmap.as_mut_slice().fill(0x42);
@@ -264,14 +264,14 @@ impl Allocator for SimpleAllocator {
         let align = self.min_align.max(align);
         let offset = (size_aligned - size) & !(align - 1);
 
-        //         dev_info!(
-        //             &self.dev,
-        //             "Allocator::new: size={:#x} size_al={:#x} al={:#x} off={:#x}",
-        //             size,
-        //             size_aligned,
-        //             align,
-        //             offset
-        //         );
+        mod_dev_dbg!(
+            &self.dev,
+            "SimpleAllocator::new: size={:#x} size_al={:#x} al={:#x} off={:#x}",
+            size,
+            size_aligned,
+            align,
+            offset
+        );
 
         let mut obj = crate::gem::new_kernel_object(&self.dev, size_aligned)?;
         let p = obj.vmap()?.as_mut_ptr() as *mut u8;
@@ -290,14 +290,14 @@ impl Allocator for SimpleAllocator {
         let ptr = unsafe { p.add(offset) } as *mut u8;
         let gpu_ptr = (iova + offset) as u64;
 
-        //         dev_info!(
-        //             &self.dev,
-        //             "Allocator::new -> {:#?} / {:#?} | {:#x} / {:#x}",
-        //             p,
-        //             ptr,
-        //             iova,
-        //             gpu_ptr
-        //         );
+        mod_dev_dbg!(
+            &self.dev,
+            "SimpleAllocator::new -> {:#?} / {:#?} | {:#x} / {:#x}",
+            p,
+            ptr,
+            iova,
+            gpu_ptr
+        );
 
         Ok(SimpleAllocation {
             dev: self.dev.clone(),
