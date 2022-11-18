@@ -121,6 +121,30 @@ impl ObjectRef {
         Ok(iova)
     }
 
+    pub(crate) fn map_at(
+        &mut self,
+        vm: &crate::mmu::Vm,
+        addr: u64,
+        prot: u32,
+        guard: bool,
+    ) -> Result {
+        let vm_id = vm.id();
+        let mut mappings = self.gem.mappings.lock();
+        for (mapped_id, _mapping) in mappings.iter() {
+            if *mapped_id == vm_id {
+                return Err(EBUSY);
+            }
+        }
+
+        let sgt = self.gem.sg_table()?;
+        let new_mapping = vm.map_at(addr, self.gem.size(), sgt, prot, guard)?;
+
+        let iova = new_mapping.iova();
+        assert!(iova == addr as usize);
+        mappings.try_push((vm_id, new_mapping))?;
+        Ok(())
+    }
+
     pub(crate) fn drop_mappings(&mut self, vm_id: u64) {
         self.gem.drop_mappings(vm_id);
     }

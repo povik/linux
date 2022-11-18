@@ -738,6 +738,34 @@ impl Vm {
         Ok(Mapping(node))
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn map_at(
+        &self,
+        addr: u64,
+        size: usize,
+        sgt: gem::SGTable,
+        prot: u32,
+        guard: bool,
+    ) -> Result<Mapping> {
+        let mut inner = self.inner.lock();
+
+        let uat_inner = inner.uat_inner.clone();
+        let node = inner.mm.reserve_node(
+            MappingInner {
+                owner: self.inner.clone(),
+                uat_inner,
+                prot,
+                sgt: Some(sgt),
+                mapped_size: size,
+            },
+            addr,
+            (size + if guard { UAT_PGSZ } else { 0 }) as u64, // Add guard page
+            0,
+        )?;
+
+        inner.map_node(&node, prot)?;
+        Ok(Mapping(node))
+    }
     pub(crate) fn map_io(&self, phys: usize, size: usize, rw: bool) -> Result<Mapping> {
         let prot = if rw { PROT_FW_MMIO_RW } else { PROT_FW_MMIO_RO };
         let mut inner = self.inner.lock();
