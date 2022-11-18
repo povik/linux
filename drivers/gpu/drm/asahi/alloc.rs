@@ -189,6 +189,7 @@ impl SimpleAllocator {
             self.end,
             self.min_align.max(mmu::UAT_PGSZ) as u64,
             self.prot,
+            true,
         )?;
 
         let ptr = unsafe { p.add(offset) } as *mut T;
@@ -297,6 +298,7 @@ impl Allocator for SimpleAllocator {
             self.end,
             self.min_align.max(mmu::UAT_PGSZ) as u64,
             self.prot,
+            true,
         )?;
         let gpu_ptr = (iova + offset) as u64;
 

@@ -282,6 +282,7 @@ pub(crate) struct MappingInner {
     owner: Arc<Mutex<VmInner>>,
     uat_inner: Arc<UatInner>,
     prot: u32,
+    mapped_size: usize,
     sgt: Option<gem::SGTable>,
 }
 
@@ -293,7 +294,7 @@ impl Mapping {
     }
 
     pub(crate) fn size(&self) -> usize {
-        self.0.size() as usize - UAT_PGSZ // Exclude guard page
+        self.0.mapped_size
     }
 
     fn remap_uncached_and_flush(&mut self) {
@@ -694,6 +695,7 @@ impl Vm {
                 uat_inner,
                 prot: PROT_FW_SHARED_RW,
                 sgt: Some(sgt),
+                mapped_size: size,
             },
             (size + UAT_PGSZ) as u64, // Add guard page
         )?;
@@ -702,6 +704,7 @@ impl Vm {
         Ok(Mapping(node))
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn map_in_range(
         &self,
         size: usize,
@@ -710,6 +713,7 @@ impl Vm {
         start: u64,
         end: u64,
         prot: u32,
+        guard: bool,
     ) -> Result<Mapping> {
         let mut inner = self.inner.lock();
 
@@ -720,8 +724,9 @@ impl Vm {
                 uat_inner,
                 prot,
                 sgt: Some(sgt),
+                mapped_size: size,
             },
-            (size + UAT_PGSZ) as u64, // Add guard page
+            (size + if guard { UAT_PGSZ } else { 0 }) as u64, // Add guard page
             alignment,
             0,
             start,
@@ -744,6 +749,7 @@ impl Vm {
                 uat_inner,
                 prot,
                 sgt: None,
+                mapped_size: size,
             },
             (size + UAT_PGSZ) as u64, // Add guard page
         )?;

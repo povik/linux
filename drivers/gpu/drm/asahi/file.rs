@@ -192,6 +192,7 @@ impl File {
                 VM_SHADER_END,
                 mmu::UAT_PGSZ as u64,
                 mmu::PROT_GPU_SHARED_RW,
+                true,
             )?;
             data.offset = iova as u64 - VM_SHADER_START;
         } else {
@@ -201,6 +202,7 @@ impl File {
                 VM_USER_END,
                 mmu::UAT_PGSZ as u64,
                 mmu::PROT_GPU_SHARED_RW,
+                true,
             )?;
             data.offset = iova as u64;
         }
@@ -259,6 +261,7 @@ impl File {
             VM_USER_END,
             mmu::UAT_PGSZ as u64,
             mmu::PROT_GPU_SHARED_RW,
+            true,
         );
 
         if let Some(iova) = bo.iova(file.inner().vm.id()) {

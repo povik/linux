@@ -98,6 +98,7 @@ impl ObjectRef {
         end: u64,
         alignment: u64,
         prot: u32,
+        guard: bool,
     ) -> Result<usize> {
         let vm_id = vm.id();
         let mut mappings = self.gem.mappings.lock();
@@ -108,7 +109,8 @@ impl ObjectRef {
         }
 
         let sgt = self.gem.sg_table()?;
-        let new_mapping = vm.map_in_range(self.gem.size(), sgt, alignment, start, end, prot)?;
+        let new_mapping =
+            vm.map_in_range(self.gem.size(), sgt, alignment, start, end, prot, guard)?;
 
         let iova = new_mapping.iova();
         mappings.try_push((vm_id, new_mapping))?;
