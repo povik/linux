@@ -64,6 +64,8 @@ impl Renderer::ver {
         mgr: &buffer::BufferManager,
         id: u64,
     ) -> Result<Renderer::ver> {
+        mod_dev_dbg!(dev, "[Renderer {}] Creating renderer\n", id);
+
         let data = dev.data();
         let mut buffer = buffer::Buffer::ver::new(&*data.gpu, alloc, ualloc, ualloc_priv, mgr)?;
 
@@ -107,7 +109,7 @@ impl Renderer::ver {
                 },
             )?)?;
 
-        Ok(Renderer::ver {
+        let ret = Ok(Renderer::ver {
             dev: dev.clone(),
             wq_vtx: workqueue::WorkQueue::new(
                 alloc,
@@ -130,7 +132,10 @@ impl Renderer::ver {
             notifier_list,
             notifier,
             id,
-        })
+        });
+
+        mod_dev_dbg!(dev, "[Renderer {}] Renderer created\n", id);
+        ret
     }
 
     fn get_tiling_params(
