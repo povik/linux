@@ -183,8 +183,10 @@ impl Drop for SimpleAllocation {
             "Allocator: drop object @ {:#x}",
             self.gpu_ptr()
         ); */
-        if let Ok(vmap) = self.obj.vmap() {
-            vmap.as_mut_slice().fill(0x42);
+        if debug_enabled(DebugFlags::FillAllocations) {
+            if let Ok(vmap) = self.obj.vmap() {
+                vmap.as_mut_slice().fill(0x42);
+            }
         }
         self.obj.drop_mappings(self.vm.id());
     }
@@ -275,7 +277,9 @@ impl Allocator for SimpleAllocator {
 
         let mut obj = crate::gem::new_kernel_object(&self.dev, size_aligned)?;
         let p = obj.vmap()?.as_mut_ptr() as *mut u8;
-        obj.vmap()?.as_mut_slice().fill(0xde);
+        if debug_enabled(DebugFlags::FillAllocations) {
+            obj.vmap()?.as_mut_slice().fill(0xde);
+        }
         let iova = obj.map_into_range(
             &self.vm,
             self.start,
