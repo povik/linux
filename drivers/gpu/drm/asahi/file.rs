@@ -23,7 +23,7 @@ pub(crate) struct File {
     ualloc: Arc<Mutex<alloc::SimpleAllocator>>,
     ualloc_priv: Arc<Mutex<alloc::SimpleAllocator>>,
     ualloc_extra: alloc::SimpleAllocator,
-    unk_page: GpuArray<u8>,
+    unk_page: GpuOnlyArray<u8>,
     renderer: Box<dyn render::Renderer>,
 }
 
@@ -74,7 +74,7 @@ impl drm::file::DriverFile for File {
             mmu::PROT_GPU_SHARED_RW,
             0x4000,
         );
-        let unk_page: GpuArray<u8> = ualloc_extra.array_empty(1)?;
+        let unk_page: GpuOnlyArray<u8> = ualloc_extra.array_empty(1)?;
         let renderer = device
             .data()
             .gpu

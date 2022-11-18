@@ -36,7 +36,7 @@ pub(crate) type SGTable = shmem::SGTable<DriverObject>;
 
 pub(crate) struct ObjectRef {
     pub(crate) gem: gem::ObjectRef<shmem::Object<DriverObject>>,
-    pub(crate) vmap: Option<shmem::VMap<DriverObject>>,
+    vmap: Option<shmem::VMap<DriverObject>>,
 }
 
 impl DriverObject {
@@ -72,6 +72,10 @@ impl ObjectRef {
         }
 
         None
+    }
+
+    pub(crate) fn size(&self) -> usize {
+        self.gem.size()
     }
 
     pub(crate) fn map_into(&mut self, vm: &crate::mmu::Vm) -> Result<usize> {

@@ -151,7 +151,7 @@ impl<T: GpuStruct, U: Allocation<T>> GpuObject<T, U> {
             core::any::type_name::<T>(),
             alloc.gpu_ptr()
         );
-        let p = alloc.ptr() as *mut T::Raw<'static>;
+        let p = alloc.ptr().ok_or(EINVAL)?.as_ptr() as *mut T::Raw<'static>;
         let mut raw = callback(&inner);
         unsafe {
             p.copy_from(&mut raw as *mut _ as *mut u8 as *mut _, 1);
@@ -181,7 +181,7 @@ impl<T: GpuStruct, U: Allocation<T>> GpuObject<T, U> {
             core::any::type_name::<T>(),
             alloc.gpu_ptr()
         );
-        let p = alloc.ptr() as *mut MaybeUninit<T::Raw<'_>>;
+        let p = alloc.ptr().ok_or(EINVAL)?.as_ptr() as *mut MaybeUninit<T::Raw<'_>>;
         let raw = callback(&inner, p)? as *mut _ as *mut MaybeUninit<T::Raw<'_>>;
         if p != raw {
             dev_err!(
@@ -224,7 +224,7 @@ impl<T: GpuStruct, U: Allocation<T>> GpuObject<T, U> {
             alloc.gpu_ptr()
         );
         let inner = inner_cb(gpu_ptr)?;
-        let p = alloc.ptr() as *mut MaybeUninit<T::Raw<'_>>;
+        let p = alloc.ptr().ok_or(EINVAL)?.as_ptr() as *mut MaybeUninit<T::Raw<'_>>;
         let raw = raw_cb(&*inner, p)? as *mut _ as *mut MaybeUninit<T::Raw<'_>>;
         if p != raw {
             dev_err!(
@@ -323,48 +323,52 @@ where
     }
 }
 
-pub(crate) struct GpuArray<T: Sized, U: Allocation<T>> {
-    raw: *mut T,
+pub(crate) struct GpuOnlyArray<T: Sized, U: Allocation<T>> {
     len: usize,
     alloc: U,
     gpu_ptr: NonZeroU64,
+    _p: PhantomData<T>,
 }
 
-impl<T: Sized + Copy, U: Allocation<T>> GpuArray<T, U> {
-    pub(crate) fn new(alloc: U, data: &[T]) -> Result<GpuArray<T, U>> {
-        let bytes = data.len() * mem::size_of::<T>();
+pub(crate) struct GpuArray<T: Sized, U: Allocation<T>> {
+    raw: *mut T,
+    array: GpuOnlyArray<T, U>,
+}
+
+impl<T: Sized, U: Allocation<T>> GpuOnlyArray<T, U> {
+    pub(crate) fn new(alloc: U, count: usize) -> Result<GpuOnlyArray<T, U>> {
+        let bytes = count * mem::size_of::<T>();
         let gpu_ptr = NonZeroU64::new(alloc.gpu_ptr()).ok_or(EINVAL)?;
         if alloc.size() < bytes {
             return Err(ENOMEM);
         }
-        let p = alloc.ptr() as *mut T;
+        Ok(Self {
+            len: count,
+            alloc,
+            gpu_ptr,
+            _p: PhantomData,
+        })
+    }
+}
+
+impl<T: Sized + Copy, U: Allocation<T>> GpuArray<T, U> {
+    pub(crate) fn new(alloc: U, data: &[T]) -> Result<GpuArray<T, U>> {
+        let p = alloc.ptr().ok_or(EINVAL)?.as_ptr();
+        let inner = GpuOnlyArray::new(alloc, data.len())?;
         unsafe {
-            ptr::copy(data.as_ptr(), p, bytes);
+            ptr::copy(data.as_ptr(), p, data.len());
         }
         Ok(Self {
             raw: p,
-            len: data.len(),
-            alloc,
-            gpu_ptr,
+            array: inner,
         })
     }
 }
 
 impl<T: Sized + Default, U: Allocation<T>> GpuArray<T, U> {
     pub(crate) fn empty(alloc: U, count: usize) -> Result<GpuArray<T, U>> {
-        let bytes = count * mem::size_of::<T>();
-        let gpu_ptr = NonZeroU64::new(alloc.gpu_ptr()).ok_or(EINVAL)?;
-        mod_dev_dbg!(
-            alloc.device(),
-            "Allocating {} * {:#x} @ {:#x}",
-            core::any::type_name::<T>(),
-            count,
-            alloc.gpu_ptr(),
-        );
-        if alloc.size() < bytes {
-            return Err(ENOMEM);
-        }
-        let p = alloc.ptr() as *mut T;
+        let p = alloc.ptr().ok_or(EINVAL)?.as_ptr() as *mut T;
+        let inner = GpuOnlyArray::new(alloc, count)?;
         let mut pi = p;
         for _i in 0..count {
             unsafe {
@@ -374,14 +378,12 @@ impl<T: Sized + Default, U: Allocation<T>> GpuArray<T, U> {
         }
         Ok(Self {
             raw: p,
-            len: count,
-            alloc,
-            gpu_ptr,
+            array: inner,
         })
     }
 }
 
-impl<T: Sized, U: Allocation<T>> GpuArray<T, U> {
+impl<T: Sized, U: Allocation<T>> GpuOnlyArray<T, U> {
     pub(crate) fn gpu_va(&self) -> NonZeroU64 {
         self.gpu_ptr
     }
@@ -437,13 +439,23 @@ impl<T: Sized, U: Allocation<T>> GpuArray<T, U> {
     pub(crate) fn len(&self) -> usize {
         self.len
     }
+}
 
+impl<T: Sized, U: Allocation<T>> GpuArray<T, U> {
     pub(crate) fn as_slice(&self) -> &[T] {
         unsafe { slice::from_raw_parts(self.raw, self.len) }
     }
 
     pub(crate) fn as_mut_slice(&mut self) -> &mut [T] {
         unsafe { slice::from_raw_parts_mut(self.raw, self.len) }
+    }
+}
+
+impl<T: Sized, U: Allocation<T>> Deref for GpuArray<T, U> {
+    type Target = GpuOnlyArray<T, U>;
+
+    fn deref(&self) -> &GpuOnlyArray<T, U> {
+        &self.array
     }
 }
 
@@ -481,7 +493,7 @@ impl<T: GpuStruct, U: Allocation<T>> Drop for GpuObject<T, U> {
     }
 }
 
-impl<T: Sized, U: Allocation<T>> Drop for GpuArray<T, U> {
+impl<T: Sized, U: Allocation<T>> Drop for GpuOnlyArray<T, U> {
     fn drop(&mut self) {
         mod_dev_dbg!(
             self.alloc.device(),
@@ -489,6 +501,14 @@ impl<T: Sized, U: Allocation<T>> Drop for GpuArray<T, U> {
             core::any::type_name::<T>(),
             self.gpu_pointer()
         );
+    }
+}
+
+impl<T: Sized + fmt::Debug, U: Allocation<T>> fmt::Debug for GpuOnlyArray<T, U> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_struct(core::any::type_name::<T>())
+            .field("len", &format_args!("{:#X?}", self.len()))
+            .finish()
     }
 }
 
