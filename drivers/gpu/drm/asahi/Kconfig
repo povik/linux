@@ -12,3 +12,11 @@ config DRM_ASAHI
 	select DRM_GEM_SHMEM_HELPER
 	help
 	  DRM driver for Apple AGX GPUs (G13x, found in the M1 SoC family)
+
+config DRM_ASAHI_DEBUG_ALLOCATOR
+	bool "Use debug allocator"
+	depends on DRM_ASAHI
+	help
+	  Use an alternate, simpler allocator which significantly reduces
+	  performance, but can help find firmware- or GPU-side memory safety
+	  issues.
