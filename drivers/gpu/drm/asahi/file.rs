@@ -46,10 +46,12 @@ impl drm::file::DriverFile for File {
     fn open(device: &AsahiDevice) -> Result<Box<Self>> {
         debug::update_debug_flags();
 
-        mod_dev_dbg!(device, "DRM device opened");
         let gpu = &device.data().gpu;
         let vm = gpu.new_vm()?;
         let id = gpu.ids().file.next();
+
+        mod_dev_dbg!(device, "[File {}]: DRM device opened", id);
+        mod_dev_dbg!(device, "[File {}]: Creating allocators", id);
         let ualloc = Arc::try_new(Mutex::new(alloc::DefaultAllocator::new(
             device,
             &vm,
@@ -80,7 +82,9 @@ impl drm::file::DriverFile for File {
             0x4000,
             false,
         )?;
+        mod_dev_dbg!(device, "[File {}]: Allocating dummy page", id);
         let unk_page: GpuOnlyArray<u8> = ualloc_extra.array_gpuonly(1)?;
+        mod_dev_dbg!(device, "[File {}]: Creating renderer", id);
         let renderer = device
             .data()
             .gpu
