@@ -533,7 +533,7 @@ impl Allocator for HeapAllocator {
         let mut new_object = false;
         let start = node.start();
         let end = start + node.size();
-        if start >= self.top {
+        if end > self.top {
             if start > self.top {
                 dev_warn!(
                     self.dev,
