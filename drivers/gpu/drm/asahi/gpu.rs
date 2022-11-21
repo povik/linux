@@ -205,6 +205,7 @@ impl GpuManager::ver {
                 mmu::PROT_FW_PRIV_RW,
                 1024 * 1024,
                 true,
+                fmt!("Kernel Private"),
             )?,
             shared: alloc::DefaultAllocator::new(
                 dev,
@@ -215,6 +216,7 @@ impl GpuManager::ver {
                 mmu::PROT_FW_SHARED_RW,
                 1024 * 1024,
                 true,
+                fmt!("Kernel Shared"),
             )?,
             gpu: alloc::DefaultAllocator::new(
                 dev,
@@ -225,6 +227,7 @@ impl GpuManager::ver {
                 mmu::PROT_GPU_FW_SHARED_RW,
                 64 * 1024,
                 true,
+                fmt!("Kernel GPU Shared"),
             )?,
         };
 

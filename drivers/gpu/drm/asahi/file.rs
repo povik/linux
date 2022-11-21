@@ -61,6 +61,7 @@ impl drm::file::DriverFile for File {
             mmu::PROT_GPU_SHARED_RW,
             1024 * 1024,
             true,
+            fmt!("File {} GPU Shared", id),
         )?))?;
         let ualloc_priv = Arc::try_new(Mutex::new(alloc::DefaultAllocator::new(
             device,
@@ -71,6 +72,7 @@ impl drm::file::DriverFile for File {
             mmu::PROT_GPU_FW_PRIV_RW,
             1024 * 1024,
             true,
+            fmt!("File {} GPU FW Private", id),
         )?))?;
         let mut ualloc_extra = alloc::DefaultAllocator::new(
             device,
@@ -81,6 +83,7 @@ impl drm::file::DriverFile for File {
             mmu::PROT_GPU_SHARED_RW,
             0x4000,
             false,
+            fmt!("File {} Dummy", id),
         )?;
         mod_dev_dbg!(device, "[File {}]: Allocating dummy page", id);
         let unk_page: GpuOnlyArray<u8> = ualloc_extra.array_gpuonly(1)?;

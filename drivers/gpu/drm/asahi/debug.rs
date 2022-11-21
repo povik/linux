@@ -29,14 +29,17 @@ pub(crate) enum DebugFlags {
     Gpu = 10,
     Init = 11,
 
-    // 12-19: Channels
-    FwLogCh = 12,
-    KTraceCh = 13,
-    StatsCh = 14,
-    EventCh = 15,
-    PipeCh = 16,
-    DeviceControlCh = 17,
-    FwCtlCh = 18,
+    // 12-15: Misc stats
+    MemStats = 12,
+
+    // 16-22: Channels
+    FwLogCh = 16,
+    KTraceCh = 17,
+    StatsCh = 18,
+    EventCh = 19,
+    PipeCh = 20,
+    DeviceControlCh = 21,
+    FwCtlCh = 22,
 
     // 32-: Behavior flags
     ConservativeTlbi = 32,

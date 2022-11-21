@@ -9,6 +9,7 @@ use kernel::{
     drm::{device, gem, gem::shmem, mm},
     error::Result,
     prelude::*,
+    str::CString,
     sync::Arc,
 };
 
@@ -241,6 +242,7 @@ impl SimpleAllocator {
         prot: u32,
         _block_size: usize,
         _cpu_maps: bool,
+        _name: fmt::Arguments<'_>,
     ) -> Result<SimpleAllocator> {
         Ok(SimpleAllocator {
             dev: dev.clone(),
@@ -368,6 +370,7 @@ pub(crate) struct HeapAllocator {
     backing_objects: Arc<UnsafeCell<Vec<(crate::gem::ObjectRef, u64)>>>,
     guard_nodes: Vec<mm::Node<HeapAllocationInner>>,
     mm: mm::Allocator<HeapAllocationInner>,
+    name: CString,
 }
 
 impl HeapAllocator {
@@ -381,10 +384,13 @@ impl HeapAllocator {
         prot: u32,
         block_size: usize,
         cpu_maps: bool,
+        name: fmt::Arguments<'_>,
     ) -> Result<HeapAllocator> {
         if !min_align.is_power_of_two() {
             return Err(EINVAL);
         }
+
+        let name = CString::try_from_fmt(name)?;
 
         let mm = mm::Allocator::new(start as u64, (end - start + 1) as u64)?;
 
@@ -401,6 +407,7 @@ impl HeapAllocator {
             backing_objects: Arc::try_new(UnsafeCell::new(Vec::new()))?,
             guard_nodes: Vec::new(),
             mm,
+            name,
         })
     }
 
@@ -409,10 +416,19 @@ impl HeapAllocator {
 
         mod_dev_dbg!(
             &self.dev,
-            "HeapAllocator::add_block: size={:#x} size_al={:#x}",
+            "HeapAllocator[{}]::add_block: size={:#x} size_al={:#x}",
+            &*self.name,
             size,
             size_aligned,
         );
+
+        if self.top.saturating_add(size_aligned as u64) >= self.end {
+            dev_err!(
+                &self.dev,
+                "HeapAllocator[{}]::add_block: Exhausted VA space",
+                &*self.name,
+            );
+        }
 
         let mut obj = crate::gem::new_kernel_object(&self.dev, size_aligned)?;
         if self.cpu_maps && debug_enabled(DebugFlags::FillAllocations) {
@@ -423,7 +439,8 @@ impl HeapAllocator {
         if let Err(e) = obj.map_at(&self.vm, gpu_ptr, self.prot, self.cpu_maps) {
             dev_err!(
                 &self.dev,
-                "HeapAllocator::add_block: Failed to map at {:#x} ({:?})",
+                "HeapAllocator[{}]::add_block: Failed to map at {:#x} ({:?})",
+                &*self.name,
                 gpu_ptr,
                 e
             );
@@ -437,7 +454,8 @@ impl HeapAllocator {
             let guard = self.min_align.max(mmu::UAT_PGSZ);
             mod_dev_dbg!(
                 &self.dev,
-                "HeapAllocator::add_block: Adding guard node {:#x}:{:#x}",
+                "HeapAllocator[{}]::add_block: Adding guard node {:#x}:{:#x}",
+                &*self.name,
                 new_top,
                 guard
             );
@@ -454,7 +472,8 @@ impl HeapAllocator {
                 Err(a) => {
                     dev_err!(
                         &self.dev,
-                        "HeapAllocator::add_block: Failed to reserve guard node {:#x}:{:#x}: {:?}",
+                        "HeapAllocator[{}]::add_block: Failed to reserve guard node {:#x}:{:#x}: {:?}",
+                        &*self.name,
                         guard,
                         new_top,
                         a
@@ -467,10 +486,23 @@ impl HeapAllocator {
 
             new_top += guard as u64;
         }
-        mod_dev_dbg!(&self.dev, "HeapAllocator::add_block: top={:#x}", new_top);
+        mod_dev_dbg!(
+            &self.dev,
+            "HeapAllocator[{}]::add_block: top={:#x}",
+            &*self.name,
+            new_top
+        );
 
         self.backing_objects().try_push((obj, gpu_ptr))?;
         self.top = new_top;
+
+        cls_dev_dbg!(
+            MemStats,
+            &self.dev,
+            "{} Heap: grow to {} bytes",
+            &*self.name,
+            self.top - self.start
+        );
 
         Ok(())
     }
@@ -522,7 +554,8 @@ impl Allocator for HeapAllocator {
 
         mod_dev_dbg!(
             &self.dev,
-            "HeapAllocator::new: size={:#x} size_al={:#x}",
+            "HeapAllocator[{}]::new: size={:#x} size_al={:#x}",
+            &*self.name,
             size,
             size_aligned,
         );
@@ -536,24 +569,23 @@ impl Allocator for HeapAllocator {
             backing_objects: self.backing_objects.clone(),
         };
 
-        let mut node =
-            match self.mm.insert_node_generic(
-                inner,
-                size_aligned as u64,
-                align as u64,
-                0,
-                mm::InsertMode::Best,
-            ) {
-                Ok(a) => a,
-                Err(a) => {
-                    dev_err!(
+        let mut node = match self.mm.insert_node_generic(
+            inner,
+            size_aligned as u64,
+            align as u64,
+            0,
+            mm::InsertMode::Best,
+        ) {
+            Ok(a) => a,
+            Err(a) => {
+                dev_err!(
                     &self.dev,
-                    "HeapAllocator::new: Failed to insert node of size {:#x} / align {:#x}: {:?}",
-                    size_aligned, align, a
+                    "HeapAllocator[{}]::new: Failed to insert node of size {:#x} / align {:#x}: {:?}",
+                    &*self.name, size_aligned, align, a
                 );
-                    return Err(a);
-                }
-            };
+                return Err(a);
+            }
+        };
 
         let mut new_object = false;
         let start = node.start();
@@ -562,7 +594,8 @@ impl Allocator for HeapAllocator {
             if start > self.top {
                 dev_warn!(
                     self.dev,
-                    "HeapAllocator::alloc: top={:#x}, start={:#x}",
+                    "HeapAllocator[{}]::alloc: top={:#x}, start={:#x}",
+                    &*self.name,
                     self.top,
                     start
                 );
@@ -574,7 +607,11 @@ impl Allocator for HeapAllocator {
         assert!(end <= self.top);
 
         if self.cpu_maps {
-            mod_dev_dbg!(self.dev, "HeapAllocator::alloc: mapping to CPU",);
+            mod_dev_dbg!(
+                self.dev,
+                "HeapAllocator[{}]::alloc: mapping to CPU",
+                &*self.name
+            );
 
             let obj = if new_object {
                 self.backing_objects().last_mut().unwrap()
@@ -584,7 +621,8 @@ impl Allocator for HeapAllocator {
                     Err(_) => {
                         dev_warn!(
                             self.dev,
-                            "HeapAllocator::alloc: Failed to find object at {:#x}",
+                            "HeapAllocator[{}]::alloc: Failed to find object at {:#x}",
+                            &*self.name,
                             start
                         );
                         return Err(EIO);
@@ -597,14 +635,16 @@ impl Allocator for HeapAllocator {
             node.ptr = NonNull::new(unsafe { p.add((start - obj.1) as usize) });
             mod_dev_dbg!(
                 self.dev,
-                "HeapAllocator::alloc: CPU pointer = {:?}",
+                "HeapAllocator[{}]::alloc: CPU pointer = {:?}",
+                &*self.name,
                 node.ptr
             );
         }
 
         mod_dev_dbg!(
             self.dev,
-            "HeapAllocator::alloc: Allocated {:#x} bytes @ {:#x}",
+            "HeapAllocator[{}]::alloc: Allocated {:#x} bytes @ {:#x}",
+            &*self.name,
             end - start,
             start
         );
