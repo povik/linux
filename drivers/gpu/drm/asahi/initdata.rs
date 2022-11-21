@@ -76,7 +76,7 @@ impl<'a> InitDataBuilder::ver<'a> {
     #[inline(never)]
     fn hwdata_a(&mut self) -> Result<GpuObject<HwDataA::ver>> {
         self.alloc
-            .shared
+            .private
             .new_inplace(Default::default(), |_inner, ptr| {
                 let pwr = &self.dyncfg.pwr;
                 let period_ms = pwr.power_sample_period;
@@ -324,7 +324,7 @@ impl<'a> InitDataBuilder::ver<'a> {
     #[inline(never)]
     fn hwdata_b(&mut self) -> Result<GpuObject<HwDataB::ver>> {
         self.alloc
-            .shared
+            .private
             .new_inplace(Default::default(), |_inner, ptr| {
                 let raw = place!(
                     ptr,
@@ -562,8 +562,8 @@ impl<'a> InitDataBuilder::ver<'a> {
 
         let pointers: Box<RuntimePointers::ver> = box_in_place!(RuntimePointers::ver {
             stats: Stats::ver {
-                vtx: self.alloc.shared.new_default::<GpuGlobalStatsVtx::ver>()?,
-                frag: self.alloc.shared.new_inplace(
+                vtx: self.alloc.private.new_default::<GpuGlobalStatsVtx::ver>()?,
+                frag: self.alloc.private.new_inplace(
                     Default::default(),
                     |_inner, ptr: *mut MaybeUninit<raw::GpuGlobalStatsFrag::ver>| {
                         Ok(place!(
@@ -579,23 +579,23 @@ impl<'a> InitDataBuilder::ver<'a> {
                         ))
                     },
                 )?,
-                comp: self.alloc.shared.array_empty(0x980)?,
+                comp: self.alloc.private.array_empty(0x980)?,
             },
 
             hwdata_a: hwa,
-            unkptr_190: self.alloc.shared.array_empty(0x80)?,
-            unkptr_198: self.alloc.shared.array_empty(0xc0)?,
+            unkptr_190: self.alloc.private.array_empty(0x80)?,
+            unkptr_198: self.alloc.private.array_empty(0xc0)?,
             hwdata_b: hwb,
             fwlog_ring2: self.alloc.shared.array_empty(0x600)?,
 
-            unkptr_1b8: self.alloc.shared.array_empty(0x1000)?,
-            unkptr_1c0: self.alloc.shared.array_empty(0x300)?,
-            unkptr_1c8: self.alloc.shared.array_empty(0x1000)?,
+            unkptr_1b8: self.alloc.private.array_empty(0x1000)?,
+            unkptr_1c0: self.alloc.private.array_empty(0x300)?,
+            unkptr_1c8: self.alloc.private.array_empty(0x1000)?,
 
             buffer_mgr_ctl: self.alloc.gpu.array_empty(127)?,
         })?;
 
-        self.alloc.shared.new_boxed(pointers, |inner, ptr| {
+        self.alloc.private.new_boxed(pointers, |inner, ptr| {
             Ok(place!(
                 ptr,
                 raw::RuntimePointers::ver {
@@ -671,13 +671,13 @@ impl<'a> InitDataBuilder::ver<'a> {
     #[inline(never)]
     pub(crate) fn build(&mut self) -> Result<Box<GpuObject<InitData::ver>>> {
         let inner: Box<InitData::ver> = box_in_place!(InitData::ver {
-            unk_buf: self.alloc.shared.array_empty(0x4000)?,
+            unk_buf: self.alloc.shared_ro.array_empty(0x4000)?,
             runtime_pointers: self.runtime_pointers()?,
             globals: self.globals()?,
             fw_status: self.fw_status()?,
         })?;
 
-        Ok(Box::try_new(self.alloc.shared.new_boxed(
+        Ok(Box::try_new(self.alloc.shared_ro.new_boxed(
             inner,
             |inner, ptr| {
                 Ok(place!(

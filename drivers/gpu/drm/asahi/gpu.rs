@@ -42,13 +42,16 @@ const DOORBELL_DEVCTRL: u64 = 0x11;
 const IOVA_KERN_PRIV_BASE: u64 = 0xffffffa000000000;
 const IOVA_KERN_PRIV_TOP: u64 = 0xffffffa7ffffffff;
 const IOVA_KERN_SHARED_BASE: u64 = 0xffffffa800000000;
-const IOVA_KERN_SHARED_TOP: u64 = 0xffffffaeffffffff;
+const IOVA_KERN_SHARED_TOP: u64 = 0xffffffa9ffffffff;
+const IOVA_KERN_SHARED_RO_BASE: u64 = 0xffffffaa00000000;
+const IOVA_KERN_SHARED_RO_TOP: u64 = 0xffffffabffffffff;
 const IOVA_KERN_GPU_BASE: u64 = 0xffffffaf00000000;
 const IOVA_KERN_GPU_TOP: u64 = 0xffffffafffffffff;
 
 pub(crate) struct KernelAllocators {
     pub(crate) private: alloc::DefaultAllocator,
     pub(crate) shared: alloc::DefaultAllocator,
+    pub(crate) shared_ro: alloc::DefaultAllocator,
     pub(crate) gpu: alloc::DefaultAllocator,
 }
 
@@ -217,6 +220,17 @@ impl GpuManager::ver {
                 1024 * 1024,
                 true,
                 fmt!("Kernel Shared"),
+            )?,
+            shared_ro: alloc::DefaultAllocator::new(
+                dev,
+                uat.kernel_vm(),
+                IOVA_KERN_SHARED_RO_BASE,
+                IOVA_KERN_SHARED_RO_TOP,
+                0x80,
+                mmu::PROT_FW_SHARED_RO,
+                64 * 1024,
+                true,
+                fmt!("Kernel RO Shared"),
             )?,
             gpu: alloc::DefaultAllocator::new(
                 dev,

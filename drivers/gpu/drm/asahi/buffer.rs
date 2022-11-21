@@ -214,7 +214,7 @@ impl Buffer::ver {
             block_list: ualloc_priv.lock().array_empty(max_blocks * 2)?,
         })?;
 
-        let info = alloc.shared.new_boxed(inner, |inner, ptr| {
+        let info = alloc.private.new_boxed(inner, |inner, ptr| {
             Ok(place!(
                 ptr,
                 buffer::raw::Info::ver {
@@ -376,7 +376,7 @@ impl Buffer::ver {
             _ => {
                 let buf = Arc::try_new(
                     inner
-                        .ualloc_priv
+                        .ualloc
                         .lock()
                         .array_empty((tpc_size + mmu::UAT_PGMSK) & !mmu::UAT_PGMSK)?,
                 )?;
