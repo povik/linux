@@ -10,9 +10,10 @@ use core::mem::{size_of, ManuallyDrop};
 use core::ops::Deref;
 use core::ptr::{addr_of_mut, NonNull};
 use core::sync::atomic::{fence, AtomicU32, AtomicU64, AtomicU8, Ordering};
+use core::time::Duration;
 
 use kernel::{
-    bindings, c_str, device,
+    bindings, c_str, delay, device,
     drm::mm,
     error::{to_result, Result},
     io_pgtable,
@@ -21,7 +22,7 @@ use kernel::{
     str::CString,
     sync::{smutex::Mutex, Guard},
     sync::{Arc, UniqueArc},
-    PointerWrapper,
+    time, PointerWrapper,
 };
 
 use crate::debug::*;
@@ -562,15 +563,30 @@ impl Handoff {
         }
     }
 
-    fn init(&self) {
+    fn init(&self) -> Result {
         self.magic_ap.store(PPL_MAGIC, Ordering::Relaxed);
         self.cur_slot.store(0, Ordering::Relaxed);
         self.unk3.store(0, Ordering::Relaxed);
         fence(Ordering::SeqCst);
 
-        self.lock();
+        let timeout = time::ktime_get() + Duration::from_millis(1000);
 
-        while self.magic_fw.load(Ordering::Relaxed) != PPL_MAGIC {}
+        self.lock();
+        while time::ktime_get() < timeout {
+            if self.magic_fw.load(Ordering::Relaxed) == PPL_MAGIC {
+                break;
+            } else {
+                self.unlock();
+                delay::coarse_sleep(Duration::from_millis(10));
+                self.lock();
+            }
+        }
+
+        if self.magic_fw.load(Ordering::Relaxed) != PPL_MAGIC {
+            self.unlock();
+            pr_err!("Handoff: Failed to initialize (firmware not running?)\n");
+            return Err(EIO);
+        }
 
         self.unlock();
 
@@ -580,6 +596,7 @@ impl Handoff {
             self.flush[i].size.store(0, Ordering::Relaxed);
         }
         fence(Ordering::SeqCst);
+        Ok(())
     }
 }
 
@@ -1054,7 +1071,7 @@ impl Uat {
 
         let inner = uat.inner.lock();
 
-        inner.handoff().init();
+        inner.handoff().init()?;
 
         dev_info!(dev, "MMU: Initializing TTBs\n");
 
