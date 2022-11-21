@@ -315,14 +315,16 @@ impl Allocator for SimpleAllocator {
 }
 
 struct HeapAllocatorInner {
+    dev: AsahiDevice,
     allocated: usize,
+    backing_objects: Vec<(crate::gem::ObjectRef, u64)>,
+    name: CString,
 }
 
 pub(crate) struct HeapAllocationInner {
     dev: AsahiDevice,
     ptr: Option<NonNull<u8>>,
     real_size: usize,
-    backing_objects: Arc<UnsafeCell<Vec<(crate::gem::ObjectRef, u64)>>>,
 }
 
 pub(crate) struct HeapAllocation(mm::Node<HeapAllocatorInner, HeapAllocationInner>);
@@ -341,7 +343,8 @@ impl mm::AllocInner<HeapAllocationInner> for HeapAllocatorInner {
         if obj.real_size > 0 {
             mod_dev_dbg!(
                 obj.dev,
-                "HeapAllocator: drop object @ {:#x} ({} bytes)",
+                "HeapAllocator[{}]: drop object @ {:#x} ({} bytes)",
+                &*self.name,
                 start,
                 obj.real_size,
             );
@@ -382,7 +385,6 @@ pub(crate) struct HeapAllocator {
     min_align: usize,
     block_size: usize,
     cpu_maps: bool,
-    backing_objects: Arc<UnsafeCell<Vec<(crate::gem::ObjectRef, u64)>>>,
     guard_nodes: Vec<mm::Node<HeapAllocatorInner, HeapAllocationInner>>,
     mm: mm::Allocator<HeapAllocatorInner, HeapAllocationInner>,
     name: CString,
@@ -407,7 +409,13 @@ impl HeapAllocator {
 
         let name = CString::try_from_fmt(name)?;
 
-        let inner = HeapAllocatorInner { allocated: 0 };
+        let inner = HeapAllocatorInner {
+            dev: dev.clone(),
+            allocated: 0,
+            backing_objects: Vec::new(),
+            // TODO: This clearly needs a try_clone() or similar
+            name: CString::try_from_fmt(fmt!("{}", &*name))?,
+        };
 
         let mm = mm::Allocator::new(start as u64, (end - start + 1) as u64, inner)?;
 
@@ -421,7 +429,6 @@ impl HeapAllocator {
             min_align,
             block_size: block_size.max(min_align),
             cpu_maps,
-            backing_objects: Arc::try_new(UnsafeCell::new(Vec::new()))?,
             guard_nodes: Vec::new(),
             mm,
             name,
@@ -464,7 +471,8 @@ impl HeapAllocator {
             return Err(e);
         }
 
-        self.backing_objects().try_reserve(1)?;
+        self.mm
+            .with_inner(|inner| inner.backing_objects.try_reserve(1))?;
 
         let mut new_top = self.top + size_aligned as u64;
         if self.cpu_maps {
@@ -481,7 +489,6 @@ impl HeapAllocator {
                 dev: self.dev.clone(),
                 ptr: None,
                 real_size: 0,
-                backing_objects: self.backing_objects.clone(),
             };
 
             let node = match self.mm.reserve_node(inner, new_top, guard as u64, 0) {
@@ -510,7 +517,9 @@ impl HeapAllocator {
             new_top
         );
 
-        self.backing_objects().try_push((obj, gpu_ptr))?;
+        self.mm
+            .with_inner(|inner| inner.backing_objects.try_push((obj, gpu_ptr)))?;
+
         self.top = new_top;
 
         cls_dev_dbg!(
@@ -524,34 +533,23 @@ impl HeapAllocator {
         Ok(())
     }
 
-    fn backing_objects(&mut self) -> &mut Vec<(crate::gem::ObjectRef, u64)> {
-        // SAFETY:
-        // This HeapAllocator is the only owner of a reference to the
-        // backing_objects Arc that actually dereferences it or mutates
-        // it in any way. Therefore, it is always safe to take a mutable
-        // reference to it if we have a mutable reference to self.
-        // The other references in HeapAlocations are only there to
-        // keep the objects alive, and never interact with them.
-        unsafe { &mut *self.backing_objects.get() }
-    }
-
-    fn find_obj(&mut self, addr: u64) -> Result<&mut (crate::gem::ObjectRef, u64)> {
-        let idx = self
-            .backing_objects()
-            .binary_search_by(|obj| {
-                let start = obj.1;
-                let end = obj.1 + obj.0.size() as u64;
-                if start > addr {
-                    Ordering::Greater
-                } else if end <= addr {
-                    Ordering::Less
-                } else {
-                    Ordering::Equal
-                }
-            })
-            .or(Err(ENOENT))?;
-
-        Ok(&mut self.backing_objects()[idx])
+    fn find_obj(&mut self, addr: u64) -> Result<usize> {
+        self.mm.with_inner(|inner| {
+            inner
+                .backing_objects
+                .binary_search_by(|obj| {
+                    let start = obj.1;
+                    let end = obj.1 + obj.0.size() as u64;
+                    if start > addr {
+                        Ordering::Greater
+                    } else if end <= addr {
+                        Ordering::Less
+                    } else {
+                        Ordering::Equal
+                    }
+                })
+                .or(Err(ENOENT))
+        })
     }
 }
 
@@ -581,9 +579,6 @@ impl Allocator for HeapAllocator {
             dev: self.dev.clone(),
             ptr: None,
             real_size: size,
-            // SAFETY: this keeps the backing objects alive even if the HeapAllocator is
-            // destroyed, guaranteeing that `ptr` is valid if not-None.
-            backing_objects: self.backing_objects.clone(),
         };
 
         let mut node = match self.mm.insert_node_generic(
@@ -632,10 +627,10 @@ impl Allocator for HeapAllocator {
                 &*self.name
             );
 
-            let obj = if new_object {
-                self.backing_objects().last_mut().unwrap()
+            let idx = if new_object {
+                None
             } else {
-                match self.find_obj(start) {
+                Some(match self.find_obj(start) {
                     Ok(a) => a,
                     Err(_) => {
                         dev_warn!(
@@ -646,12 +641,17 @@ impl Allocator for HeapAllocator {
                         );
                         return Err(EIO);
                     }
-                }
+                })
             };
-            assert!(obj.1 <= start);
-            assert!(obj.1 + obj.0.size() as u64 >= end);
-            let p = obj.0.vmap()?.as_mut_ptr() as *mut u8;
-            node.ptr = NonNull::new(unsafe { p.add((start - obj.1) as usize) });
+            let (obj_start, obj_size, p) = self.mm.with_inner(|inner| -> Result<_> {
+                let idx = idx.unwrap_or(inner.backing_objects.len() - 1);
+                let obj = &mut inner.backing_objects[idx];
+                let p = obj.0.vmap()?.as_mut_ptr() as *mut u8;
+                Ok((obj.1, obj.0.size(), p))
+            })?;
+            assert!(obj_start <= start);
+            assert!(obj_start + obj_size as u64 >= end);
+            node.ptr = NonNull::new(unsafe { p.add((start - obj_start) as usize) });
             mod_dev_dbg!(
                 self.dev,
                 "HeapAllocator[{}]::alloc: CPU pointer = {:?}",
@@ -672,20 +672,19 @@ impl Allocator for HeapAllocator {
     }
 }
 
-impl Drop for HeapAllocator {
+impl Drop for HeapAllocatorInner {
     fn drop(&mut self) {
         mod_dev_dbg!(
-            self.device(),
+            self.dev,
             "HeapAllocator[{}]: dropping allocator",
             &*self.name
         );
-        let allocated = self.mm.with_inner(|inner| inner.allocated);
-        if allocated > 0 {
+        if self.allocated > 0 {
             dev_warn!(
-                self.device(),
+                self.dev,
                 "HeapAllocator[{}]: dropping with {} bytes allocated",
                 &*self.name,
-                allocated
+                self.allocated
             );
         }
     }
