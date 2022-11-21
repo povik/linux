@@ -19,12 +19,12 @@ const DEBUG_CLASS: DebugFlags = DebugFlags::File;
 
 pub(crate) struct File {
     id: u64,
-    vm: mmu::Vm,
+    renderer: Box<dyn render::Renderer>,
+    unk_page: GpuOnlyArray<u8>,
     ualloc: Arc<Mutex<alloc::DefaultAllocator>>,
     ualloc_priv: Arc<Mutex<alloc::DefaultAllocator>>,
     ualloc_extra: alloc::DefaultAllocator,
-    unk_page: GpuOnlyArray<u8>,
-    renderer: Box<dyn render::Renderer>,
+    vm: mmu::Vm,
 }
 
 pub(crate) type DrmFile = drm::file::File<File>;

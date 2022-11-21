@@ -314,6 +314,10 @@ impl Allocator for SimpleAllocator {
     }
 }
 
+struct HeapAllocatorInner {
+    allocated: usize,
+}
+
 pub(crate) struct HeapAllocationInner {
     dev: AsahiDevice,
     ptr: Option<NonNull<u8>>,
@@ -321,17 +325,28 @@ pub(crate) struct HeapAllocationInner {
     backing_objects: Arc<UnsafeCell<Vec<(crate::gem::ObjectRef, u64)>>>,
 }
 
-pub(crate) struct HeapAllocation(mm::Node<HeapAllocationInner>);
+pub(crate) struct HeapAllocation(mm::Node<HeapAllocatorInner, HeapAllocationInner>);
 
 impl HeapAllocation {}
 
-impl Drop for HeapAllocation {
-    fn drop(&mut self) {
-        mod_dev_dbg!(
-            self.device(),
-            "HeapAllocator: drop object @ {:#x}",
-            self.gpu_ptr()
-        );
+impl mm::AllocInner<HeapAllocationInner> for HeapAllocatorInner {
+    fn drop_object(
+        &mut self,
+        start: u64,
+        _size: u64,
+        _color: usize,
+        obj: &mut HeapAllocationInner,
+    ) {
+        /* real_size == 0 means it's a guard node */
+        if obj.real_size > 0 {
+            mod_dev_dbg!(
+                obj.dev,
+                "HeapAllocator: drop object @ {:#x} ({} bytes)",
+                start,
+                obj.real_size,
+            );
+            self.allocated -= obj.real_size;
+        }
     }
 }
 
@@ -368,8 +383,8 @@ pub(crate) struct HeapAllocator {
     block_size: usize,
     cpu_maps: bool,
     backing_objects: Arc<UnsafeCell<Vec<(crate::gem::ObjectRef, u64)>>>,
-    guard_nodes: Vec<mm::Node<HeapAllocationInner>>,
-    mm: mm::Allocator<HeapAllocationInner>,
+    guard_nodes: Vec<mm::Node<HeapAllocatorInner, HeapAllocationInner>>,
+    mm: mm::Allocator<HeapAllocatorInner, HeapAllocationInner>,
     name: CString,
 }
 
@@ -392,7 +407,9 @@ impl HeapAllocator {
 
         let name = CString::try_from_fmt(name)?;
 
-        let mm = mm::Allocator::new(start as u64, (end - start + 1) as u64)?;
+        let inner = HeapAllocatorInner { allocated: 0 };
+
+        let mm = mm::Allocator::new(start as u64, (end - start + 1) as u64, inner)?;
 
         Ok(HeapAllocator {
             dev: dev.clone(),
@@ -463,7 +480,7 @@ impl HeapAllocator {
             let inner = HeapAllocationInner {
                 dev: self.dev.clone(),
                 ptr: None,
-                real_size: guard,
+                real_size: 0,
                 backing_objects: self.backing_objects.clone(),
             };
 
@@ -587,6 +604,8 @@ impl Allocator for HeapAllocator {
             }
         };
 
+        self.mm.with_inner(|inner| inner.allocated += size);
+
         let mut new_object = false;
         let start = node.start();
         let end = start + node.size();
@@ -650,5 +669,24 @@ impl Allocator for HeapAllocator {
         );
 
         Ok(HeapAllocation(node))
+    }
+}
+
+impl Drop for HeapAllocator {
+    fn drop(&mut self) {
+        mod_dev_dbg!(
+            self.device(),
+            "HeapAllocator[{}]: dropping allocator",
+            &*self.name
+        );
+        let allocated = self.mm.with_inner(|inner| inner.allocated);
+        if allocated > 0 {
+            dev_warn!(
+                self.device(),
+                "HeapAllocator[{}]: dropping with {} bytes allocated",
+                &*self.name,
+                allocated
+            );
+        }
     }
 }

@@ -128,7 +128,7 @@ struct VmInner {
     min_va: usize,
     max_va: usize,
     page_table: AppleUAT<Uat>,
-    mm: mm::Allocator<MappingInner>,
+    mm: mm::Allocator<(), MappingInner>,
     uat_inner: Arc<UatInner>,
     active_users: usize,
     binding: Option<slotalloc::Guard<SlotInner>>,
@@ -207,7 +207,7 @@ impl VmInner {
         Ok(pgcount * pgsize)
     }
 
-    fn map_node(&mut self, node: &mm::Node<MappingInner>, prot: u32) -> Result {
+    fn map_node(&mut self, node: &mm::Node<(), MappingInner>, prot: u32) -> Result {
         let mut iova = node.start() as usize;
         let sgt = node.sgt.as_ref().ok_or(EINVAL)?;
 
@@ -287,7 +287,7 @@ pub(crate) struct MappingInner {
     sgt: Option<gem::SGTable>,
 }
 
-pub(crate) struct Mapping(mm::Node<MappingInner>);
+pub(crate) struct Mapping(mm::Node<(), MappingInner>);
 
 impl Mapping {
     pub(crate) fn iova(&self) -> usize {
@@ -678,7 +678,7 @@ impl Vm {
             IOVA_USER_TOP
         };
 
-        let mm = mm::Allocator::new(min_va as u64, (max_va - min_va + 1) as u64)?;
+        let mm = mm::Allocator::new(min_va as u64, (max_va - min_va + 1) as u64, ())?;
 
         Ok(Vm {
             id,
