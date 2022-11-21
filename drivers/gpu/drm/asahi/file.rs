@@ -59,7 +59,7 @@ impl drm::file::DriverFile for File {
             VM_DRV_GPU_END,
             buffer::PAGE_SIZE,
             mmu::PROT_GPU_SHARED_RW,
-            1024 * 1024,
+            512 * 1024,
             true,
             fmt!("File {} GPU Shared", id),
         )?))?;
@@ -70,7 +70,7 @@ impl drm::file::DriverFile for File {
             VM_DRV_GPUFW_END,
             buffer::PAGE_SIZE,
             mmu::PROT_GPU_FW_PRIV_RW,
-            1024 * 1024,
+            64 * 1024,
             true,
             fmt!("File {} GPU FW Private", id),
         )?))?;
