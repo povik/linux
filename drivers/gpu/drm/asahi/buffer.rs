@@ -374,9 +374,13 @@ impl Buffer::ver {
         let tpc = match inner.tpc.as_ref() {
             Some(buf) if buf.len() >= tpc_size => buf.clone(),
             _ => {
+                // MacOS allocates this as shared GPU+FW, but
+                // priv seems to work and might be faster?
+                // Needs to be FW-writable anyway, so ualloc
+                // won't work.
                 let buf = Arc::try_new(
                     inner
-                        .ualloc
+                        .ualloc_priv
                         .lock()
                         .array_empty((tpc_size + mmu::UAT_PGMSK) & !mmu::UAT_PGMSK)?,
                 )?;
