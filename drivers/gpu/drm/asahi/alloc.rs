@@ -319,6 +319,7 @@ struct HeapAllocatorInner {
     allocated: usize,
     backing_objects: Vec<(crate::gem::ObjectRef, u64)>,
     name: CString,
+    vm_id: u64,
 }
 
 pub(crate) struct HeapAllocationInner {
@@ -415,6 +416,7 @@ impl HeapAllocator {
             backing_objects: Vec::new(),
             // TODO: This clearly needs a try_clone() or similar
             name: CString::try_from_fmt(fmt!("{}", &*name))?,
+            vm_id: vm.id(),
         };
 
         let mm = mm::Allocator::new(start as u64, (end - start + 1) as u64, inner)?;
@@ -680,12 +682,17 @@ impl Drop for HeapAllocatorInner {
             &*self.name
         );
         if self.allocated > 0 {
-            dev_warn!(
+            // This should never happen
+            dev_crit!(
                 self.dev,
                 "HeapAllocator[{}]: dropping with {} bytes allocated",
                 &*self.name,
                 self.allocated
             );
+        } else {
+            for mut obj in self.backing_objects.drain(..) {
+                obj.0.drop_mappings(self.vm_id);
+            }
         }
     }
 }
