@@ -163,6 +163,8 @@ pub(crate) fn new_object(dev: &AsahiDevice, size: usize, flags: u32) -> Result<O
     gem.kernel = false;
     gem.flags = flags;
 
+    gem.set_wc(flags & bindings::ASAHI_BO_WRITEBACK == 0);
+
     Ok(ObjectRef::new(gem.into_ref()))
 }
 
