@@ -175,7 +175,8 @@ struct drm_asahi_submit {
 struct drm_asahi_wait {
 };
 
-#define ASAHI_BO_PIPELINE	1
+#define ASAHI_BO_PIPELINE	(1L << 0)
+#define ASAHI_BO_WRITEBACK	(1L << 1)
 
 /**
  * struct drm_asahi_create_bo - ioctl argument for creating Panfrost BOs.
