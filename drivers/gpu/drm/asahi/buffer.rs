@@ -200,8 +200,16 @@ impl Buffer::ver {
         ualloc_priv: Arc<Mutex<alloc::DefaultAllocator>>,
         mgr: &BufferManager,
     ) -> Result<Buffer::ver> {
-        let max_pages = MAX_SIZE / PAGE_SIZE;
-        let max_blocks = MAX_SIZE / BLOCK_SIZE;
+        // These are the typical max numbers on macOS.
+        // 8GB machines have this halved.
+        let max_size: usize = 862322688;
+        let max_size_nomemless = max_size / 3;
+
+        let max_blocks = max_size / BLOCK_SIZE;
+        let max_blocks_nomemless = max_size_nomemless / BLOCK_SIZE;
+        let max_pages = max_blocks * PAGES_PER_BLOCK;
+        let max_pages_nomemless = max_blocks_nomemless * PAGES_PER_BLOCK;
+
         let num_clusters = gpu.get_dyncfg().id.num_clusters as usize;
         let preempt1_size = num_clusters * gpu.get_cfg().preempt1_size;
         let preempt2_size = num_clusters * gpu.get_cfg().preempt2_size;
@@ -228,9 +236,9 @@ impl Buffer::ver {
                     #[ver(V < V13_0B4)]
                     unk_1c: 0x0,
                     page_list: inner.page_list.gpu_pointer(),
-                    page_list_size: (4 * max_pages) as u32,
+                    page_list_size: (4 * max_pages).try_into()?,
                     page_count: AtomicU32::new(0),
-                    unk_30: 0xd1a,
+                    max_blocks: max_blocks.try_into()?,
                     block_count: AtomicU32::new(0),
                     unk_38: 0x0,
                     block_list: inner.block_list.gpu_pointer(),
@@ -247,8 +255,8 @@ impl Buffer::ver {
                     unk_78: 0x0,
                     unk_7c: 0x0,
                     unk_80: 0x1,
-                    unk_84: 0x3468,
-                    unk_88: 0x1178,
+                    max_pages: max_pages.try_into()?,
+                    max_pages_nomemless: max_pages_nomemless.try_into()?,
                     unk_8c: 0x0,
                     unk_90: Default::default(),
                 }
