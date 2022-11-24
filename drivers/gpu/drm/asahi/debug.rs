@@ -47,6 +47,7 @@ pub(crate) enum DebugFlags {
     WaitForPowerOff = 34,
     NoGpuRecovery = 35,
     FillAllocations = 36,
+    DebugAllocations = 37,
 }
 
 pub(crate) fn update_debug_flags() {

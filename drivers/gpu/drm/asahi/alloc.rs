@@ -55,22 +55,26 @@ pub(crate) trait Allocation<T>: Debug {
     fn device(&self) -> &AsahiDevice;
 }
 
-pub(crate) struct GenericAlloc<T, U: RawAllocation>(U, PhantomData<T>);
+pub(crate) struct GenericAlloc<T, U: RawAllocation> {
+    alloc: U,
+    debug_offset: usize,
+    _p: PhantomData<T>,
+}
 
 impl<T, U: RawAllocation> Allocation<T> for GenericAlloc<T, U> {
     fn ptr(&self) -> Option<NonNull<T>> {
-        self.0
+        self.alloc
             .ptr()
-            .map(|p| unsafe { NonNull::new_unchecked(p.as_ptr() as *mut T) })
+            .map(|p| unsafe { NonNull::new_unchecked(p.as_ptr().add(self.debug_offset) as *mut T) })
     }
     fn gpu_ptr(&self) -> u64 {
-        self.0.gpu_ptr()
+        self.alloc.gpu_ptr() + self.debug_offset as u64
     }
     fn size(&self) -> usize {
-        self.0.size()
+        self.alloc.size() - self.debug_offset
     }
     fn device(&self) -> &AsahiDevice {
-        self.0.device()
+        self.alloc.device()
     }
 }
 
@@ -84,12 +88,43 @@ impl<T, U: RawAllocation> Debug for GenericAlloc<T, U> {
     }
 }
 
+#[repr(C)]
+struct AllocDebugData {
+    state: u32,
+    _pad: u32,
+    size: u64,
+    base_gpuva: u64,
+    obj_gpuva: u64,
+    name: [u8; 0x20],
+}
+
+const STATE_LIVE: u32 = 0x4556494c;
+const STATE_DEAD: u32 = 0x44414544;
+
+impl<T, U: RawAllocation> Drop for GenericAlloc<T, U> {
+    fn drop(&mut self) {
+        let debug_len = mem::size_of::<AllocDebugData>();
+        if self.debug_offset >= debug_len {
+            if let Some(p) = self.alloc.ptr() {
+                unsafe {
+                    let p = p.as_ptr().add(self.debug_offset - debug_len);
+                    (p as *mut u32).write(STATE_DEAD);
+                }
+            }
+        }
+    }
+}
+
+static_assert!(mem::size_of::<AllocDebugData>() == 0x40);
+
 pub(crate) trait Allocator {
     type Raw: RawAllocation;
     // TODO: Needs associated_type_defaults
     // type Allocation<T> = GenericAlloc<T, Self::Raw>;
 
     fn device(&self) -> &AsahiDevice;
+    fn cpu_maps(&self) -> bool;
+    fn min_align(&self) -> usize;
     fn alloc(&mut self, size: usize, align: usize) -> Result<Self::Raw>;
 
     #[inline(never)]
@@ -151,11 +186,60 @@ pub(crate) trait Allocator {
         )
     }
 
+    fn alloc_generic<T>(
+        &mut self,
+        size: usize,
+        align: usize,
+    ) -> Result<GenericAlloc<T, Self::Raw>> {
+        if self.cpu_maps() && debug_enabled(debug::DebugFlags::DebugAllocations) {
+            let debug_align = self.min_align().max(align);
+            let debug_len = mem::size_of::<AllocDebugData>();
+            let debug_offset = (debug_len * 2 + debug_align - 1) & !(debug_align - 1);
+            let alloc = self.alloc(size + debug_offset, align)?;
+
+            let mut debug = AllocDebugData {
+                state: STATE_LIVE,
+                _pad: 0,
+                size: size as u64,
+                base_gpuva: alloc.gpu_ptr(),
+                obj_gpuva: alloc.gpu_ptr() + debug_offset as u64,
+                name: [0; 0x20],
+            };
+
+            let name = core::any::type_name::<T>().as_bytes();
+            let len = name.len().min(debug.name.len() - 1);
+            debug.name[..len].copy_from_slice(&name[..len]);
+
+            if let Some(p) = alloc.ptr() {
+                unsafe {
+                    let p = p.as_ptr();
+                    p.write_bytes(0x42, debug_offset - 2 * debug_len);
+                    let cur = p.add(debug_offset - debug_len) as *mut AllocDebugData;
+                    let prev = p.add(debug_offset - 2 * debug_len) as *mut AllocDebugData;
+                    prev.copy_from(cur, 1);
+                    cur.copy_from(&debug, 1);
+                };
+            }
+
+            Ok(GenericAlloc {
+                alloc,
+                debug_offset,
+                _p: PhantomData,
+            })
+        } else {
+            Ok(GenericAlloc {
+                alloc: self.alloc(size, align)?,
+                debug_offset: 0,
+                _p: PhantomData,
+            })
+        }
+    }
+
     fn alloc_object<T: GpuStruct>(&mut self) -> Result<GenericAlloc<T, Self::Raw>> {
         let size = mem::size_of::<T::Raw<'static>>();
         let align = mem::align_of::<T::Raw<'static>>();
 
-        Ok(GenericAlloc(self.alloc(size, align)?, PhantomData))
+        self.alloc_generic(size, align)
     }
 
     fn array_empty<T: Sized + Default>(
@@ -165,7 +249,7 @@ pub(crate) trait Allocator {
         let size = mem::size_of::<T>() * count;
         let align = mem::align_of::<T>();
 
-        let alloc = GenericAlloc(self.alloc(size, align)?, PhantomData);
+        let alloc = self.alloc_generic(size, align)?;
         GpuArray::<T, GenericAlloc<T, Self::Raw>>::empty(alloc, count)
     }
 
@@ -176,7 +260,7 @@ pub(crate) trait Allocator {
         let size = mem::size_of::<T>() * count;
         let align = mem::align_of::<T>();
 
-        let alloc = GenericAlloc(self.alloc(size, align)?, PhantomData);
+        let alloc = self.alloc_generic(size, align)?;
         GpuOnlyArray::<T, GenericAlloc<T, Self::Raw>>::new(alloc, count)
     }
 }
@@ -229,6 +313,7 @@ pub(crate) struct SimpleAllocator {
     prot: u32,
     vm: mmu::Vm,
     min_align: usize,
+    cpu_maps: bool,
 }
 
 impl SimpleAllocator {
@@ -241,7 +326,7 @@ impl SimpleAllocator {
         min_align: usize,
         prot: u32,
         _block_size: usize,
-        _cpu_maps: bool,
+        cpu_maps: bool,
         _name: fmt::Arguments<'_>,
     ) -> Result<SimpleAllocator> {
         Ok(SimpleAllocator {
@@ -251,6 +336,7 @@ impl SimpleAllocator {
             end,
             prot,
             min_align,
+            cpu_maps,
         })
     }
 }
@@ -260,6 +346,14 @@ impl Allocator for SimpleAllocator {
 
     fn device(&self) -> &AsahiDevice {
         &self.dev
+    }
+
+    fn cpu_maps(&self) -> bool {
+        self.cpu_maps
+    }
+
+    fn min_align(&self) -> usize {
+        self.min_align
     }
 
     #[inline(never)]
@@ -560,6 +654,14 @@ impl Allocator for HeapAllocator {
 
     fn device(&self) -> &AsahiDevice {
         &self.dev
+    }
+
+    fn cpu_maps(&self) -> bool {
+        self.cpu_maps
+    }
+
+    fn min_align(&self) -> usize {
+        self.min_align
     }
 
     fn alloc(&mut self, size: usize, align: usize) -> Result<HeapAllocation> {
