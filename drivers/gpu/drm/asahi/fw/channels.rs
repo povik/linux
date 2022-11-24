@@ -168,16 +168,16 @@ pub(crate) enum DeviceControlMsg {
     DestroyContext {
         unk_4: u32,
         ctx_23: u8,
-        // padding 3 bytes
+        __pad0: Pad<3>,
         unk_c: u32,
         unk_10: u32,
         ctx_0: u8,
         ctx_1: u8,
         ctx_4: u8,
-        // padding 1 byte
+        __pad1: Pad<1>,
         unk_18: u32,
-        gpu_context: GpuWeakPointer<super::workqueue::GpuContextData>,
-        __pad: Pad<0xc>,
+        gpu_context: Option<GpuWeakPointer<super::workqueue::GpuContextData>>,
+        __pad2: Pad<0xc>,
     },
     Unk18(Array<DEVICECONTROL_SZ, u8>),
     Initialize(Pad<DEVICECONTROL_SZ>),

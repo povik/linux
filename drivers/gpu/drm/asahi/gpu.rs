@@ -710,14 +710,16 @@ impl GpuManager for GpuManager::ver {
         let dc = context.with(|raw, _inner| DeviceControlMsg::DestroyContext {
             unk_4: 0,
             ctx_23: raw.unk_23,
+            __pad0: Default::default(),
             unk_c: 0,
             unk_10: 0,
             ctx_0: raw.unk_0,
             ctx_1: raw.unk_1,
             ctx_4: raw.unk_4,
+            __pad1: Default::default(),
             unk_18: 0,
-            gpu_context: context.weak_pointer(),
-            __pad: Default::default(),
+            gpu_context: Some(context.weak_pointer()),
+            __pad2: Default::default(),
         });
 
         mod_dev_dbg!(self.dev, "Context invalidation command: {:?}\n", &dc);
