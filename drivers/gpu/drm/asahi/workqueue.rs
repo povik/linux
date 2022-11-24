@@ -32,6 +32,7 @@ pub(crate) struct Batch {
     commands: usize,
     // TODO: make abstraction
     completion: Opaque<bindings::completion>,
+    wptr: u32,
 }
 
 impl Batch {
@@ -204,11 +205,23 @@ impl WorkQueue {
             Some(event) => event.0.current(),
         };
 
+        mod_pr_debug!(
+            "WorkQueue({:?}): signaling event {:?} value {:#x?}",
+            inner.pipe_type,
+            inner.last_token,
+            cur_value
+        );
+
         let mut completed_commands: usize = 0;
         let mut batches: usize = 0;
 
         for batch in inner.batches.iter() {
             if batch.value <= cur_value {
+                mod_pr_debug!(
+                    "WorkQueue({:?}): batch at value {:#x?} complete",
+                    inner.pipe_type,
+                    batch.value
+                );
                 completed_commands += batch.commands;
                 batches += 1;
             } else {
@@ -228,6 +241,13 @@ impl WorkQueue {
                 break;
             }
         }
+        if let Some(i) = completed.last() {
+            inner
+                .info
+                .state
+                .with(|raw, _inner| raw.cpu_freeptr.store((*i).wptr, Ordering::Release));
+        }
+
         inner.pending.drain(..completed_commands);
         self.cond.notify_all();
         let empty = inner.batches.is_empty();
@@ -292,6 +312,7 @@ impl<'a> WorkQueueBatch<'a> {
             value: event_value,
             commands: self.commands,
             completion: Opaque::uninit(),
+            wptr: self.wptr,
         })?;
         unsafe { bindings::init_completion(batch.completion.get()) };
         inner.batches.try_push(batch.clone())?;

@@ -86,6 +86,11 @@ pub(crate) mod raw {
         __pad4: Pad<0xc>,
         pub(crate) rb_size: u32,
         __pad5: Pad<0xc>,
+        // This isn't part of the structure, but it's here as a
+        // debugging hack so we can inspect what ring position
+        // the driver considered complete and freeable.
+        pub(crate) cpu_freeptr: AtomicU32,
+        __pad6: Pad<0xc>,
     }
 
     #[derive(Debug, Clone, Copy)]
