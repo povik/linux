@@ -144,6 +144,7 @@ pub(crate) trait GpuManager: Send + Sync {
         &self,
         context: &fw::types::GpuObject<fw::workqueue::GpuContextData>,
     ) -> Result;
+    fn flush_fw_cache(&self) -> Result;
     fn handle_timeout(&self, counter: u32, event_slot: u32);
     fn handle_fault(&self);
     fn wait_for_poweroff(&self, timeout: usize) -> Result;
@@ -757,6 +758,41 @@ impl GpuManager for GpuManager::ver {
             context.weak_pointer()
         );
 
+        Ok(())
+    }
+
+    fn flush_fw_cache(&self) -> Result {
+        mod_dev_dbg!(self.dev, "Flushing coprocessor data cache\n");
+
+        // ctx_0 == 0xff or ctx_1 == 0xff cause no effect on context,
+        // but this command does a full cache flush too, so abuse it
+        // for that.
+
+        let dc = DeviceControlMsg::DestroyContext {
+            unk_4: 0,
+            ctx_23: 0,
+            __pad0: Default::default(),
+            unk_c: 0,
+            unk_10: 0,
+            ctx_0: 0xff,
+            ctx_1: 0xff,
+            ctx_4: 0,
+            __pad1: Default::default(),
+            unk_18: 0,
+            gpu_context: None,
+            __pad2: Default::default(),
+        };
+
+        let mut txch = self.tx_channels.lock();
+
+        let token = txch.device_control.send(&dc);
+        {
+            let mut guard = self.rtkit.lock();
+            let rtk = guard.as_mut().unwrap();
+            rtk.send_message(EP_DOORBELL, MSG_TX_DOORBELL | DOORBELL_DEVCTRL)?;
+        }
+
+        txch.device_control.wait_for(token)?;
         Ok(())
     }
 
