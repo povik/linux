@@ -293,6 +293,8 @@ impl<'a> WorkQueueBatch<'a> {
 
     pub(crate) fn commit(&mut self) -> Result<Arc<Batch>> {
         let inner = &mut self.inner;
+        inner.batches.try_reserve(1)?;
+
         let event = inner.event.as_mut().expect("WorkQueueBatch lost its event");
 
         if self.commands == 0 {
