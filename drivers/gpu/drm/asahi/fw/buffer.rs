@@ -31,12 +31,12 @@ pub(crate) mod raw {
     #[derive(Debug, Default)]
     #[repr(C)]
     pub(crate) struct Stats {
-        pub(crate) gpu_0: AtomicU32,
-        pub(crate) gpu_4: AtomicU32,
+        pub(crate) max_a: AtomicU32,
+        pub(crate) max_b: AtomicU32,
         pub(crate) gpu_8: AtomicU32,
         pub(crate) gpu_c: AtomicU32,
         pub(crate) __pad0: Pad<0x10>,
-        pub(crate) cpu_flag: AtomicU32,
+        pub(crate) reset: AtomicU32,
         pub(crate) __pad1: Pad<0x1c>,
     }
 
@@ -91,8 +91,8 @@ pub(crate) mod raw {
         pub(crate) unk_20: u32,
         pub(crate) stats: GpuWeakPointer<super::Stats>,
         pub(crate) unk_2c: u32,
-        pub(crate) unk_30: U64,
-        pub(crate) unk_38: U64,
+        pub(crate) unk_30: U64, // pad
+        pub(crate) unk_38: U64, // pad
     }
 
     #[versions(AGX)]

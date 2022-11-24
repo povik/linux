@@ -259,7 +259,7 @@ impl Buffer::ver {
         let stats = alloc
             .shared
             .new_object(Default::default(), |_inner| buffer::raw::Stats {
-                cpu_flag: AtomicU32::from(1),
+                reset: AtomicU32::from(1),
                 ..Default::default()
             })?;
 
@@ -348,7 +348,7 @@ impl Buffer::ver {
         let mut inner = self.inner.lock();
 
         inner.stats.with(|raw, _inner| {
-            raw.cpu_flag.store(1, Ordering::Relaxed);
+            raw.reset.store(1, Ordering::Relaxed);
         });
 
         let tilemap_size = tile_info.tilemap_size;
