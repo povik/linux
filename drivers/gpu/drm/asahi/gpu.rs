@@ -527,7 +527,7 @@ impl GpuManager::ver {
         Ok(())
     }
 
-    fn show_pending_events(&self) {
+    fn mark_pending_events(&self, culprit_slot: Option<u32>, error: workqueue::BatchError) {
         dev_err!(self.dev, "  Pending events:\n");
 
         self.initdata.globals.with(|raw, _inner| {
@@ -535,7 +535,7 @@ impl GpuManager::ver {
                 let info = i.info.load(Ordering::Relaxed);
                 let wait_value = i.wait_value.load(Ordering::Relaxed);
 
-                if info != 0 {
+                if info & 1 != 0 {
                     let slot = info >> 3;
                     let flags = info & 0x7;
                     dev_err!(
@@ -545,6 +545,12 @@ impl GpuManager::ver {
                         flags,
                         wait_value
                     );
+                    let error = if culprit_slot.is_some() && culprit_slot != Some(slot) {
+                        workqueue::BatchError::Killed
+                    } else {
+                        error
+                    };
+                    self.event_manager.mark_error(slot, wait_value, error);
                     i.info.store(0, Ordering::Relaxed);
                     i.wait_value.store(0, Ordering::Relaxed);
                 }
@@ -552,20 +558,22 @@ impl GpuManager::ver {
         });
     }
 
-    fn show_fault_info(&self) {
+    fn get_fault_info(&self) -> Option<regs::FaultInfo> {
         let data = self.dev.data();
 
         let res = match data.resources() {
             Some(res) => res,
             None => {
                 dev_err!(self.dev, "  Failed to acquire resources\n");
-                return;
+                return None;
             }
         };
 
-        if let Some(info) = res.get_fault_info() {
-            dev_err!(self.dev, "  Fault info: {:#x?}\n", info);
+        let info = res.get_fault_info();
+        if info.is_some() {
+            dev_err!(self.dev, "  Fault info: {:#x?}\n", info.as_ref().unwrap());
         }
+        info
     }
 
     fn recover(&self) {
@@ -810,8 +818,8 @@ impl GpuManager for GpuManager::ver {
         dev_err!(self.dev, "** GPU timeout nya~!!!!! **\n");
         dev_err!(self.dev, "  Event slot: {}\n", event_slot);
         dev_err!(self.dev, "  Timeout count: {}\n", counter);
-        self.show_pending_events();
-        self.show_fault_info();
+        self.get_fault_info();
+        self.mark_pending_events(Some(event_slot), workqueue::BatchError::Timeout);
         self.recover();
     }
 
@@ -823,8 +831,11 @@ impl GpuManager for GpuManager::ver {
         dev_err!(self.dev, ".'|  _-_-  |'.\n");
         dev_err!(self.dev, "  |________|  \n");
         dev_err!(self.dev, "GPU fault nya~!!!!!\n");
-        self.show_pending_events();
-        self.show_fault_info();
+        let error = match self.get_fault_info() {
+            Some(info) => workqueue::BatchError::Fault(info),
+            None => workqueue::BatchError::Unknown,
+        };
+        self.mark_pending_events(None, error);
         self.recover();
     }
 

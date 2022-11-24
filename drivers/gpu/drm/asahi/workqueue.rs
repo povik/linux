@@ -10,7 +10,7 @@ use crate::fw::channels::{PipeType, RunWorkQueueMsg};
 use crate::fw::event::NotifierList;
 use crate::fw::types::*;
 use crate::fw::workqueue::*;
-use crate::{alloc, channel, event, gpu, object};
+use crate::{alloc, channel, event, gpu, object, regs};
 use crate::{box_in_place, inner_weak_ptr, place};
 use core::mem;
 use core::sync::atomic::Ordering;
@@ -18,7 +18,7 @@ use core::time::Duration;
 use kernel::{
     bindings, dbg,
     prelude::*,
-    sync::{Arc, CondVar, Guard, Mutex, UniqueArc},
+    sync::{smutex, Arc, CondVar, Guard, Mutex, UniqueArc},
     Opaque,
 };
 
@@ -27,12 +27,22 @@ const DEBUG_CLASS: DebugFlags = DebugFlags::WorkQueue;
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct WorkToken(u64);
 
+#[derive(Copy, Clone, Debug)]
+pub(crate) enum BatchError {
+    Timeout,
+    Fault(regs::FaultInfo),
+    Unknown,
+    Killed,
+}
+
 pub(crate) struct Batch {
     value: event::EventValue,
     commands: usize,
     // TODO: make abstraction
     completion: Opaque<bindings::completion>,
     wptr: u32,
+    vm_slot: u32,
+    error: smutex::Mutex<Option<BatchError>>,
 }
 
 impl Batch {
@@ -40,8 +50,9 @@ impl Batch {
         self.value
     }
 
-    pub(crate) fn wait(&self) {
+    pub(crate) fn wait(&self) -> core::result::Result<(), BatchError> {
         unsafe { bindings::wait_for_completion(self.completion.get()) };
+        self.error.lock().map_or(Ok(()), Err)
     }
 }
 
@@ -81,6 +92,7 @@ pub(crate) struct WorkQueueBatch<'a> {
     inner: Guard<'a, Mutex<WorkQueueInner>>,
     commands: usize,
     wptr: u32,
+    vm_slot: u32,
 }
 
 impl WorkQueue {
@@ -176,7 +188,7 @@ impl WorkQueue {
         self.info_pointer
     }
 
-    pub(crate) fn begin_batch(this: &Arc<WorkQueue>) -> Result<WorkQueueBatch<'_>> {
+    pub(crate) fn begin_batch(this: &Arc<WorkQueue>, vm_slot: u32) -> Result<WorkQueueBatch<'_>> {
         let mut inner = this.inner.lock();
 
         if inner.event.is_none() {
@@ -191,6 +203,7 @@ impl WorkQueue {
             wptr: inner.wptr,
             inner,
             commands: 0,
+            vm_slot,
         })
     }
 
@@ -199,14 +212,14 @@ impl WorkQueue {
         let event = inner.event.as_ref();
         let cur_value = match event {
             None => {
-                pr_err!("WorkQueue: poll_complete() called but no event?");
+                pr_err!("WorkQueue: signal() called but no event?");
                 return true;
             }
             Some(event) => event.0.current(),
         };
 
         mod_pr_debug!(
-            "WorkQueue({:?}): signaling event {:?} value {:#x?}",
+            "WorkQueue({:?}): Signaling event {:?} value {:#x?}",
             inner.pipe_type,
             inner.last_token,
             cur_value
@@ -218,7 +231,7 @@ impl WorkQueue {
         for batch in inner.batches.iter() {
             if batch.value <= cur_value {
                 mod_pr_debug!(
-                    "WorkQueue({:?}): batch at value {:#x?} complete",
+                    "WorkQueue({:?}): Batch at value {:#x?} complete",
                     inner.pipe_type,
                     batch.value
                 );
@@ -229,7 +242,7 @@ impl WorkQueue {
             }
         }
         mod_pr_debug!(
-            "WorkQueue({:?}): completed {} batches",
+            "WorkQueue({:?}): Completed {} batches",
             inner.pipe_type,
             batches
         );
@@ -260,6 +273,43 @@ impl WorkQueue {
             unsafe { bindings::complete_all(batch.completion.get()) };
         }
         empty
+    }
+
+    pub(crate) fn mark_error(&self, value: event::EventValue, error: BatchError) {
+        // If anything is marked completed, we can consider it successful
+        // at this point, even if we didn't get the signal event yet.
+        self.signal();
+
+        let inner = self.inner.lock();
+
+        if inner.event.is_none() {
+            pr_err!("WorkQueue: signal_fault() called but no event?");
+            return;
+        }
+
+        mod_pr_debug!(
+            "WorkQueue({:?}): Signaling fault for event {:?} at value {:#x?}",
+            inner.pipe_type,
+            inner.last_token,
+            value
+        );
+
+        for batch in inner.batches.iter() {
+            if batch.value <= value {
+                mod_pr_debug!(
+                    "WorkQueue({:?}): Batch at value {:#x?} failed ({} commands)",
+                    inner.pipe_type,
+                    batch.value,
+                    batch.commands,
+                );
+                *(batch.error.lock()) = Some(match error {
+                    BatchError::Fault(info) if info.vm_slot != batch.vm_slot => BatchError::Killed,
+                    err => err,
+                });
+            } else {
+                break;
+            }
+        }
     }
 }
 
@@ -315,6 +365,8 @@ impl<'a> WorkQueueBatch<'a> {
             commands: self.commands,
             completion: Opaque::uninit(),
             wptr: self.wptr,
+            error: smutex::Mutex::new(None),
+            vm_slot: self.vm_slot,
         })?;
         unsafe { bindings::init_completion(batch.completion.get()) };
         inner.batches.try_push(batch.clone())?;

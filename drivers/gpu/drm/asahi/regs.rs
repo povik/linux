@@ -92,12 +92,12 @@ pub(crate) enum FaultReason {
 
 #[derive(Copy, Clone, Debug)]
 pub(crate) struct FaultInfo {
-    address: u64,
-    write: bool,
-    vm_slot: u32,
-    unit: FaultUnit,
-    unk_8: bool,
-    reason: FaultReason,
+    pub(crate) address: u64,
+    pub(crate) write: bool,
+    pub(crate) vm_slot: u32,
+    pub(crate) unit: FaultUnit,
+    pub(crate) unk_8: bool,
+    pub(crate) reason: FaultReason,
 }
 
 pub(crate) struct Resources {

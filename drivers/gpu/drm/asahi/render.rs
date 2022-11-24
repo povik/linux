@@ -314,8 +314,17 @@ impl Renderer for Renderer::ver {
 
         let tile_info = Self::get_tiling_params(&cmdbuf, if clustering { nclusters } else { 1 })?;
 
-        let mut batches_vtx = workqueue::WorkQueue::begin_batch(&self.wq_vtx)?;
-        let mut batches_frag = workqueue::WorkQueue::begin_batch(&self.wq_frag)?;
+        let vm_bind = gpu.bind_vm(vm)?;
+
+        mod_dev_dbg!(
+            self.dev,
+            "[Submission {}] VM slot = {}\n",
+            id,
+            vm_bind.slot()
+        );
+
+        let mut batches_vtx = workqueue::WorkQueue::begin_batch(&self.wq_vtx, vm_bind.slot())?;
+        let mut batches_frag = workqueue::WorkQueue::begin_batch(&self.wq_frag, vm_bind.slot())?;
 
         let scene = Arc::try_new(self.buffer.new_scene(kalloc, &tile_info)?)?;
 
@@ -336,15 +345,6 @@ impl Renderer for Renderer::ver {
             batches_frag.event().slot(),
             batches_frag.event_value(),
             next_frag
-        );
-
-        let vm_bind = gpu.bind_vm(vm)?;
-
-        mod_dev_dbg!(
-            self.dev,
-            "[Submission {}] VM slot = {}\n",
-            id,
-            vm_bind.slot()
         );
 
         let uuid_3d = cmdbuf.cmd_3d_id;
@@ -1010,15 +1010,29 @@ impl Renderer for Renderer::ver {
             "[Submission {}] Waiting for vertex batch...\n",
             id
         );
-        batch_vtx.wait();
-        mod_dev_dbg!(self.dev, "[Submission {}] Vertex batch completed!\n", id);
+
+        match batch_vtx.wait() {
+            Ok(()) => {
+                mod_dev_dbg!(self.dev, "[Submission {}] Vertex batch completed!\n", id);
+            }
+            Err(err) => {
+                dev_err!(self.dev, "[Submission {}] Vertex batch failed: {:?}\n", id, err);
+            }
+        }
+
         mod_dev_dbg!(
             self.dev,
             "[Submission {}] Waiting for fragment batch...\n",
             id
         );
-        batch_frag.wait();
-        mod_dev_dbg!(self.dev, "[Submission {}] Fragment batch completed!\n", id);
+        match batch_frag.wait() {
+            Ok(()) => {
+                mod_dev_dbg!(self.dev, "[Submission {}] Fragment batch completed!\n", id);
+            }
+            Err(err) => {
+                dev_err!(self.dev, "[Submission {}] Fragment batch failed: {:?}\n", id, err);
+            }
+        }
 
         if debug_enabled(debug::DebugFlags::WaitForPowerOff) {
             mod_dev_dbg!(self.dev, "[Submission {}] Waiting for GPU power-off\n", id);

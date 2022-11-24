@@ -160,6 +160,20 @@ impl EventManager {
             }
         }
     }
+
+    pub(crate) fn mark_error(&self, slot: u32, wait_value: u32, error: workqueue::BatchError) {
+        match self
+            .alloc
+            .with_inner(|inner| inner.owners[slot as usize].as_ref().cloned())
+        {
+            Some(owner) => {
+                owner.mark_error(EventValue(wait_value), error);
+            }
+            None => {
+                pr_err!("Received error for empty slot {}", slot);
+            }
+        }
+    }
 }
 
 unsafe impl Send for EventManager {}
