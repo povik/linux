@@ -263,7 +263,8 @@ impl Buffer::ver {
             ))
         })?;
 
-        let kernel_buffer = alloc.private.array_empty(0x40)?;
+        // Technically similar to Scene below, let's play it safe.
+        let kernel_buffer = alloc.shared.array_empty(0x40)?;
         let stats = alloc
             .shared
             .new_object(Default::default(), |_inner| buffer::raw::Stats {
@@ -431,7 +432,14 @@ impl Buffer::ver {
         })?;
 
         let stats_pointer = inner.stats.weak_pointer();
-        let scene = alloc.private.new_boxed(scene_inner, |inner, ptr| {
+
+        // macOS allocates this as private. However, the firmware does not
+        // DC CIVAC this before reading it (like it does most other things),
+        // which causes odd cache incoherency bugs when combined with
+        // speculation on the firmware side (maybe). This doesn't happen
+        // on macOS because these structs are a circular pool that is mapped
+        // already initialized. Just mark this shared for now.
+        let scene = alloc.shared.new_boxed(scene_inner, |inner, ptr| {
             Ok(place!(
                 ptr,
                 buffer::raw::Scene {
