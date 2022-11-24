@@ -27,12 +27,24 @@ const DEBUG_CLASS: DebugFlags = DebugFlags::WorkQueue;
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct WorkToken(u64);
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub(crate) enum BatchError {
     Timeout,
     Fault(regs::FaultInfo),
     Unknown,
     Killed,
+}
+
+impl From<BatchError> for kernel::error::Error {
+    fn from(err: BatchError) -> Self {
+        match err {
+            BatchError::Timeout => ETIMEDOUT,
+            // Not EFAULT because that's for userspace faults
+            BatchError::Fault(_) => EIO,
+            BatchError::Unknown => ENODATA,
+            BatchError::Killed => ECANCELED,
+        }
+    }
 }
 
 pub(crate) struct Batch {

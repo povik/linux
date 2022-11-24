@@ -27,7 +27,7 @@ const CORE_MASK_1: usize = 0xd01514;
 
 #[allow(non_camel_case_types)]
 #[allow(clippy::upper_case_acronyms)]
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub(crate) enum FaultUnit {
     DCMP(u8),
     UL1C(u8),
@@ -80,7 +80,7 @@ pub(crate) enum FaultUnit {
     Unknown(u8),
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub(crate) enum FaultReason {
     Unmapped,
     AfFault,
@@ -90,7 +90,7 @@ pub(crate) enum FaultReason {
     Unknown(u8),
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub(crate) struct FaultInfo {
     pub(crate) address: u64,
     pub(crate) write: bool,

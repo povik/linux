@@ -1011,12 +1011,20 @@ impl Renderer for Renderer::ver {
             id
         );
 
+        let mut ret = Ok(());
+
         match batch_vtx.wait() {
             Ok(()) => {
                 mod_dev_dbg!(self.dev, "[Submission {}] Vertex batch completed!\n", id);
             }
             Err(err) => {
-                dev_err!(self.dev, "[Submission {}] Vertex batch failed: {:?}\n", id, err);
+                dev_err!(
+                    self.dev,
+                    "[Submission {}] Vertex batch failed: {:?}\n",
+                    id,
+                    err
+                );
+                ret = Err(err.into());
             }
         }
 
@@ -1030,7 +1038,15 @@ impl Renderer for Renderer::ver {
                 mod_dev_dbg!(self.dev, "[Submission {}] Fragment batch completed!\n", id);
             }
             Err(err) => {
-                dev_err!(self.dev, "[Submission {}] Fragment batch failed: {:?}\n", id, err);
+                dev_err!(
+                    self.dev,
+                    "[Submission {}] Fragment batch failed: {:?}\n",
+                    id,
+                    err
+                );
+                if ret.is_ok() || err != workqueue::BatchError::Killed {
+                    ret = Err(err.into());
+                }
             }
         }
 
@@ -1042,7 +1058,7 @@ impl Renderer for Renderer::ver {
             mod_dev_dbg!(self.dev, "[Submission {}] GPU powered off\n", id);
         }
 
-        Ok(())
+        ret
     }
 }
 
