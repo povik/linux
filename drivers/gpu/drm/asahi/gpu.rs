@@ -3,7 +3,6 @@
 #![allow(dead_code)]
 
 use core::any::Any;
-use core::mem;
 use core::sync::atomic::{AtomicU64, Ordering};
 use core::time::Duration;
 
@@ -13,14 +12,16 @@ use kernel::{
     prelude::*,
     soc::apple::rtkit,
     sync::{smutex::Mutex, Arc, Guard, UniqueArc},
-    PointerWrapper,
+    time, PointerWrapper,
 };
 
 use crate::box_in_place;
 use crate::debug::*;
 use crate::driver::AsahiDevice;
 use crate::fw::channels::{DeviceControlMsg, FwCtlMsg, PipeType};
-use crate::{alloc, buffer, channel, event, fw, gem, hw, initdata, mmu, regs, render, workqueue};
+use crate::{
+    alloc, buffer, channel, event, fw, gem, hw, initdata, mem, mmu, regs, render, workqueue,
+};
 
 const DEBUG_CLASS: DebugFlags = DebugFlags::Gpu;
 
@@ -47,6 +48,8 @@ const IOVA_KERN_SHARED_RO_BASE: u64 = 0xffffffaa00000000;
 const IOVA_KERN_SHARED_RO_TOP: u64 = 0xffffffabffffffff;
 const IOVA_KERN_GPU_BASE: u64 = 0xffffffaf00000000;
 const IOVA_KERN_GPU_TOP: u64 = 0xffffffafffffffff;
+
+const HALT_ENTER_TIMEOUT_MS: u64 = 100;
 
 pub(crate) struct KernelAllocators {
     pub(crate) private: alloc::DefaultAllocator,
@@ -252,7 +255,7 @@ impl GpuManager::ver {
         {
             let fwctl = mgr.fwctl_channel.lock();
             let p_fwctl = fwctl.to_raw();
-            mem::drop(fwctl);
+            core::mem::drop(fwctl);
 
             mgr.initdata.fw_status.with_mut(|raw, _inner| {
                 raw.fwctl_channel = p_fwctl;
@@ -262,14 +265,14 @@ impl GpuManager::ver {
         {
             let txc = mgr.tx_channels.lock();
             let p_device_control = txc.device_control.to_raw();
-            mem::drop(txc);
+            core::mem::drop(txc);
 
             let rxc = mgr.rx_channels.lock();
             let p_event = rxc.event.to_raw();
             let p_fw_log = rxc.fw_log.to_raw();
             let p_ktrace = rxc.ktrace.to_raw();
             let p_stats = rxc.stats.to_raw();
-            mem::drop(rxc);
+            core::mem::drop(rxc);
 
             mgr.initdata.runtime_pointers.with_mut(|raw, _inner| {
                 raw.device_control = p_device_control;
@@ -567,9 +570,21 @@ impl GpuManager::ver {
     fn recover(&self) {
         self.initdata.fw_status.with(|raw, _inner| {
             let halt_count = raw.flags.halt_count.load(Ordering::Relaxed);
-            let halted = raw.flags.halted.load(Ordering::Relaxed);
+            let mut halted = raw.flags.halted.load(Ordering::Relaxed);
             dev_err!(self.dev, "  Halt count: {}\n", halt_count);
             dev_err!(self.dev, "  Halted: {}\n", halted);
+
+            if halted == 0 {
+                let timeout = time::ktime_get() + Duration::from_millis(HALT_ENTER_TIMEOUT_MS);
+                while time::ktime_get() < timeout {
+                    halted = raw.flags.halted.load(Ordering::Relaxed);
+                    if halted != 0 {
+                        break;
+                    }
+                    mem::sync();
+                }
+                halted = raw.flags.halted.load(Ordering::Relaxed);
+            }
 
             if debug_enabled(DebugFlags::NoGpuRecovery) {
                 dev_crit!(self.dev, "  GPU recovery is disabled, wedging forever!\n");
