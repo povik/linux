@@ -112,6 +112,18 @@ impl<T, U: RawAllocation> Drop for GenericAlloc<T, U> {
                 }
             }
         }
+        if debug_enabled(DebugFlags::FillAllocations) {
+            if let Some(p) = self.ptr() {
+                unsafe { (p.as_ptr() as *mut u8).write_bytes(0xde, self.size()) };
+                unsafe {
+                    core::arch::asm!(
+                        "dc civac, {x}",
+                        x = in(reg) (p.as_ptr() as usize)
+                    );
+                }
+            }
+        }
+        core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
     }
 }
 
@@ -191,48 +203,57 @@ pub(crate) trait Allocator {
         size: usize,
         align: usize,
     ) -> Result<GenericAlloc<T, Self::Raw>> {
-        if self.cpu_maps() && debug_enabled(debug::DebugFlags::DebugAllocations) {
-            let debug_align = self.min_align().max(align);
-            let debug_len = mem::size_of::<AllocDebugData>();
-            let debug_offset = (debug_len * 2 + debug_align - 1) & !(debug_align - 1);
-            let alloc = self.alloc(size + debug_offset, align)?;
+        let ret: GenericAlloc<T, Self::Raw> =
+            if self.cpu_maps() && debug_enabled(debug::DebugFlags::DebugAllocations) {
+                let debug_align = self.min_align().max(align);
+                let debug_len = mem::size_of::<AllocDebugData>();
+                let debug_offset = (debug_len * 2 + debug_align - 1) & !(debug_align - 1);
+                let alloc = self.alloc(size + debug_offset, align)?;
 
-            let mut debug = AllocDebugData {
-                state: STATE_LIVE,
-                _pad: 0,
-                size: size as u64,
-                base_gpuva: alloc.gpu_ptr(),
-                obj_gpuva: alloc.gpu_ptr() + debug_offset as u64,
-                name: [0; 0x20],
+                let mut debug = AllocDebugData {
+                    state: STATE_LIVE,
+                    _pad: 0,
+                    size: size as u64,
+                    base_gpuva: alloc.gpu_ptr(),
+                    obj_gpuva: alloc.gpu_ptr() + debug_offset as u64,
+                    name: [0; 0x20],
+                };
+
+                let name = core::any::type_name::<T>().as_bytes();
+                let len = name.len().min(debug.name.len() - 1);
+                debug.name[..len].copy_from_slice(&name[..len]);
+
+                if let Some(p) = alloc.ptr() {
+                    unsafe {
+                        let p = p.as_ptr();
+                        p.write_bytes(0x42, debug_offset - 2 * debug_len);
+                        let cur = p.add(debug_offset - debug_len) as *mut AllocDebugData;
+                        let prev = p.add(debug_offset - 2 * debug_len) as *mut AllocDebugData;
+                        prev.copy_from(cur, 1);
+                        cur.copy_from(&debug, 1);
+                    };
+                }
+
+                GenericAlloc {
+                    alloc,
+                    debug_offset,
+                    _p: PhantomData,
+                }
+            } else {
+                GenericAlloc {
+                    alloc: self.alloc(size, align)?,
+                    debug_offset: 0,
+                    _p: PhantomData,
+                }
             };
 
-            let name = core::any::type_name::<T>().as_bytes();
-            let len = name.len().min(debug.name.len() - 1);
-            debug.name[..len].copy_from_slice(&name[..len]);
-
-            if let Some(p) = alloc.ptr() {
-                unsafe {
-                    let p = p.as_ptr();
-                    p.write_bytes(0x42, debug_offset - 2 * debug_len);
-                    let cur = p.add(debug_offset - debug_len) as *mut AllocDebugData;
-                    let prev = p.add(debug_offset - 2 * debug_len) as *mut AllocDebugData;
-                    prev.copy_from(cur, 1);
-                    cur.copy_from(&debug, 1);
-                };
+        if debug_enabled(DebugFlags::FillAllocations) {
+            if let Some(p) = ret.ptr() {
+                unsafe { (p.as_ptr() as *mut u8).write_bytes(0xaa, ret.size()) };
             }
-
-            Ok(GenericAlloc {
-                alloc,
-                debug_offset,
-                _p: PhantomData,
-            })
-        } else {
-            Ok(GenericAlloc {
-                alloc: self.alloc(size, align)?,
-                debug_offset: 0,
-                _p: PhantomData,
-            })
         }
+
+        Ok(ret)
     }
 
     fn alloc_object<T: GpuStruct>(&mut self) -> Result<GenericAlloc<T, Self::Raw>> {
