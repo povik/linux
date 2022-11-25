@@ -54,8 +54,7 @@ pub(crate) mod raw {
     #[derive(Debug, Default)]
     #[repr(C)]
     pub(crate) struct HwDataShared1 {
-        pub(crate) table: Array<16, i32>,
-        pub(crate) unk_40: u32,
+        pub(crate) table: Array<17, i32>,
         pub(crate) unk_44: Array<0x60, u8>,
         pub(crate) unk_a4: u32,
         pub(crate) unk_a8: u32,
@@ -63,13 +62,45 @@ pub(crate) mod raw {
 
     #[derive(Debug, Default)]
     #[repr(C)]
+    pub(crate) struct HwDataShared2Curve {
+        pub(crate) unk_0: u32,
+        pub(crate) unk_4: u32,
+        pub(crate) t1: Array<16, i16>,
+        pub(crate) t2: Array<16, i16>,
+        pub(crate) t3: Array<8, Array<16, i32>>,
+    }
+
+    #[derive(Debug, Default)]
+    #[repr(C)]
+    pub(crate) struct HwDataShared2T8112 {
+        pub(crate) unk_0: Array<5, u32>,
+        pub(crate) unk_14: u32,
+        pub(crate) unk_18: Array<8, u32>,
+        pub(crate) curve1: HwDataShared2Curve,
+        pub(crate) curve2: HwDataShared2Curve,
+    }
+
+    #[derive(Debug, Default)]
+    #[repr(C)]
     pub(crate) struct HwDataShared2 {
-        pub(crate) table: Array<8, i32>,
-        pub(crate) unk_20: Array<0x8, u8>,
+        pub(crate) table: Array<10, i32>,
         pub(crate) unk_28: Array<0x10, u8>,
-        pub(crate) unk_38: Array<0x8, u8>,
-        pub(crate) unk_40: Array<0x4c8, u8>,
+        pub(crate) t8112: HwDataShared2T8112,
+        pub(crate) unk_500: u32,
+        pub(crate) unk_504: u32,
         pub(crate) unk_508: u32,
+        pub(crate) unk_50c: u32,
+        pub(crate) unk_510: u32,
+    }
+
+    #[derive(Debug, Default)]
+    #[repr(C)]
+    pub(crate) struct HwDataShared3 {
+        pub(crate) unk_0: u32,
+        pub(crate) unk_4: u32,
+        pub(crate) unk_8: u32,
+        pub(crate) table: Array<16, u32>,
+        pub(crate) unk_4c: u32,
     }
 
     #[derive(Debug, Default)]
@@ -124,7 +155,7 @@ pub(crate) mod raw {
 
     #[derive(Default)]
     #[repr(C)]
-    pub(crate) struct T8103Data {
+    pub(crate) struct T81xxData {
         pub(crate) unk_d8c: u32,
         pub(crate) unk_d90: u32,
         pub(crate) unk_d94: u32,
@@ -141,7 +172,7 @@ pub(crate) mod raw {
         pub(crate) unk_dc0: u32,
         pub(crate) unk_dc4: u32,
         pub(crate) unk_dc8: u32,
-        pub(crate) unk_dcc: u32,
+        pub(crate) max_pstate_scaled: u32,
     }
 
     #[versions(AGX)]
@@ -436,7 +467,7 @@ pub(crate) mod raw {
         pub(crate) max_pstate_scaled_14: u32,
         pub(crate) unk_d68: Array<0x24, u8>,
 
-        pub(crate) t8103_data: T8103Data,
+        pub(crate) t81xx_data: T81xxData,
 
         pub(crate) unk_dd0: Array<0x40, u8>,
 
@@ -465,16 +496,19 @@ pub(crate) mod raw {
         pub(crate) unk_pad1: Pad<0x20>,
 
         pub(crate) hws2: HwDataShared2,
-        pub(crate) unk_3bfc: u32,
-        pub(crate) unk_3c00: Array<0xa0, u8>,
-        pub(crate) unk_3ca0: u64,
-        pub(crate) unk_3ca8: u64,
-        pub(crate) unk_3cb0: u64,
-        pub(crate) ts_last_idle: u64,
-        pub(crate) ts_last_poweron: u64,
-        pub(crate) ts_last_poweroff: u64,
-        pub(crate) unk_3cd0: u64,
-        pub(crate) unk_3cd8: u64,
+        pub(crate) unk_3c04: u32,
+        pub(crate) hws3: HwDataShared3,
+        pub(crate) unk_3c58: Array<0x3c, u8>,
+        pub(crate) unk_3c94: u32,
+        pub(crate) unk_3c98: U64,
+        pub(crate) unk_3ca0: U64,
+        pub(crate) unk_3ca8: U64,
+        pub(crate) unk_3cb0: U64,
+        pub(crate) ts_last_idle: U64,
+        pub(crate) ts_last_poweron: U64,
+        pub(crate) ts_last_poweroff: U64,
+        pub(crate) unk_3cd0: U64,
+        pub(crate) unk_3cd8: U64,
 
         #[ver(V >= V13_0B4)]
         pub(crate) unk_3ce0_0: u32,
@@ -623,7 +657,7 @@ pub(crate) mod raw {
         pub(crate) sram_k: Array<0x10, F32>,
         pub(crate) unk_9f4: Array<0x10, u32>,
         pub(crate) rel_max_powers: Array<0x10, u32>,
-        pub(crate) rel_boost_powers: Array<0x10, u32>,
+        pub(crate) rel_boost_freqs: Array<0x10, u32>,
 
         #[ver(V < V13_0B4)]
         pub(crate) min_sram_volt: u32,
@@ -948,7 +982,8 @@ pub(crate) mod raw {
 
         pub(crate) hws1: HwDataShared1,
         pub(crate) hws2: HwDataShared2,
-        pub(crate) unk_8fac: Array<0x60, u8>,
+        pub(crate) hws3: HwDataShared3,
+        pub(crate) unk_9004: Array<8, u8>,
 
         #[ver(V >= V13_0B4)]
         pub(crate) unk_900c_0: Array<0x28, u8>,

@@ -35,8 +35,7 @@ impl<'a> InitDataBuilder::ver<'a> {
     #[inline(never)]
     fn hw_shared1(cfg: &hw::HwConfig) -> raw::HwDataShared1 {
         let mut ret = raw::HwDataShared1 {
-            unk_40: 0xffff,
-            unk_a4: 0xffff,
+            unk_a4: cfg.shared1_a4,
             ..Default::default()
         };
         for (i, val) in cfg.shared1_tab.iter().enumerate() {
@@ -45,10 +44,34 @@ impl<'a> InitDataBuilder::ver<'a> {
         ret
     }
 
+    fn init_curve(
+        curve: &mut raw::HwDataShared2Curve,
+        unk_0: u32,
+        unk_4: u32,
+        t1: &[i16],
+        t2: &[i16],
+        t3: &[&[i32]],
+    ) {
+        curve.unk_0 = unk_0;
+        curve.unk_4 = unk_4;
+        (*curve.t1)[..t1.len()].copy_from_slice(t1);
+        (*curve.t1)[t1.len()..].fill(t1[0]);
+        (*curve.t2)[..t2.len()].copy_from_slice(t2);
+        (*curve.t2)[t2.len()..].fill(t2[0]);
+        for (i, a) in curve.t3.iter_mut().enumerate() {
+            a.fill(0x3ffffff);
+            if i < t3.len() {
+                let b = t3[i];
+                (**a)[..b.len()].copy_from_slice(b);
+            }
+        }
+    }
+
     #[inline(never)]
     fn hw_shared2(cfg: &hw::HwConfig) -> Result<Box<raw::HwDataShared2>> {
         let mut ret = box_in_place!(raw::HwDataShared2 {
             unk_28: Array::new([0xff; 16]),
+            t8112: Default::default(),
             unk_508: cfg.shared2_unk_508,
             ..Default::default()
         })?;
@@ -56,11 +79,55 @@ impl<'a> InitDataBuilder::ver<'a> {
         for (i, val) in cfg.shared2_tab.iter().enumerate() {
             ret.table[i] = *val;
         }
+
+        if cfg.chip_id == 0x8112 {
+            ret.t8112.unk_14 = 0x6000000;
+            Self::init_curve(&mut ret.t8112.curve1, 0, 0x20000000, &[-1], &[0x0f07], &[]);
+            Self::init_curve(
+                &mut ret.t8112.curve2,
+                7,
+                0x80000000,
+                &[-1, 25740, 17429, 12550, 9597, 7910, 6657, 5881, 5421],
+                &[
+                    0x0f07, 0x04c0, 0x06c0, 0x08c0, 0x0ac0, 0x0c40, 0x0dc0, 0x0ec0, 0x0f80,
+                ],
+                &[
+                    &[0x3ffffff, 107, 101, 94, 87, 82, 77, 73, 71],
+                    &[
+                        0x3ffffff, 38240, 36251, 33562, 31368, 29379, 27693, 26211, 25370,
+                    ],
+                    &[
+                        0x3ffffff, 123933, 117485, 108771, 101661, 95217, 89751, 84948, 82222,
+                    ],
+                ],
+            );
+        }
+
         Ok(ret)
     }
 
-    fn t8103_data() -> raw::T8103Data {
-        raw::T8103Data {
+    #[inline(never)]
+    fn hw_shared3(cfg: &hw::HwConfig) -> Result<Box<raw::HwDataShared3>> {
+        let mut ret = box_in_place!(raw::HwDataShared3 {
+            ..Default::default()
+        })?;
+
+        if cfg.chip_id == 0x8112 {
+            ret.unk_0 = 1;
+            ret.unk_4 = 500;
+            ret.unk_8 = 5;
+            ret.table.copy_from_slice(&[
+                10700, 10700, 10700, 10700, 10700, 6000, 1000, 1000, 1000, 10700, 10700, 10700,
+                10700, 10700, 10700, 10700,
+            ]);
+            ret.unk_4c = 1;
+        }
+
+        Ok(ret)
+    }
+
+    fn t81xx_data(dyncfg: &'a hw::DynConfig) -> raw::T81xxData {
+        raw::T81xxData {
             unk_d8c: 0x80000000,
             unk_d90: 4,
             unk_d9c: f32!(0.6),
@@ -68,7 +135,7 @@ impl<'a> InitDataBuilder::ver<'a> {
             unk_dac: f32!(0.38552),
             unk_db8: f32!(65536.0),
             unk_dbc: f32!(13.56),
-            unk_dcc: 600,
+            max_pstate_scaled: 100 * dyncfg.pwr.perf_max_pstate,
             ..Default::default()
         }
     }
@@ -100,9 +167,6 @@ impl<'a> InitDataBuilder::ver<'a> {
                 #[ver(V >= V13_0B4)]
                 let base_clock_mhz = self.cfg.base_clock_hz / 1_000_000;
                 let clocks_per_period = base_clock_khz * period_ms;
-
-                let cluster_mask_8 = (!0u64) >> ((8 - self.dyncfg.id.num_clusters) * 8);
-                let cluster_mask_1 = (!0u32) >> (32 - self.dyncfg.id.num_clusters);
 
                 let raw = place!(
                     ptr,
@@ -184,7 +248,7 @@ impl<'a> InitDataBuilder::ver<'a> {
                         max_pstate_scaled_7: max_ps_scaled,
                         unk_alpha_neg: f32!(0.8),
                         unk_alpha: f32!(0.2),
-                        fast_die0_sensor_mask: U64(self.cfg.fast_die0_sensor_mask & cluster_mask_8),
+                        fast_die0_sensor_mask: U64(self.cfg.fast_die0_sensor_mask),
                         fast_die0_release_temp_cc: 100 * pwr.fast_die0_release_temp,
                         unk_87c: self.cfg.da.unk_87c,
                         unk_880: 0x4,
@@ -227,10 +291,9 @@ impl<'a> InitDataBuilder::ver<'a> {
                         #[ver(V >= V13_0B4)]
                         base_clock_mhz_2: base_clock_mhz,
                         max_pstate_scaled_14: max_ps_scaled,
-                        t8103_data: if self.cfg.chip_id == 0x8103 {
-                            Self::t8103_data()
-                        } else {
-                            Default::default()
+                        t81xx_data: match self.cfg.chip_id {
+                            0x8103 | 0x8112 => Self::t81xx_data(self.dyncfg),
+                            _ => Default::default(),
                         },
                         #[ver(V >= V13_0B4)]
                         unk_e10_0: raw::HwDataA130Extra {
@@ -264,20 +327,16 @@ impl<'a> InitDataBuilder::ver<'a> {
                             unk_128: 600,
                             ..Default::default()
                         },
-                        fast_die0_sensor_mask_2: U64(
-                            self.cfg.fast_die0_sensor_mask & cluster_mask_8
-                        ),
+                        fast_die0_sensor_mask_2: U64(self.cfg.fast_die0_sensor_mask),
                         unk_e24: self.cfg.da.unk_e24,
                         unk_e28: 1,
-                        fast_die0_sensor_mask_alt: U64(
-                            self.cfg.fast_die0_sensor_mask_alt & cluster_mask_8
-                        ),
-                        fast_die0_sensor_present: self.cfg.fast_die0_sensor_present
-                            & cluster_mask_1,
+                        fast_die0_sensor_mask_alt: U64(self.cfg.fast_die0_sensor_mask_alt),
+                        fast_die0_sensor_present: self.cfg.fast_die0_sensor_present,
                         #[ver(V < V13_0B4)]
                         unk_1638: Array::new([0, 0, 0, 0, 1, 0, 0, 0]),
                         hws1: Self::hw_shared1(self.cfg),
                         hws2: *Self::hw_shared2(self.cfg)?,
+                        hws3: *Self::hw_shared3(self.cfg)?,
                         unk_3ce8: 1,
                         ..Default::default()
                     }
@@ -296,13 +355,14 @@ impl<'a> InitDataBuilder::ver<'a> {
                 }
 
                 for i in 0..self.dyncfg.id.num_clusters as usize {
-                    let coef_a = *self.cfg.unk_coef_a.get(i).unwrap_or(&f32!(0.0));
-                    let coef_b = *self.cfg.unk_coef_b.get(i).unwrap_or(&f32!(0.0));
-
-                    raw.unk_coef_a1[i][0] = coef_a;
-                    raw.unk_coef_a2[i][0] = coef_a;
-                    raw.unk_coef_b1[i][0] = coef_b;
-                    raw.unk_coef_b2[i][0] = coef_b;
+                    if let Some(coef_a) = self.cfg.unk_coef_a.get(i) {
+                        (*raw.unk_coef_a1[i])[..coef_a.len()].copy_from_slice(coef_a);
+                        (*raw.unk_coef_a2[i])[..coef_a.len()].copy_from_slice(coef_a);
+                    }
+                    if let Some(coef_b) = self.cfg.unk_coef_b.get(i) {
+                        (*raw.unk_coef_b1[i])[..coef_b.len()].copy_from_slice(coef_b);
+                        (*raw.unk_coef_b2[i])[..coef_b.len()].copy_from_slice(coef_b);
+                    }
                 }
 
                 for (i, pz) in pwr.power_zones.iter().enumerate() {
@@ -390,6 +450,7 @@ impl<'a> InitDataBuilder::ver<'a> {
                         unk_b24: 0x1,
                         unk_b28: 0x1,
                         unk_b2c: 0x1,
+                        unk_b30: self.cfg.db.unk_b30,
                         #[ver(V >= V13_0B4)]
                         unk_b38_0: 1,
                         #[ver(V >= V13_0B4)]
@@ -401,6 +462,11 @@ impl<'a> InitDataBuilder::ver<'a> {
                     }
                 );
 
+                let base_ps = self.dyncfg.pwr.perf_base_pstate as usize;
+                let max_ps = self.dyncfg.pwr.perf_max_pstate as usize;
+                let base_freq = self.dyncfg.pwr.perf_states[base_ps].freq_mhz;
+                let max_freq = self.dyncfg.pwr.perf_states[max_ps].freq_mhz;
+
                 for (i, ps) in self.dyncfg.pwr.perf_states.iter().enumerate() {
                     raw.frequencies[i] = ps.freq_mhz;
                     for (j, mv) in ps.volt_mv.iter().enumerate() {
@@ -410,8 +476,11 @@ impl<'a> InitDataBuilder::ver<'a> {
                     }
                     raw.sram_k[i] = self.cfg.sram_k;
                     raw.rel_max_powers[i] = ps.pwr_mw * 100 / self.dyncfg.pwr.max_power_mw;
-                    // TODO
-                    raw.rel_boost_powers[i] = ps.pwr_mw * 100 / self.dyncfg.pwr.max_power_mw;
+                    raw.rel_boost_freqs[i] = if i > base_ps {
+                        (ps.freq_mhz - base_freq) * 100 / (max_freq - base_freq)
+                    } else {
+                        0
+                    };
                 }
 
                 Ok(raw)
@@ -478,6 +547,7 @@ impl<'a> InitDataBuilder::ver<'a> {
                         unk_89f4_8: 1,
                         hws1: Self::hw_shared1(self.cfg),
                         hws2: *Self::hw_shared2(self.cfg)?,
+                        hws3: *Self::hw_shared3(self.cfg)?,
                         unk_900c: 1,
                         #[ver(V >= V13_0B4)]
                         unk_9010_0: 1,

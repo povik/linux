@@ -14,6 +14,7 @@ const MAX_POWERZONES: usize = 5;
 
 pub(crate) mod t600x;
 pub(crate) mod t8103;
+pub(crate) mod t8112;
 
 /* Note: This is a firmware-relevant ID */
 #[derive(Debug, Copy, Clone)]
@@ -33,6 +34,8 @@ pub(crate) enum GpuCore {
     G13G = 11,
     G13S = 12,
     G13C = 13,
+    // G14P = 14,
+    G14G = 15,
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
@@ -136,6 +139,7 @@ pub(crate) struct HwConfigB {
     pub(crate) unk_534: u32,
     pub(crate) unk_ab8: u32,
     pub(crate) unk_abc: u32,
+    pub(crate) unk_b30: u32,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -168,11 +172,12 @@ pub(crate) struct HwConfig {
     pub(crate) da: HwConfigA,
     pub(crate) db: HwConfigB,
     pub(crate) shared1_tab: &'static [i32],
+    pub(crate) shared1_a4: u32,
     pub(crate) shared2_tab: &'static [i32],
     pub(crate) shared2_unk_508: u32,
     pub(crate) sram_k: F32,
-    pub(crate) unk_coef_a: &'static [F32],
-    pub(crate) unk_coef_b: &'static [F32],
+    pub(crate) unk_coef_a: &'static [&'static [F32]],
+    pub(crate) unk_coef_b: &'static [&'static [F32]],
     pub(crate) global_tab: Option<&'static [u8]>,
 
     pub(crate) fast_die0_sensor_mask: u64,
@@ -382,11 +387,11 @@ impl PwrConfig {
             ppm_filter_time_constant_ms: prop!("apple,ppm-filter-time-constant-ms"),
             ppm_ki: prop!("apple,ppm-ki"),
             ppm_kp: prop!("apple,ppm-kp"),
-            pwr_filter_time_constant: prop!("apple,pwr-filter-time-constant"),
-            pwr_integral_gain: prop!("apple,pwr-integral-gain"),
-            pwr_integral_min_clamp: prop!("apple,pwr-integral-min-clamp"),
+            pwr_filter_time_constant: prop!("apple,pwr-filter-time-constant", 313),
+            pwr_integral_gain: prop!("apple,pwr-integral-gain", f32!(0.0202129)),
+            pwr_integral_min_clamp: prop!("apple,pwr-integral-min-clamp", 0),
             pwr_min_duty_cycle: prop!("apple,pwr-min-duty-cycle"),
-            pwr_proportional_gain: prop!("apple,pwr-proportional-gain"),
+            pwr_proportional_gain: prop!("apple,pwr-proportional-gain", f32!(5.2831855)),
 
             perf_states,
             power_zones,

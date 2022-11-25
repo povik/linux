@@ -64,6 +64,7 @@ impl platform::Driver for AsahiDriver {
 
     kernel::define_of_id_table! {&'static hw::HwConfig, [
         (of::DeviceId::Compatible(b"apple,agx-t8103"), Some(&hw::t8103::HWCONFIG)),
+        (of::DeviceId::Compatible(b"apple,agx-t8112"), Some(&hw::t8112::HWCONFIG)),
         (of::DeviceId::Compatible(b"apple,agx-t6000"), Some(&hw::t600x::HWCONFIG_T6000)),
         (of::DeviceId::Compatible(b"apple,agx-t6001"), Some(&hw::t600x::HWCONFIG_T6001)),
         (of::DeviceId::Compatible(b"apple,agx-t6002"), Some(&hw::t600x::HWCONFIG_T6002)),
@@ -92,8 +93,13 @@ impl platform::Driver for AsahiDriver {
         res.start_cpu()?;
 
         let reg = drm::drv::Registration::<AsahiDriver>::new(&dev)?;
-        //let gpu = gpu::GpuManagerG13GV13_0B4::new(&reg.device(), cfg)?;
-        let gpu = gpu::GpuManagerG13GV12_3::new(reg.device(), &res, cfg)?;
+        let gpu =
+            match cfg.gpu_gen {
+                hw::GpuGen::G13 => gpu::GpuManagerG13V12_3::new(reg.device(), &res, cfg)?
+                    as Arc<dyn gpu::GpuManager>,
+                hw::GpuGen::G14 => gpu::GpuManagerG14V12_4::new(reg.device(), &res, cfg)?
+                    as Arc<dyn gpu::GpuManager>,
+            };
 
         let data =
             kernel::new_device_data!(reg, res, AsahiData { dev, gpu }, "Asahi::Registrations")?;

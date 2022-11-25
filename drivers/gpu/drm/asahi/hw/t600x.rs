@@ -75,16 +75,36 @@ pub(crate) const HWCONFIG_T6002: super::HwConfig = HwConfig {
         unk_534: 1,
         unk_ab8: 0x2084,
         unk_abc: 0x80,
+        unk_b30: 0,
     },
     shared1_tab: &[
         0, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff,
-        0xffff, 0xffff, 0xffff, 0xffff,
+        0xffff, 0xffff, 0xffff, 0xffff, 0xffff,
     ],
-    shared2_tab: &[-1, -1, -1, -1, 0x2aa, 0xaaa, -1, -1],
+    shared1_a4: 0xffff,
+    shared2_tab: &[-1, -1, -1, -1, 0x2aa, 0xaaa, -1, -1, 0, 0],
     shared2_unk_508: 0xcc00001,
     sram_k: f32!(1.02),
-    unk_coef_a: &f32!([9.838, 9.819, 9.826, 9.799, 9.799, 9.826, 9.819, 9.838]),
-    unk_coef_b: &f32!([13.0, 13.0, 13.0, 13.0, 13.0, 13.0, 13.0, 13.0]),
+    unk_coef_a: &[
+        &f32!([9.838]),
+        &f32!([9.819]),
+        &f32!([9.826]),
+        &f32!([9.799]),
+        &f32!([9.799]),
+        &f32!([9.826]),
+        &f32!([9.819]),
+        &f32!([9.838]),
+    ],
+    unk_coef_b: &[
+        &f32!([13.0]),
+        &f32!([13.0]),
+        &f32!([13.0]),
+        &f32!([13.0]),
+        &f32!([13.0]),
+        &f32!([13.0]),
+        &f32!([13.0]),
+        &f32!([13.0]),
+    ],
     global_tab: Some(&[
         0, 1, 2, 1, 1, 90, 75, 1, 1, 1, 2, 90, 75, 1, 1, 1, 1, 90, 75, 1, 1,
     ]),
@@ -100,6 +120,9 @@ pub(crate) const HWCONFIG_T6001: super::HwConfig = HwConfig {
     gpu_core: GpuCore::G13C,
 
     max_num_clusters: 4,
+    fast_die0_sensor_mask: 0x80808080,
+    fast_die0_sensor_mask_alt: 0x90909090,
+    fast_die0_sensor_present: 0x0f,
     io_mappings: &iomaps(8, false),
     ..HWCONFIG_T6002
 };
@@ -110,6 +133,9 @@ pub(crate) const HWCONFIG_T6000: super::HwConfig = HwConfig {
     gpu_core: GpuCore::G13S,
 
     max_num_clusters: 2,
+    fast_die0_sensor_mask: 0x8080,
+    fast_die0_sensor_mask_alt: 0x9090,
+    fast_die0_sensor_present: 0x03,
     io_mappings: &iomaps(4, false),
     ..HWCONFIG_T6001
 };
