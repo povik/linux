@@ -110,7 +110,7 @@ impl Operation for RetireStamp {}
 pub(crate) struct StartVertex<'a> {
     pub(crate) header: op::StartVertex,
     pub(crate) tiling_params: GpuWeakPointer<vertex::raw::TilingParameters>,
-    pub(crate) job_params1: GpuWeakPointer<vertex::raw::JobParameters1<'a>>,
+    pub(crate) job_params1: GpuWeakPointer<vertex::raw::JobParameters1::ver<'a>>,
     pub(crate) buffer: GpuWeakPointer<buffer::Info::ver>,
     pub(crate) scene: GpuWeakPointer<buffer::Scene::ver>,
     pub(crate) stats: GpuWeakPointer<initdata::raw::GpuStatsVtx::ver>,
@@ -172,6 +172,10 @@ pub(crate) struct FinalizeVertex {
     pub(crate) unk_60: u32,
     pub(crate) unk_64: u32,
     pub(crate) unk_68: u32,
+
+    #[ver(G >= G14)]
+    pub(crate) unk_68_g14: U64,
+
     pub(crate) restart_branch_offset: i32,
     pub(crate) unk_70: u32,
 
@@ -258,6 +262,10 @@ pub(crate) struct FinalizeFragment {
     pub(crate) unk_7c: U64,
     pub(crate) unk_84: U64,
     pub(crate) unk_8c: U64,
+
+    #[ver(G >= G14)]
+    pub(crate) unk_8c_g14: U64,
+
     pub(crate) restart_branch_offset: i32,
     pub(crate) unk_98: u32,
 

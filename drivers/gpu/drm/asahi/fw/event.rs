@@ -25,6 +25,7 @@ pub(crate) mod raw {
         pub(crate) unkptr_10: U64,
     }
 
+    #[versions(AGX)]
     #[derive(Debug, Clone, Copy)]
     #[repr(C)]
     pub(crate) struct NotifierState {
@@ -38,14 +39,22 @@ pub(crate) mod raw {
         pstamp_frag: Array<4, U64>,
         has_comp: u32,
         pstamp_comp: Array<4, U64>,
+        #[ver(G >= G14)]
+        unk_98_g14_0: Array<0x14, u8>,
         in_list: u32,
         list_head: LinkedListHead,
+        #[ver(G >= G14)]
+        unk_a8_g14_0: Pad<4>,
+        #[ver(V >= V13_0B4)]
         unk_buf: Array<0x8, u8>, // Init to all-ff
     }
 
-    impl Default for NotifierState {
+    #[versions(AGX)]
+    impl Default for NotifierState::ver {
         fn default() -> Self {
+            #[allow(unused_mut)]
             let mut s: Self = unsafe { core::mem::zeroed() };
+            #[ver(V >= V13_0B4)]
             s.unk_buf = Array::new([0xff; 0x8]);
             s
         }
@@ -60,6 +69,7 @@ pub(crate) mod raw {
         }
     }
 
+    #[versions(AGX)]
     #[derive(Debug)]
     #[repr(C)]
     pub(crate) struct Notifier<'a> {
@@ -67,18 +77,20 @@ pub(crate) mod raw {
         pub(crate) generation: AtomicU32,
         pub(crate) cur_count: AtomicU32,
         pub(crate) unk_10: AtomicU32,
-        pub(crate) state: NotifierState,
+        pub(crate) state: NotifierState::ver,
     }
 }
 
 trivial_gpustruct!(Threshold);
 trivial_gpustruct!(NotifierList);
 
+#[versions(AGX)]
 #[derive(Debug)]
 pub(crate) struct Notifier {
     pub(crate) threshold: GpuObject<Threshold>,
 }
 
-impl GpuStruct for Notifier {
-    type Raw<'a> = raw::Notifier<'a>;
+#[versions(AGX)]
+impl GpuStruct for Notifier::ver {
+    type Raw<'a> = raw::Notifier::ver<'a>;
 }

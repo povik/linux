@@ -75,10 +75,20 @@ pub(crate) mod raw {
         pub(crate) depth_dimensions: U64,
         pub(crate) unk_48: U64,
         pub(crate) zls_ctrl: U64,
+
+        #[ver(G >= G14)]
+        pub(crate) unk_58_g14_0: U64,
+        #[ver(G >= G14)]
+        pub(crate) unk_58_g14_8: U64,
+
         pub(crate) depth_buffer_ptr1: U64,
         pub(crate) depth_buffer_ptr2: U64,
         pub(crate) stencil_buffer_ptr1: U64,
         pub(crate) stencil_buffer_ptr2: U64,
+
+        #[ver(G >= G14)]
+        pub(crate) unk_68_g14_0: Array<0x20, u8>,
+
         pub(crate) unk_78: Array<0x4, U64>,
         pub(crate) depth_meta_buffer_ptr1: U64,
         pub(crate) unk_a0: U64,
@@ -100,8 +110,12 @@ pub(crate) mod raw {
         pub(crate) unk_148: U64,
         pub(crate) unk_150: U64,
         pub(crate) unk_158: U64,
-        pub(crate) unk_160_padding: Array<0x1e0, u8>,
+        pub(crate) unk_160: U64,
 
+        #[ver(G < G14)]
+        pub(crate) unk_168_padding: Array<0x1d8, u8>,
+        #[ver(G >= G14)]
+        pub(crate) unk_168_padding: Array<0x1a8, u8>,
         #[ver(V < V13_0B4)]
         pub(crate) __pad0: Pad<0x8>,
     }
@@ -191,7 +205,7 @@ pub(crate) mod raw {
         pub(crate) unk_8: u32,
         pub(crate) microsequence: GpuPointer<'a, &'a [u8]>,
         pub(crate) microsequence_size: u32,
-        pub(crate) notifier: GpuPointer<'a, event::Notifier>,
+        pub(crate) notifier: GpuPointer<'a, event::Notifier::ver>,
         pub(crate) buffer: GpuWeakPointer<fw::buffer::Info::ver>,
         pub(crate) scene: GpuPointer<'a, fw::buffer::Scene::ver>,
         pub(crate) unk_buffer_buf: GpuWeakPointer<[u8]>,
@@ -251,7 +265,7 @@ pub(crate) mod raw {
 #[versions(AGX)]
 #[derive(Debug)]
 pub(crate) struct RunFragment {
-    pub(crate) notifier: Arc<GpuObject<event::Notifier>>,
+    pub(crate) notifier: Arc<GpuObject<event::Notifier::ver>>,
     pub(crate) scene: Arc<buffer::Scene::ver>,
     pub(crate) micro_seq: microseq::MicroSequence,
     pub(crate) vm_bind: mmu::VmBind,

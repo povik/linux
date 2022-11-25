@@ -44,7 +44,7 @@ pub(crate) struct Renderer {
     buffer: buffer::Buffer::ver,
     gpu_context: GpuObject<fw::workqueue::GpuContextData>,
     notifier_list: GpuObject<fw::event::NotifierList>,
-    notifier: Arc<GpuObject<fw::event::Notifier>>,
+    notifier: Arc<GpuObject<fw::event::Notifier::ver>>,
     id: u64,
 }
 
@@ -90,15 +90,15 @@ impl Renderer::ver {
             raw.list_head.next = Some(inner_weak_ptr!(self_ptr, list_head));
         });
 
-        let notifier: Arc<GpuObject<fw::event::Notifier>> =
+        let notifier: Arc<GpuObject<fw::event::Notifier::ver>> =
             Arc::try_new(alloc.private.new_inplace(
-                fw::event::Notifier {
+                fw::event::Notifier::ver {
                     threshold: alloc.shared.new_default::<fw::event::Threshold>()?,
                 },
-                |inner, ptr: *mut MaybeUninit<fw::event::raw::Notifier<'_>>| {
+                |inner, ptr: *mut MaybeUninit<fw::event::raw::Notifier::ver<'_>>| {
                     Ok(place!(
                         ptr,
-                        fw::event::raw::Notifier {
+                        fw::event::raw::Notifier::ver {
                             threshold: inner.threshold.gpu_pointer(),
                             generation: AtomicU32::new(id as u32),
                             cur_count: AtomicU32::new(0),
@@ -262,12 +262,16 @@ impl Renderer for Renderer::ver {
         let mut clustering = nclusters > 1;
         clustering = false; // FIXME: breaks
 
-        let render_cfg = gpu.get_cfg().render;
-        let mut tiling_control = render_cfg.tiling_control;
+        #[ver(G < G14)]
+        let tiling_control = {
+            let render_cfg = gpu.get_cfg().render;
+            let mut tiling_control = render_cfg.tiling_control;
 
-        if !clustering {
-            tiling_control |= TILECTL_DISABLE_CLUSTERING;
-        }
+            if !clustering {
+                tiling_control |= TILECTL_DISABLE_CLUSTERING;
+            }
+            tiling_control
+        };
 
         self.buffer.increment();
 
@@ -493,6 +497,8 @@ impl Renderer for Renderer::ver {
                     unk_7c: U64(0),
                     unk_84: U64(0),
                     unk_8c: U64(0),
+                    #[ver(G >= G14)]
+                    unk_8c_g14: U64(0),
                     restart_branch_offset: off,
                     unk_98: 0,
                     #[ver(V >= V13_0B4)]
@@ -560,10 +566,16 @@ impl Renderer for Renderer::ver {
                             depth_dimensions: U64(cmdbuf.depth_dimensions as u64),
                             unk_48: U64(0x0),
                             zls_ctrl: U64(cmdbuf.zls_ctrl),
+                            #[ver(G >= G14)]
+                            unk_58_g14_0: U64(0x4040404),
+                            #[ver(G >= G14)]
+                            unk_58_g14_8: U64(0),
                             depth_buffer_ptr1: U64(cmdbuf.depth_buffer_1),
                             depth_buffer_ptr2: U64(cmdbuf.depth_buffer_2),
                             stencil_buffer_ptr1: U64(cmdbuf.stencil_buffer_1),
                             stencil_buffer_ptr2: U64(cmdbuf.stencil_buffer_2),
+                            #[ver(G >= G14)]
+                            unk_68_g14_0: Default::default(),
                             unk_78: Default::default(),
                             depth_meta_buffer_ptr1: U64(cmdbuf.depth_meta_buffer_1),
                             unk_a0: Default::default(),
@@ -585,7 +597,8 @@ impl Renderer for Renderer::ver {
                             unk_148: U64(0x0),
                             unk_150: U64(0x0),
                             unk_158: U64(0x1c),
-                            unk_160_padding: Default::default(),
+                            unk_160: U64(0),
+                            unk_168_padding: Default::default(),
                             #[ver(V < V13_0B4)]
                             __pad0: Default::default(),
                         },
@@ -833,6 +846,8 @@ impl Renderer for Renderer::ver {
                     unk_60: 0x0,      // fixed
                     unk_64: 0x0,      // fixed
                     unk_68: 0x0,      // fixed
+                    #[ver(G >= G14)]
+                    unk_68_g14: U64(0),
                     restart_branch_offset: off,
                     unk_70: 0x0, // fixed
                     #[ver(V >= V13_0B4)]
@@ -851,6 +866,7 @@ impl Renderer for Renderer::ver {
                 })?)
             },
             |inner, ptr| {
+                #[ver(G < G14)]
                 let core_masks = gpu.core_masks_packed();
                 Ok(place!(
                     ptr,
@@ -867,23 +883,27 @@ impl Renderer for Renderer::ver {
                         scene: inner.scene.gpu_pointer(),
                         unk_buffer_buf: inner.scene.kernel_buffer_pointer(),
                         unk_34: 0,
-                        job_params1: fw::vertex::raw::JobParameters1 {
+                        job_params1: fw::vertex::raw::JobParameters1::ver {
                             unk_0: U64(0x200), // sometimes 0
                             unk_8: 0x1e3ce508, // fixed
                             unk_c: 0x1e3ce508, // fixed
                             tvb_tilemap: inner.scene.tvb_tilemap_pointer(),
+                            #[ver(G < G14)]
                             tvb_cluster_tilemaps: inner.scene.cluster_tilemaps_pointer(),
                             tpc: inner.scene.tpc_pointer(),
                             tvb_heapmeta: inner.scene.tvb_heapmeta_pointer().or(0x8000000000000000),
                             iogpu_unk_54: 0x6b0003, // fixed
                             iogpu_unk_55: 0x3a0012, // fixed
                             iogpu_unk_56: U64(0x1), // fixed
+                            #[ver(G < G14)]
                             tvb_cluster_meta1: inner.scene.meta_1_pointer(),
                             utile_config: utile_config,
                             unk_4c: 0,
                             ppp_multisamplectl: U64(cmdbuf.ppp_multisamplectl), // fixed
                             tvb_heapmeta_2: inner.scene.tvb_heapmeta_pointer(),
+                            #[ver(G < G14)]
                             unk_60: U64(0x0), // fixed
+                            #[ver(G < G14)]
                             core_mask: Array::new([
                                 *core_masks.get(0).unwrap_or(&0),
                                 *core_masks.get(1).unwrap_or(&0),
@@ -893,17 +913,25 @@ impl Renderer for Renderer::ver {
                             unk_80: U64(0x1), // fixed
                             preempt_buf3: inner.scene.preempt_buf_3_pointer().or(0x4000000000000), // check
                             encoder_addr: U64(cmdbuf.encoder_ptr),
+                            #[ver(G < G14)]
                             tvb_cluster_meta2: inner.scene.meta_2_pointer(),
+                            #[ver(G < G14)]
                             tvb_cluster_meta3: inner.scene.meta_3_pointer(),
+                            #[ver(G < G14)]
                             tiling_control: tiling_control,
+                            #[ver(G < G14)]
                             unk_ac: Default::default(), // fixed
                             unk_b0: Default::default(), // fixed
                             pipeline_base: U64(0x11_00000000),
+                            #[ver(G < G14)]
                             tvb_cluster_meta4: inner.scene.meta_4_pointer(),
+                            #[ver(G < G14)]
                             unk_f0: U64(if clustering { 0x20 } else { 0x1c }),
                             unk_f8: U64(0x8c60),         // fixed
                             unk_100: Default::default(), // fixed
                             unk_118: 0x1c,               // fixed
+                            #[ver(G >= G14)]
+                            __pad: Default::default(),
                         },
                         unk_154: Default::default(),
                         tiling_params: tile_info.params,

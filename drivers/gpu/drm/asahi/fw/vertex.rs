@@ -29,6 +29,7 @@ pub(crate) mod raw {
         pub(crate) unk_28: u32,
     }
 
+    #[versions(AGX)]
     #[derive(Debug)]
     #[repr(C)]
     pub(crate) struct JobParameters1<'a> {
@@ -36,35 +37,47 @@ pub(crate) mod raw {
         pub(crate) unk_8: u32,
         pub(crate) unk_c: u32,
         pub(crate) tvb_tilemap: GpuPointer<'a, &'a [u8]>,
+        #[ver(G < G14)]
         pub(crate) tvb_cluster_tilemaps: Option<GpuPointer<'a, &'a [u8]>>,
         pub(crate) tpc: GpuPointer<'a, &'a [u8]>,
         pub(crate) tvb_heapmeta: GpuPointer<'a, &'a [u8]>,
         pub(crate) iogpu_unk_54: u32,
         pub(crate) iogpu_unk_55: u32,
         pub(crate) iogpu_unk_56: U64,
+        #[ver(G < G14)]
         pub(crate) tvb_cluster_meta1: Option<GpuPointer<'a, &'a [u8]>>,
         pub(crate) utile_config: u32,
         pub(crate) unk_4c: u32,
         pub(crate) ppp_multisamplectl: U64,
         pub(crate) tvb_heapmeta_2: GpuPointer<'a, &'a [u8]>,
+        #[ver(G < G14)]
         pub(crate) unk_60: U64,
+        #[ver(G < G14)]
         pub(crate) core_mask: Array<2, u32>,
         pub(crate) preempt_buf1: GpuPointer<'a, &'a [u8]>,
         pub(crate) preempt_buf2: GpuPointer<'a, &'a [u8]>,
         pub(crate) unk_80: U64,
         pub(crate) preempt_buf3: GpuPointer<'a, &'a [u8]>,
         pub(crate) encoder_addr: U64,
+        #[ver(G < G14)]
         pub(crate) tvb_cluster_meta2: Option<GpuPointer<'a, &'a [u8]>>,
+        #[ver(G < G14)]
         pub(crate) tvb_cluster_meta3: Option<GpuPointer<'a, &'a [u8]>>,
+        #[ver(G < G14)]
         pub(crate) tiling_control: u32,
+        #[ver(G < G14)]
         pub(crate) unk_ac: u32,
         pub(crate) unk_b0: Array<6, U64>,
         pub(crate) pipeline_base: U64,
+        #[ver(G < G14)]
         pub(crate) tvb_cluster_meta4: Option<GpuPointer<'a, &'a [u8]>>,
+        #[ver(G < G14)]
         pub(crate) unk_f0: U64,
         pub(crate) unk_f8: U64,
         pub(crate) unk_100: Array<3, U64>,
         pub(crate) unk_118: u32,
+        #[ver(G >= G14)]
+        pub(crate) __pad: Pad<{ 8 * 9 }>,
     }
 
     #[derive(Debug)]
@@ -96,14 +109,14 @@ pub(crate) mod raw {
 
         pub(crate) vm_slot: u32,
         pub(crate) unk_8: u32,
-        pub(crate) notifier: GpuPointer<'a, event::Notifier>,
+        pub(crate) notifier: GpuPointer<'a, event::Notifier::ver>,
         pub(crate) buffer_slot: u32,
         pub(crate) unk_1c: u32,
         pub(crate) buffer: GpuWeakPointer<fw::buffer::Info::ver>,
         pub(crate) scene: GpuPointer<'a, fw::buffer::Scene::ver>,
         pub(crate) unk_buffer_buf: GpuWeakPointer<[u8]>,
         pub(crate) unk_34: u32,
-        pub(crate) job_params1: JobParameters1<'a>,
+        pub(crate) job_params1: JobParameters1::ver<'a>,
         pub(crate) unk_154: Array<0x268, u8>,
         pub(crate) tiling_params: TilingParameters,
         pub(crate) unk_3e8: Array<0x74, u8>,
@@ -155,7 +168,7 @@ pub(crate) mod raw {
 #[versions(AGX)]
 #[derive(Debug)]
 pub(crate) struct RunVertex {
-    pub(crate) notifier: Arc<GpuObject<event::Notifier>>,
+    pub(crate) notifier: Arc<GpuObject<event::Notifier::ver>>,
     pub(crate) scene: Arc<buffer::Scene::ver>,
     pub(crate) micro_seq: microseq::MicroSequence,
     pub(crate) vm_bind: mmu::VmBind,
