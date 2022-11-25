@@ -47,9 +47,10 @@ struct VersionConfig {
 
 static AGX_VERSIONS: VersionConfig = VersionConfig {
     fields: &["G", "V"],
-    enums: &[&["G13G", "G13X", "G14G"], &["V12_3", "V13_0B4"]],
+    enums: &[&["G13", "G14"], &["V12_3", "V12_4", "V13_0B4"]],
     versions: &[
-        &["G13G", "V12_3"],
+        &["G13", "V12_3"],
+        &["G14", "V12_4"],
         // &["G13G", "V13_0B4"],
         // &["G13X", "V12_3"],
         // &["G13X", "V13_0B4"],
