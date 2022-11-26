@@ -564,7 +564,7 @@ impl Renderer for Renderer::ver {
                             depth_bias_array: U64(cmdbuf.depth_bias_array),
                             aux_fb_info: aux_fb_info,
                             depth_dimensions: U64(cmdbuf.depth_dimensions as u64),
-                            unk_48: U64(0x0),
+                            visibility_result_buffer: U64(cmdbuf.visibility_result_buffer),
                             zls_ctrl: U64(cmdbuf.zls_ctrl),
                             #[ver(G >= G14)]
                             unk_58_g14_0: U64(0x4040404),
@@ -632,7 +632,7 @@ impl Renderer for Renderer::ver {
                                 ptr: U64(cmdbuf.scissor_array),
                                 unk_padding: U64(0),
                             },
-                            unk_110: U64(0x0),
+                            visibility_result_buffer: U64(cmdbuf.visibility_result_buffer),
                             unk_118: U64(0x0),
                             unk_120: Default::default(),
                             unk_reload_pipeline: fw::fragment::raw::ClearPipelineBinding {

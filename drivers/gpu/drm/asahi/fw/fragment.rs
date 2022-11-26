@@ -73,7 +73,7 @@ pub(crate) mod raw {
         pub(crate) depth_bias_array: U64,
         pub(crate) aux_fb_info: AuxFBInfo::ver,
         pub(crate) depth_dimensions: U64,
-        pub(crate) unk_48: U64,
+        pub(crate) visibility_result_buffer: U64,
         pub(crate) zls_ctrl: U64,
 
         #[ver(G >= G14)]
@@ -149,7 +149,7 @@ pub(crate) mod raw {
         pub(crate) unk_44_padding: Array<0xac, u8>,
         pub(crate) depth_bias_array: ArrayAddr,
         pub(crate) scissor_array: ArrayAddr,
-        pub(crate) unk_110: U64,
+        pub(crate) visibility_result_buffer: U64,
         pub(crate) unk_118: U64,
         pub(crate) unk_120: Array<0x25, U64>,
         pub(crate) unk_reload_pipeline: ClearPipelineBinding,
