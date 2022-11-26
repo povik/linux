@@ -16,7 +16,7 @@
 extern "C" {
 #endif
 
-#define DRM_ASAHI_UNSTABLE_UABI_VERSION 2
+#define DRM_ASAHI_UNSTABLE_UABI_VERSION 3
 
 #define DRM_ASAHI_GET_PARAM			0x00
 #define DRM_ASAHI_SUBMIT			0x01
@@ -99,6 +99,7 @@ struct drm_asahi_cmdbuf {
 
    __u64 scissor_array;
    __u64 depth_bias_array;
+   __u64 visibility_result_buffer;
 
    __u64 zls_ctrl;
    __u64 ppp_multisamplectl;
