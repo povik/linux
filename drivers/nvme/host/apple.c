@@ -1020,7 +1020,7 @@ static void apple_nvme_reset_work(struct work_struct *work)
 	/* there's unfortunately no known way to recover if RTKit crashed :( */
 	if (apple_rtkit_is_crashed(anv->rtk)) {
 		dev_err(anv->dev,
-			"RTKit has crashed without any way to recover.");
+			"RTKit has crashed without any way to recover.\n");
 		ret = -EIO;
 		goto out;
 	}
@@ -1030,7 +1030,7 @@ static void apple_nvme_reset_work(struct work_struct *work)
 
 	/* RTKit must be shut down cleanly for the (soft)-reset to work */
 	if (apple_rtkit_is_running(anv->rtk)) {
-		dev_dbg(anv->dev, "Trying to shut down RTKit before reset.");
+		dev_dbg(anv->dev, "Trying to shut down RTKit before reset.\n");
 		ret = apple_rtkit_shutdown(anv->rtk);
 		if (ret)
 			goto out;
@@ -1054,7 +1054,7 @@ static void apple_nvme_reset_work(struct work_struct *work)
 	       anv->mmio_coproc + APPLE_ANS_COPROC_CPU_CONTROL);
 	ret = apple_rtkit_boot(anv->rtk);
 	if (ret) {
-		dev_err(anv->dev, "ANS did not boot");
+		dev_err(anv->dev, "ANS did not boot\n");
 		goto out;
 	}
 
@@ -1063,11 +1063,11 @@ static void apple_nvme_reset_work(struct work_struct *work)
 				 boot_status == APPLE_ANS_BOOT_STATUS_OK,
 				 USEC_PER_MSEC, APPLE_ANS_BOOT_TIMEOUT);
 	if (ret) {
-		dev_err(anv->dev, "ANS did not initialize");
+		dev_err(anv->dev, "ANS did not initialize\n");
 		goto out;
 	}
 
-	dev_dbg(anv->dev, "ANS booted successfully.");
+	dev_dbg(anv->dev, "ANS booted successfully.\n");
 
 	/*
 	 * Limit the max command size to prevent iod->sg allocations going
