@@ -153,6 +153,10 @@ struct apple_dcp {
 	struct list_head swapped_out_fbs;
 
 	struct dcp_brightness brightness;
+
+	struct {
+		struct platform_device *codec_pdev;
+	} audio;
 };
 
 int dcp_backlight_register(struct apple_dcp *dcp);

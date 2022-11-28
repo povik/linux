@@ -57,4 +57,6 @@ void iomfb_shutdown(struct apple_dcp *dcp);
 /* rtkit message handler for IOMFB messages */
 void iomfb_recv_msg(struct apple_dcp *dcp, u64 message);
 
+int dcp_probe_audio(struct apple_dcp *dcp);
+
 #endif

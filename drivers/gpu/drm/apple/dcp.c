@@ -391,6 +391,10 @@ static int dcp_platform_probe(struct platform_device *pdev)
 	if (ret)
 		return dev_err_probe(dev, ret, "Failed RTKit wake");
 
+	ret = dcp_probe_audio(dcp);
+	if (ret)
+		return dev_err_probe(dev, ret, "Failed audio probe");	
+
 	return ret;
 }
 
