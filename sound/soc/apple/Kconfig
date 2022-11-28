@@ -1,3 +1,24 @@
+config SND_SOC_APPLE_LEAP
+	tristate "Apple LEAP driver"
+	depends on ARCH_APPLE || COMPILE_TEST
+	default ARCH_APPLE
+	help
+	  This option enables a driver for LEAP signal processors found on Apple Silicon
+	  SoCs. These signal processors are involved in input from the internal
+	  microphones on relevant Macs.
+
+config SND_SOC_APPLE_LEAPMIC
+	tristate "Apple LEAP microphone input support"
+	depends on ARCH_APPLE || COMPILE_TEST
+	depends on SND_SOC_APPLE_LEAP
+	select SND_SOC_TOPOLOGY
+	default ARCH_APPLE
+	help
+	  This option enables support for input from internal microphones on Apple
+	  Silicon Macs by means of the LEAP signal processor embedded on SoCs.
+
+	  This support requires ASoC topology firmware.
+
 config SND_SOC_APPLE_MCA
 	tristate "Apple Silicon MCA driver"
 	depends on ARCH_APPLE || COMPILE_TEST
