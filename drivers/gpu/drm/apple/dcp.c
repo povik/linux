@@ -389,8 +389,7 @@ static int dcp_platform_probe(struct platform_device *pdev)
 
 	ret = apple_rtkit_wake(dcp->rtk);
 	if (ret)
-		return dev_err_probe(dev, PTR_ERR(dcp->rtk),
-				     "Failed to boot RTKit: %d", ret);
+		return dev_err_probe(dev, ret, "Failed RTKit wake");
 
 	return ret;
 }
