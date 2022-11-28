@@ -1,3 +1,12 @@
+config SND_SOC_APPLE_DPA
+	tristate "Apple DisplayPort audio driver"
+	depends on ARCH_APPLE || COMPILE_TEST
+	default ARCH_APPLE
+	select SND_SOC_GENERIC_DMAENGINE_PCM
+	help
+	  This option enables a driver for DPA peripherals on Apple SoCs, involved
+	  in DisplayPort audio output.
+
 config SND_SOC_APPLE_MCA
 	tristate "Apple Silicon MCA driver"
 	depends on ARCH_APPLE || COMPILE_TEST
