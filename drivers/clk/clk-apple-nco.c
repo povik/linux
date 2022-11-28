@@ -331,4 +331,4 @@ module_platform_driver(applnco_driver);
 
 MODULE_AUTHOR("Martin Povišer <povik+lin@cutebit.org>");
 MODULE_DESCRIPTION("Clock driver for NCO blocks on Apple SoCs");
-MODULE_LICENSE("GPL");
+MODULE_LICENSE("Dual MIT/GPL");
