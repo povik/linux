@@ -48,6 +48,7 @@ pub(crate) enum DebugFlags {
     NoGpuRecovery = 35,
     FillAllocations = 36,
     DebugAllocations = 37,
+    DisableClustering = 38,
 }
 
 pub(crate) fn update_debug_flags() {

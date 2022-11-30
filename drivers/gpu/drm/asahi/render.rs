@@ -259,7 +259,11 @@ impl Renderer for Renderer::ver {
 
         // Can be set to false to disable clustering (for simpler jobs), but then the
         // core masks below should be adjusted to cover a single rolling cluster.
-        let clustering = nclusters > 1;
+        let mut clustering = nclusters > 1;
+
+        if debug_enabled(debug::DebugFlags::DisableClustering) {
+            clustering = false;
+        }
 
         #[ver(G < G14)]
         let tiling_control = {
