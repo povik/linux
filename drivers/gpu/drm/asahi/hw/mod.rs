@@ -91,7 +91,7 @@ pub(crate) mod feat {
 #[derive(Debug)]
 pub(crate) struct PState {
     pub(crate) volt_mv: Vec<u32>,
-    pub(crate) freq_mhz: u32,
+    pub(crate) freq_hz: u32,
     pub(crate) pwr_mw: u32,
 }
 
@@ -313,7 +313,7 @@ impl PwrConfig {
             max_freq_mhz = max_freq_mhz.max(freq_mhz);
 
             perf_states.try_push(PState {
-                freq_mhz,
+                freq_hz: freq_hz.try_into()?,
                 volt_mv,
                 pwr_mw,
             })?;

@@ -464,11 +464,11 @@ impl<'a> InitDataBuilder::ver<'a> {
 
                 let base_ps = self.dyncfg.pwr.perf_base_pstate as usize;
                 let max_ps = self.dyncfg.pwr.perf_max_pstate as usize;
-                let base_freq = self.dyncfg.pwr.perf_states[base_ps].freq_mhz;
-                let max_freq = self.dyncfg.pwr.perf_states[max_ps].freq_mhz;
+                let base_freq = self.dyncfg.pwr.perf_states[base_ps].freq_hz;
+                let max_freq = self.dyncfg.pwr.perf_states[max_ps].freq_hz;
 
                 for (i, ps) in self.dyncfg.pwr.perf_states.iter().enumerate() {
-                    raw.frequencies[i] = ps.freq_mhz;
+                    raw.frequencies[i] = ps.freq_hz / 1000000;
                     for (j, mv) in ps.volt_mv.iter().enumerate() {
                         let sram_mv = (*mv).max(self.dyncfg.pwr.min_sram_microvolt / 1000);
                         raw.voltages[i][j] = *mv;
@@ -477,7 +477,7 @@ impl<'a> InitDataBuilder::ver<'a> {
                     raw.sram_k[i] = self.cfg.sram_k;
                     raw.rel_max_powers[i] = ps.pwr_mw * 100 / self.dyncfg.pwr.max_power_mw;
                     raw.rel_boost_freqs[i] = if i > base_ps {
-                        (ps.freq_mhz - base_freq) * 100 / (max_freq - base_freq)
+                        (ps.freq_hz - base_freq) / ((max_freq - base_freq) / 100)
                     } else {
                         0
                     };
