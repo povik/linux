@@ -199,7 +199,7 @@ impl Renderer::ver {
         let tpc_entry_size = 8;
         // TPC stride in 32-bit words
         let tpc_mtile_stride = tpc_entry_size * utiles_per_tile * tiles_per_mtile / 4;
-        let tpc_size = (4 * tpc_mtile_stride * mtiles) as usize;
+        let tpc_size = (num_clusters * (4 * tpc_mtile_stride * mtiles)) as usize;
 
         Ok(buffer::TileInfo {
             tiles_x,
@@ -259,8 +259,7 @@ impl Renderer for Renderer::ver {
 
         // Can be set to false to disable clustering (for simpler jobs), but then the
         // core masks below should be adjusted to cover a single rolling cluster.
-        let mut clustering = nclusters > 1;
-        clustering = false; // FIXME: breaks
+        let clustering = nclusters > 1;
 
         #[ver(G < G14)]
         let tiling_control = {
@@ -891,12 +890,18 @@ impl Renderer for Renderer::ver {
                             #[ver(G < G14)]
                             tvb_cluster_tilemaps: inner.scene.cluster_tilemaps_pointer(),
                             tpc: inner.scene.tpc_pointer(),
-                            tvb_heapmeta: inner.scene.tvb_heapmeta_pointer().or(0x8000000000000000),
+                            tvb_heapmeta: inner
+                                .scene
+                                .tvb_heapmeta_pointer()
+                                .or(0x8000_0000_0000_0000),
                             iogpu_unk_54: 0x6b0003, // fixed
                             iogpu_unk_55: 0x3a0012, // fixed
                             iogpu_unk_56: U64(0x1), // fixed
                             #[ver(G < G14)]
-                            tvb_cluster_meta1: inner.scene.meta_1_pointer(),
+                            tvb_cluster_meta1: inner
+                                .scene
+                                .meta_1_pointer()
+                                .map(|x| x.or(0x4_0000_0000_0000)),
                             utile_config: utile_config,
                             unk_4c: 0,
                             ppp_multisamplectl: U64(cmdbuf.ppp_multisamplectl), // fixed
@@ -911,7 +916,10 @@ impl Renderer for Renderer::ver {
                             preempt_buf1: inner.scene.preempt_buf_1_pointer(),
                             preempt_buf2: inner.scene.preempt_buf_2_pointer(),
                             unk_80: U64(0x1), // fixed
-                            preempt_buf3: inner.scene.preempt_buf_3_pointer().or(0x4000000000000), // check
+                            preempt_buf3: inner
+                                .scene
+                                .preempt_buf_3_pointer()
+                                .or(0x4_0000_0000_0000), // check
                             encoder_addr: U64(cmdbuf.encoder_ptr),
                             #[ver(G < G14)]
                             tvb_cluster_meta2: inner.scene.meta_2_pointer(),
@@ -924,7 +932,10 @@ impl Renderer for Renderer::ver {
                             unk_b0: Default::default(), // fixed
                             pipeline_base: U64(0x11_00000000),
                             #[ver(G < G14)]
-                            tvb_cluster_meta4: inner.scene.meta_4_pointer(),
+                            tvb_cluster_meta4: inner
+                                .scene
+                                .meta_4_pointer()
+                                .map(|x| x.or(0x3000_0000_0000_0000)),
                             #[ver(G < G14)]
                             unk_f0: U64(if clustering { 0x20 } else { 0x1c }),
                             unk_f8: U64(0x8c60),         // fixed
