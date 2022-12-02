@@ -32,6 +32,7 @@ pub(crate) struct BufferInner {
     ualloc_priv: Arc<Mutex<alloc::DefaultAllocator>>,
     blocks: Vec<GpuArray<u8>>,
     max_blocks: usize,
+    max_blocks_nomemless: usize,
     mgr: BufferManager,
     active_scenes: usize,
     active_slot: Option<slotalloc::Guard<SlotInner>>,
@@ -279,6 +280,7 @@ impl Buffer::ver {
                 ualloc_priv,
                 blocks: Vec::new(),
                 max_blocks,
+                max_blocks_nomemless,
                 mgr: mgr.clone(),
                 active_scenes: 0,
                 active_slot: None,
@@ -296,6 +298,30 @@ impl Buffer::ver {
 
     pub(crate) fn block_count(&self) -> u32 {
         self.inner.lock().blocks.len() as u32
+    }
+
+    pub(crate) fn auto_grow(&self) -> Result<bool> {
+        let inner = self.inner.lock();
+
+        let used_pages = inner.stats.with(|raw, _inner| {
+            let used = raw.max_pages.load(Ordering::Relaxed);
+            raw.reset.store(1, Ordering::Release);
+            used as usize
+        });
+
+        let need_blocks = div_ceil(used_pages * 2, PAGES_PER_BLOCK).min(inner.max_blocks_nomemless);
+        let want_blocks = div_ceil(used_pages * 3, PAGES_PER_BLOCK).min(inner.max_blocks_nomemless);
+
+        let cur_count = inner.blocks.len();
+
+        if need_blocks <= cur_count {
+            Ok(false)
+        } else {
+            // Grow to 3x requested size (same logic as macOS)
+            core::mem::drop(inner);
+            self.ensure_blocks(want_blocks)?;
+            Ok(true)
+        }
     }
 
     pub(crate) fn ensure_blocks(&self, min_blocks: usize) -> Result<bool> {
@@ -359,10 +385,6 @@ impl Buffer::ver {
         tile_info: &TileInfo,
     ) -> Result<Scene::ver> {
         let mut inner = self.inner.lock();
-
-        inner.stats.with(|raw, _inner| {
-            raw.reset.store(1, Ordering::Relaxed);
-        });
 
         let tilemap_size = tile_info.tilemap_size;
         let tpc_size = tile_info.tpc_size;

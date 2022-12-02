@@ -31,9 +31,9 @@ pub(crate) mod raw {
     #[derive(Debug, Default)]
     #[repr(C)]
     pub(crate) struct Stats {
-        pub(crate) max_a: AtomicU32,
+        pub(crate) max_pages: AtomicU32,
         pub(crate) max_b: AtomicU32,
-        pub(crate) gpu_8: AtomicU32,
+        pub(crate) overflow_count: AtomicU32,
         pub(crate) gpu_c: AtomicU32,
         pub(crate) __pad0: Pad<0x10>,
         pub(crate) reset: AtomicU32,

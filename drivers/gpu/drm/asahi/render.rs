@@ -330,6 +330,19 @@ impl Renderer for Renderer::ver {
 
         let tile_info = Self::get_tiling_params(&cmdbuf, if clustering { nclusters } else { 1 })?;
 
+        let tvb_autogrown = self.buffer.auto_grow()?;
+        if tvb_autogrown {
+            let new_size = self.buffer.block_count() as usize;
+            cls_dev_dbg!(
+                TVBStats,
+                &self.dev,
+                "[Submission {}] TVB grew to {} bytes ({} blocks) due to overflows\n",
+                id,
+                new_size * buffer::BLOCK_SIZE,
+                new_size,
+            );
+        }
+
         let tvb_grown = self.buffer.ensure_blocks(tile_info.min_tvb_blocks)?;
         if tvb_grown {
             cls_dev_dbg!(
@@ -781,7 +794,7 @@ impl Renderer for Renderer::ver {
             },
         )?;
 
-        if scene.rebind() || tvb_grown {
+        if scene.rebind() || tvb_grown || tvb_autogrown {
             let bind_buffer = kalloc.private.new_inplace(
                 fw::buffer::InitBuffer::ver {
                     scene: scene.clone(),
