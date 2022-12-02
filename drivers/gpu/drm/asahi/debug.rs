@@ -31,6 +31,7 @@ pub(crate) enum DebugFlags {
 
     // 12-15: Misc stats
     MemStats = 12,
+    TVBStats = 13,
 
     // 16-22: Channels
     FwLogCh = 16,

@@ -46,7 +46,7 @@ module_platform_driver! {
             description: "Fault control (0x0: hard faults, 0xb: macOS default)",
         },
         initial_tvb_size: usize {
-            default: 0x10,
+            default: 0x8,
             permissions: 0o644,
             description: "Initial TVB size in blocks",
         },

@@ -67,17 +67,14 @@ impl Renderer::ver {
         mod_dev_dbg!(dev, "[Renderer {}] Creating renderer\n", id);
 
         let data = dev.data();
-        let mut buffer = buffer::Buffer::ver::new(&*data.gpu, alloc, ualloc, ualloc_priv, mgr)?;
+        let buffer = buffer::Buffer::ver::new(&*data.gpu, alloc, ualloc, ualloc_priv, mgr)?;
 
         let tvb_blocks = {
             let lock = crate::THIS_MODULE.kernel_param_lock();
             *crate::initial_tvb_size.read(&lock)
         };
 
-        // TODO: this seems overly conservative?
-        let min_tvb_blocks = 8 * data.gpu.get_dyncfg().id.num_clusters as usize;
-
-        buffer.add_blocks(core::cmp::max(min_tvb_blocks, tvb_blocks))?;
+        buffer.ensure_blocks(tvb_blocks)?;
 
         let gpu_context: GpuObject<fw::workqueue::GpuContextData> = alloc
             .shared
@@ -208,6 +205,9 @@ impl Renderer::ver {
             0
         };
 
+        let min_tvb_blocks =
+            div_ceil(tiles_x * tiles_y, 128).max(if num_clusters > 1 { 9 } else { 8 }) as usize;
+
         Ok(buffer::TileInfo {
             tiles_x,
             tiles_y,
@@ -225,6 +225,7 @@ impl Renderer::ver {
             tilemap_size,
             tpc_size,
             meta1_blocks,
+            min_tvb_blocks,
             params: fw::vertex::raw::TilingParameters {
                 rgn_size,
                 unk_4: 0x88,
@@ -328,6 +329,20 @@ impl Renderer for Renderer::ver {
         let slot_client_seq: u8 = (self.id & 0xff) as u8;
 
         let tile_info = Self::get_tiling_params(&cmdbuf, if clustering { nclusters } else { 1 })?;
+
+        let tvb_grown = self.buffer.ensure_blocks(tile_info.min_tvb_blocks)?;
+        if tvb_grown {
+            cls_dev_dbg!(
+                TVBStats,
+                &self.dev,
+                "[Submission {}] TVB grew to {} bytes ({} blocks) due to dimensions ({}x{})\n",
+                id,
+                tile_info.min_tvb_blocks * buffer::BLOCK_SIZE,
+                tile_info.min_tvb_blocks,
+                cmdbuf.fb_width,
+                cmdbuf.fb_height
+            );
+        }
 
         let vm_bind = gpu.bind_vm(vm)?;
 
@@ -766,7 +781,7 @@ impl Renderer for Renderer::ver {
             },
         )?;
 
-        if scene.rebind() {
+        if scene.rebind() || tvb_grown {
             let bind_buffer = kalloc.private.new_inplace(
                 fw::buffer::InitBuffer::ver {
                     scene: scene.clone(),

@@ -22,10 +22,8 @@ const NUM_BUFFERS: u32 = 127;
 
 pub(crate) const PAGE_SHIFT: usize = 15; // Buffer pages are 32K (!)
 pub(crate) const PAGE_SIZE: usize = 1 << PAGE_SHIFT;
-const PAGES_PER_BLOCK: usize = 4;
-const BLOCK_SIZE: usize = PAGE_SIZE * PAGES_PER_BLOCK;
-
-const MAX_SIZE: usize = 1 << 30; // 1 GiB
+pub(crate) const PAGES_PER_BLOCK: usize = 4;
+pub(crate) const BLOCK_SIZE: usize = PAGE_SIZE * PAGES_PER_BLOCK;
 
 #[versions(AGX)]
 pub(crate) struct BufferInner {
@@ -82,6 +80,7 @@ pub(crate) struct TileInfo {
     pub(crate) tilemap_size: usize,
     pub(crate) tpc_size: usize,
     pub(crate) meta1_blocks: u32,
+    pub(crate) min_tvb_blocks: usize,
     pub(crate) params: fw::vertex::raw::TilingParameters,
 }
 
@@ -299,27 +298,31 @@ impl Buffer::ver {
         self.inner.lock().blocks.len() as u32
     }
 
-    pub(crate) fn add_blocks(&mut self, count: usize) -> Result {
+    pub(crate) fn ensure_blocks(&self, min_blocks: usize) -> Result<bool> {
         let mut inner = self.inner.lock();
 
         let cur_count = inner.blocks.len();
-        let new_count = cur_count + count;
-
-        if new_count > inner.max_blocks {
+        if cur_count >= min_blocks {
+            return Ok(false);
+        }
+        if min_blocks > inner.max_blocks {
             return Err(ENOMEM);
         }
+
+        let add_blocks = min_blocks - cur_count;
+        let new_count = min_blocks;
 
         let mut new_blocks: Vec<GpuArray<u8>> = Vec::new();
 
         // Allocate the new blocks first, so if it fails they will be dropped
         let mut ualloc = inner.ualloc.lock();
-        for _i in 0..count {
+        for _i in 0..add_blocks {
             new_blocks.try_push(ualloc.array_empty(BLOCK_SIZE)?)?;
         }
         core::mem::drop(ualloc);
 
         // Then actually commit them
-        inner.blocks.try_reserve(count)?;
+        inner.blocks.try_reserve(add_blocks)?;
 
         for (i, block) in new_blocks.into_iter().enumerate() {
             let page_num = (block.gpu_va().get() >> PAGE_SHIFT) as u32;
@@ -347,7 +350,7 @@ impl Buffer::ver {
                 .store((page_count - 1) as u32, Ordering::Relaxed);
         });
 
-        Ok(())
+        Ok(true)
     }
 
     pub(crate) fn new_scene(
