@@ -849,7 +849,7 @@ pub(crate) mod raw {
         pub(crate) unkptr_198: GpuPointer<'a, &'a [u8]>,
         pub(crate) hwdata_b: GpuPointer<'a, super::HwDataB::ver>,
         pub(crate) hwdata_b_2: GpuPointer<'a, super::HwDataB::ver>,
-        pub(crate) fwlog_ring2: GpuPointer<'a, &'a [channels::RawFwLogMsg]>,
+        pub(crate) fwlog_buf: Option<GpuWeakPointer<[channels::RawFwLogPayloadMsg]>>,
         pub(crate) unkptr_1b8: GpuPointer<'a, &'a [u8]>,
         pub(crate) unkptr_1c0: GpuPointer<'a, &'a [u8]>,
         pub(crate) unkptr_1c8: GpuPointer<'a, &'a [u8]>,
@@ -1179,8 +1179,6 @@ pub(crate) struct RuntimePointers {
     pub(crate) unkptr_190: GpuArray<u8>,
     pub(crate) unkptr_198: GpuArray<u8>,
     pub(crate) hwdata_b: GpuObject<HwDataB::ver>,
-
-    pub(crate) fwlog_ring2: GpuArray<channels::RawFwLogMsg>,
 
     pub(crate) unkptr_1b8: GpuArray<u8>,
     pub(crate) unkptr_1c0: GpuArray<u8>,

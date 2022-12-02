@@ -656,7 +656,6 @@ impl<'a> InitDataBuilder::ver<'a> {
             unkptr_190: self.alloc.private.array_empty(0x80)?,
             unkptr_198: self.alloc.private.array_empty(0xc0)?,
             hwdata_b: hwb,
-            fwlog_ring2: self.alloc.shared.array_empty(0x600)?,
 
             unkptr_1b8: self.alloc.private.array_empty(0x1000)?,
             unkptr_1c0: self.alloc.private.array_empty(0x300)?,
@@ -686,7 +685,7 @@ impl<'a> InitDataBuilder::ver<'a> {
                     hwdata_b: inner.hwdata_b.gpu_pointer(),
                     hwdata_b_2: inner.hwdata_b.gpu_pointer(),
 
-                    fwlog_ring2: inner.fwlog_ring2.gpu_pointer(),
+                    fwlog_buf: None,
 
                     unkptr_1b8: inner.unkptr_1b8.gpu_pointer(),
                     unkptr_1c0: inner.unkptr_1c0.gpu_pointer(),

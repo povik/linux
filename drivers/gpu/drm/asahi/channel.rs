@@ -5,12 +5,13 @@
 //! Asahi ring buffer channels
 
 use crate::debug::*;
+use crate::driver::AsahiDevice;
 use crate::fw::channels::*;
 use crate::fw::initdata::{raw, ChannelRing};
 use crate::fw::types::*;
 use crate::{event, gpu, mem};
 use core::time::Duration;
-use kernel::{dbg, delay::coarse_sleep, prelude::*, sync::Arc, time};
+use kernel::{c_str, dbg, delay::coarse_sleep, prelude::*, sync::Arc, time};
 
 pub(crate) use crate::fw::channels::PipeType;
 
@@ -33,7 +34,7 @@ where
         Ok(RxChannel {
             ring: ChannelRing {
                 state: alloc.shared.new_default()?,
-                ring: alloc.shared.array_empty(count)?,
+                ring: alloc.shared.array_empty(T::SUB_CHANNELS * count)?,
             },
             rptr: Default::default(),
             count: count as u32,
@@ -47,7 +48,8 @@ where
             if wptr == *rptr {
                 None
             } else {
-                let msg = self.ring.ring[*rptr as usize];
+                let off = self.count as usize * index;
+                let msg = self.ring.ring[off + *rptr as usize];
                 *rptr = (*rptr + 1) % self.count;
                 T::set_rptr(raw, index, *rptr);
                 Some(msg)
@@ -277,13 +279,25 @@ impl EventChannel {
 }
 
 pub(crate) struct FwLogChannel {
+    dev: AsahiDevice,
     ch: RxChannel<FwLogChannelState, RawFwLogMsg>,
+    payload_buf: GpuArray<RawFwLogPayloadMsg>,
 }
 
 impl FwLogChannel {
-    pub(crate) fn new(alloc: &mut gpu::KernelAllocators) -> Result<FwLogChannel> {
+    const RING_SIZE: usize = 0x100;
+    const BUF_SIZE: usize = 0x100;
+
+    pub(crate) fn new(
+        dev: &AsahiDevice,
+        alloc: &mut gpu::KernelAllocators,
+    ) -> Result<FwLogChannel> {
         Ok(FwLogChannel {
-            ch: RxChannel::<FwLogChannelState, RawFwLogMsg>::new(alloc, 0x600)?,
+            dev: dev.clone(),
+            ch: RxChannel::<FwLogChannelState, RawFwLogMsg>::new(alloc, Self::RING_SIZE)?,
+            payload_buf: alloc
+                .shared
+                .array_empty(Self::BUF_SIZE * FwLogChannelState::SUB_CHANNELS)?,
         })
     }
 
@@ -291,10 +305,54 @@ impl FwLogChannel {
         self.ch.ring.to_raw()
     }
 
+    pub(crate) fn get_buf(&self) -> GpuWeakPointer<[RawFwLogPayloadMsg]> {
+        self.payload_buf.weak_pointer()
+    }
+
     pub(crate) fn poll(&mut self) {
         for i in 0..=FwLogChannelState::SUB_CHANNELS - 1 {
             while let Some(msg) = self.ch.get(i) {
-                cls_pr_debug!(FwLogCh, "FwLog{}: {:?}", i, msg);
+                cls_dev_dbg!(FwLogCh, self.dev, "FwLog{}: {:?}", i, msg);
+                if msg.msg_type != 2 {
+                    dev_warn!(self.dev, "Unknown FWLog{} message: {:?}", i, msg);
+                    continue;
+                }
+                if msg.msg_index.0 as usize >= Self::BUF_SIZE {
+                    dev_warn!(
+                        self.dev,
+                        "FWLog{} message index out of bounds: {:?}",
+                        i,
+                        msg
+                    );
+                    continue;
+                }
+                let index = Self::BUF_SIZE * i + msg.msg_index.0 as usize;
+                let payload = &self.payload_buf.as_slice()[index];
+                if payload.msg_type != 3 {
+                    dev_warn!(self.dev, "Unknown FWLog{} payload: {:?}", i, payload);
+                    continue;
+                }
+                let msg = if let Some(end) = payload.msg.iter().position(|&r| r == 0) {
+                    CStr::from_bytes_with_nul(&(*payload.msg)[..end + 1])
+                        .unwrap_or(c_str!("cstr_err"))
+                } else {
+                    dev_warn!(
+                        self.dev,
+                        "FWLog{} payload not NUL-terminated: {:?}",
+                        i,
+                        payload
+                    );
+                    continue;
+                };
+                match i {
+                    0 => dev_dbg!(self.dev, "FWLog: {}", msg),
+                    1 => dev_info!(self.dev, "FWLog: {}", msg),
+                    2 => dev_notice!(self.dev, "FWLog: {}", msg),
+                    3 => dev_warn!(self.dev, "FWLog: {}", msg),
+                    4 => dev_err!(self.dev, "FWLog: {}", msg),
+                    5 => dev_crit!(self.dev, "FWLog: {}", msg),
+                    _ => (),
+                };
             }
         }
     }

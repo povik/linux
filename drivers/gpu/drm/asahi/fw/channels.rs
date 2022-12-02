@@ -222,19 +222,35 @@ pub(crate) union RawEventMsg {
 
 default_zeroed!(RawEventMsg);
 
-pub(crate) type RawFwLogMsg = Array<0xd8, u8>;
+#[derive(Debug, Copy, Clone, Default)]
+#[repr(C)]
+pub(crate) struct RawFwLogMsg {
+    pub(crate) msg_type: u32,
+    __pad0: u32,
+    pub(crate) msg_index: U64,
+    __pad1: Pad<0x28>,
+}
+
+#[derive(Debug, Copy, Clone, Default)]
+#[repr(C)]
+pub(crate) struct RawFwLogPayloadMsg {
+    pub(crate) msg_type: u32,
+    pub(crate) seq_no: u32,
+    pub(crate) timestamp: U64,
+    pub(crate) msg: Array<0xc8, u8>,
+}
 
 #[derive(Debug, Copy, Clone, Default)]
 #[repr(C)]
 pub(crate) struct RawKTraceMsg {
-    msg_type: u32,
-    timestamp: U64,
-    args: Array<4, U64>,
-    code: u8,
-    channel: u8,
+    pub(crate) msg_type: u32,
+    pub(crate) timestamp: U64,
+    pub(crate) args: Array<4, U64>,
+    pub(crate) code: u8,
+    pub(crate) channel: u8,
     __pad: Pad<1>,
-    thread: u8,
-    unk_flag: U64,
+    pub(crate) thread: u8,
+    pub(crate) unk_flag: U64,
 }
 
 #[versions(AGX)]

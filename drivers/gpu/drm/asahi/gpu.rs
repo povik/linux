@@ -273,6 +273,7 @@ impl GpuManager::ver {
             let p_fw_log = rxc.fw_log.to_raw();
             let p_ktrace = rxc.ktrace.to_raw();
             let p_stats = rxc.stats.to_raw();
+            let p_fwlog_buf = rxc.fw_log.get_buf();
             core::mem::drop(rxc);
 
             mgr.initdata.runtime_pointers.with_mut(|raw, _inner| {
@@ -281,6 +282,7 @@ impl GpuManager::ver {
                 raw.fw_log = p_fw_log;
                 raw.ktrace = p_ktrace;
                 raw.stats = p_stats;
+                raw.fwlog_buf = Some(p_fwlog_buf);
             });
         }
 
@@ -386,7 +388,7 @@ impl GpuManager::ver {
             rtkit: Mutex::new(None),
             rx_channels: Mutex::new(box_in_place!(RxChannels::ver {
                 event: channel::EventChannel::new(&mut alloc, event_manager.clone())?,
-                fw_log: channel::FwLogChannel::new(&mut alloc)?,
+                fw_log: channel::FwLogChannel::new(dev, &mut alloc)?,
                 ktrace: channel::KTraceChannel::new(&mut alloc)?,
                 stats: channel::StatsChannel::ver::new(&mut alloc)?,
             })?),
