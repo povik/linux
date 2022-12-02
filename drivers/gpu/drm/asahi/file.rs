@@ -20,10 +20,9 @@ const DEBUG_CLASS: DebugFlags = DebugFlags::File;
 pub(crate) struct File {
     id: u64,
     renderer: Box<dyn render::Renderer>,
-    unk_page: GpuOnlyArray<u8>,
+    dummy_obj: gem::ObjectRef,
     ualloc: Arc<Mutex<alloc::DefaultAllocator>>,
     ualloc_priv: Arc<Mutex<alloc::DefaultAllocator>>,
-    ualloc_extra: alloc::DefaultAllocator,
     vm: mmu::Vm,
 }
 
@@ -74,19 +73,11 @@ impl drm::file::DriverFile for File {
             true,
             fmt!("File {} GPU FW Private", id),
         )?))?;
-        let mut ualloc_extra = alloc::DefaultAllocator::new(
-            device,
-            &vm,
-            VM_UNK_PAGE,
-            VM_UNK_PAGE + 0x8000,
-            0x4000,
-            mmu::PROT_GPU_SHARED_RW,
-            0x4000,
-            false,
-            fmt!("File {} Dummy", id),
-        )?;
-        mod_dev_dbg!(device, "[File {}]: Allocating dummy page", id);
-        let unk_page: GpuOnlyArray<u8> = ualloc_extra.array_gpuonly(1)?;
+
+        let mut dummy_obj = gem::new_kernel_object(device, 0x4000)?;
+        dummy_obj.vmap()?.as_mut_slice().fill(0);
+        dummy_obj.map_at(&vm, VM_UNK_PAGE, mmu::PROT_GPU_SHARED_RW, true)?;
+
         mod_dev_dbg!(device, "[File {}]: Creating renderer", id);
         let renderer = device
             .data()
@@ -99,8 +90,7 @@ impl drm::file::DriverFile for File {
             vm,
             ualloc,
             ualloc_priv,
-            ualloc_extra,
-            unk_page,
+            dummy_obj,
             renderer,
         })?)
     }

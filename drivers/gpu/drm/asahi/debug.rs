@@ -41,14 +41,18 @@ pub(crate) enum DebugFlags {
     DeviceControlCh = 21,
     FwCtlCh = 22,
 
-    // 32-: Behavior flags
-    ConservativeTlbi = 32,
-    KeepGpuPowered = 33,
-    WaitForPowerOff = 34,
-    NoGpuRecovery = 35,
-    FillAllocations = 36,
-    DebugAllocations = 37,
-    DisableClustering = 38,
+    // 32-35: Allocator debugging
+    FillAllocations = 32,
+    DebugAllocations = 33,
+    DetectOverflows = 34,
+    ForceCPUMaps = 35,
+
+    // 36-: Behavior flags
+    ConservativeTlbi = 36,
+    KeepGpuPowered = 37,
+    WaitForPowerOff = 38,
+    NoGpuRecovery = 39,
+    DisableClustering = 40,
 }
 
 pub(crate) fn update_debug_flags() {

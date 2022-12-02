@@ -58,6 +58,7 @@ pub(crate) trait Allocation<T>: Debug {
 pub(crate) struct GenericAlloc<T, U: RawAllocation> {
     alloc: U,
     debug_offset: usize,
+    padding: usize,
     _p: PhantomData<T>,
 }
 
@@ -71,7 +72,7 @@ impl<T, U: RawAllocation> Allocation<T> for GenericAlloc<T, U> {
         self.alloc.gpu_ptr() + self.debug_offset as u64
     }
     fn size(&self) -> usize {
-        self.alloc.size() - self.debug_offset
+        self.alloc.size() - self.debug_offset - self.padding
     }
     fn device(&self) -> &AsahiDevice {
         self.alloc.device()
@@ -101,6 +102,8 @@ struct AllocDebugData {
 const STATE_LIVE: u32 = 0x4556494c;
 const STATE_DEAD: u32 = 0x44414544;
 
+const GUARD_MARKER: u8 = 0x93;
+
 impl<T, U: RawAllocation> Drop for GenericAlloc<T, U> {
     fn drop(&mut self) {
         let debug_len = mem::size_of::<AllocDebugData>();
@@ -115,15 +118,34 @@ impl<T, U: RawAllocation> Drop for GenericAlloc<T, U> {
         if debug_enabled(DebugFlags::FillAllocations) {
             if let Some(p) = self.ptr() {
                 unsafe { (p.as_ptr() as *mut u8).write_bytes(0xde, self.size()) };
-                unsafe {
-                    core::arch::asm!(
-                        "dc civac, {x}",
-                        x = in(reg) (p.as_ptr() as usize)
+            }
+        }
+        if self.padding != 0 {
+            if let Some(p) = self.ptr() {
+                let guard = unsafe {
+                    core::slice::from_raw_parts(
+                        (p.as_ptr() as *mut u8 as *const u8).add(self.size()),
+                        self.padding,
+                    )
+                };
+                if let Some(first_err) = guard.iter().position(|&r| r != GUARD_MARKER) {
+                    let last_err = guard
+                        .iter()
+                        .rev()
+                        .position(|&r| r != GUARD_MARKER)
+                        .unwrap_or(0);
+                    dev_warn!(
+                        self.device(),
+                        "Allocator: Corruption after object of type {} at {:#x}:{:#x} + {:#x}..{:#x}",
+                        core::any::type_name::<T>(),
+                        self.gpu_ptr(),
+                        self.size(),
+                        first_err,
+                        last_err
                     );
                 }
             }
         }
-        core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
     }
 }
 
@@ -203,12 +225,19 @@ pub(crate) trait Allocator {
         size: usize,
         align: usize,
     ) -> Result<GenericAlloc<T, Self::Raw>> {
+        let padding = if debug_enabled(DebugFlags::DetectOverflows) {
+            size
+        } else {
+            0
+        };
+
         let ret: GenericAlloc<T, Self::Raw> =
             if self.cpu_maps() && debug_enabled(debug::DebugFlags::DebugAllocations) {
                 let debug_align = self.min_align().max(align);
                 let debug_len = mem::size_of::<AllocDebugData>();
                 let debug_offset = (debug_len * 2 + debug_align - 1) & !(debug_align - 1);
-                let alloc = self.alloc(size + debug_offset, align)?;
+
+                let alloc = self.alloc(size + debug_offset + padding, align)?;
 
                 let mut debug = AllocDebugData {
                     state: STATE_LIVE,
@@ -237,12 +266,14 @@ pub(crate) trait Allocator {
                 GenericAlloc {
                     alloc,
                     debug_offset,
+                    padding,
                     _p: PhantomData,
                 }
             } else {
                 GenericAlloc {
-                    alloc: self.alloc(size, align)?,
+                    alloc: self.alloc(size + padding, align)?,
                     debug_offset: 0,
+                    padding,
                     _p: PhantomData,
                 }
             };
@@ -250,6 +281,16 @@ pub(crate) trait Allocator {
         if debug_enabled(DebugFlags::FillAllocations) {
             if let Some(p) = ret.ptr() {
                 unsafe { (p.as_ptr() as *mut u8).write_bytes(0xaa, ret.size()) };
+            }
+        }
+
+        if padding != 0 {
+            if let Some(p) = ret.ptr() {
+                unsafe {
+                    (p.as_ptr() as *mut u8)
+                        .add(ret.size())
+                        .write_bytes(GUARD_MARKER, padding);
+                }
             }
         }
 
@@ -347,9 +388,12 @@ impl SimpleAllocator {
         min_align: usize,
         prot: u32,
         _block_size: usize,
-        cpu_maps: bool,
+        mut cpu_maps: bool,
         _name: fmt::Arguments<'_>,
     ) -> Result<SimpleAllocator> {
+        if debug_enabled(DebugFlags::ForceCPUMaps) {
+            cpu_maps = true;
+        }
         Ok(SimpleAllocator {
             dev: dev.clone(),
             vm: vm.clone(),
@@ -516,11 +560,14 @@ impl HeapAllocator {
         min_align: usize,
         prot: u32,
         block_size: usize,
-        cpu_maps: bool,
+        mut cpu_maps: bool,
         name: fmt::Arguments<'_>,
     ) -> Result<HeapAllocator> {
         if !min_align.is_power_of_two() {
             return Err(EINVAL);
+        }
+        if debug_enabled(DebugFlags::ForceCPUMaps) {
+            cpu_maps = true;
         }
 
         let name = CString::try_from_fmt(name)?;
