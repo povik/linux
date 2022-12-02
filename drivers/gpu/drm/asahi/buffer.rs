@@ -491,7 +491,11 @@ impl Buffer::ver {
     pub(crate) fn increment(&self) {
         let inner = self.inner.lock();
         inner.info.counter.with(|raw, _inner| {
-            raw.count.fetch_add(1, Ordering::Relaxed);
+            // We could use fetch_add, but the non-LSE atomic
+            // sequence Rust produces confuses the hypervisor.
+            // We have inner locked anyway, so this is not racy.
+            let v = raw.count.load(Ordering::Relaxed);
+            raw.count.store(v + 1, Ordering::Relaxed);
         });
     }
 }
