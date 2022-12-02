@@ -201,6 +201,13 @@ impl Renderer::ver {
         let tpc_mtile_stride = tpc_entry_size * utiles_per_tile * tiles_per_mtile / 4;
         let tpc_size = (num_clusters * (4 * tpc_mtile_stride * mtiles)) as usize;
 
+        // No idea where this comes from, but it fits what macOS does...
+        let meta1_blocks = if num_clusters > 1 {
+            div_ceil(align(tiles_x, 2) * align(tiles_y, 4), 0x1980)
+        } else {
+            0
+        };
+
         Ok(buffer::TileInfo {
             tiles_x,
             tiles_y,
@@ -217,6 +224,7 @@ impl Renderer::ver {
             utiles_per_mtile: tiles_per_mtile * utiles_per_tile,
             tilemap_size,
             tpc_size,
+            meta1_blocks,
             params: fw::vertex::raw::TilingParameters {
                 rgn_size,
                 unk_4: 0x88,
@@ -909,7 +917,7 @@ impl Renderer for Renderer::ver {
                             tvb_cluster_meta1: inner
                                 .scene
                                 .meta_1_pointer()
-                                .map(|x| x.or(0x4_0000_0000_0000)),
+                                .map(|x| x.or((tile_info.meta1_blocks as u64) << 50)),
                             utile_config: utile_config,
                             unk_4c: 0,
                             ppp_multisamplectl: U64(cmdbuf.ppp_multisamplectl), // fixed
@@ -945,7 +953,7 @@ impl Renderer for Renderer::ver {
                                 .meta_4_pointer()
                                 .map(|x| x.or(0x3000_0000_0000_0000)),
                             #[ver(G < G14)]
-                            unk_f0: U64(if clustering { 0x20 } else { 0x1c }),
+                            unk_f0: U64(0x1c + align(tile_info.meta1_blocks, 4) as u64),
                             unk_f8: U64(0x8c60),         // fixed
                             unk_100: Default::default(), // fixed
                             unk_118: 0x1c,               // fixed

@@ -81,6 +81,7 @@ pub(crate) struct TileInfo {
     pub(crate) utiles_per_mtile: u32,
     pub(crate) tilemap_size: usize,
     pub(crate) tpc_size: usize,
+    pub(crate) meta1_blocks: u32,
     pub(crate) params: fw::vertex::raw::TilingParameters,
 }
 
@@ -365,7 +366,8 @@ impl Buffer::ver {
 
         // TODO: what is this exactly?
         mod_pr_debug!("Buffer: Allocating TVB buffers\n");
-        let user_buffer = inner.ualloc.lock().array_empty(0x80)?;
+        // Probably 8192 * 8 + 8 aligned
+        let user_buffer = inner.ualloc.lock().array_empty(0x10080)?;
         let tvb_heapmeta = inner.ualloc.lock().array_empty(0x200)?;
         let tvb_tilemap = inner.ualloc.lock().array_empty(tilemap_size)?;
 
@@ -398,7 +400,7 @@ impl Buffer::ver {
             }
         };
 
-        let meta1_size = align(4 * inner.num_clusters, 0x80);
+        let meta1_size = align(tile_info.meta1_blocks as usize * 0x44, 0x80);
         // check
         let meta2_size = align(0x190 * inner.num_clusters, 0x80);
         let meta3_size = align(0x280 * inner.num_clusters, 0x80);
