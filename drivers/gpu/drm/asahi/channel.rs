@@ -41,7 +41,7 @@ where
         })
     }
 
-    pub(crate) fn get(&mut self, index: usize) -> Option<U> {
+    fn get_or_peek(&mut self, index: usize, peek: bool) -> Option<U> {
         self.ring.state.with(|raw, _inner| {
             let wptr = T::wptr(raw, index);
             let rptr = &mut self.rptr[index];
@@ -50,11 +50,21 @@ where
             } else {
                 let off = self.count as usize * index;
                 let msg = self.ring.ring[off + *rptr as usize];
-                *rptr = (*rptr + 1) % self.count;
-                T::set_rptr(raw, index, *rptr);
+                if !peek {
+                    *rptr = (*rptr + 1) % self.count;
+                    T::set_rptr(raw, index, *rptr);
+                }
                 Some(msg)
             }
         })
+    }
+
+    pub(crate) fn get(&mut self, index: usize) -> Option<U> {
+        self.get_or_peek(index, false)
+    }
+
+    pub(crate) fn peek(&mut self, index: usize) -> Option<U> {
+        self.get_or_peek(index, true)
     }
 }
 
@@ -326,10 +336,11 @@ impl FwLogChannel {
 
     pub(crate) fn poll(&mut self) {
         for i in 0..=FwLogChannelState::SUB_CHANNELS - 1 {
-            while let Some(msg) = self.ch.get(i) {
+            while let Some(msg) = self.ch.peek(i) {
                 cls_dev_dbg!(FwLogCh, self.dev, "FwLog{}: {:?}", i, msg);
                 if msg.msg_type != 2 {
                     dev_warn!(self.dev, "Unknown FWLog{} message: {:?}", i, msg);
+                    self.ch.get(i);
                     continue;
                 }
                 if msg.msg_index.0 as usize >= Self::BUF_SIZE {
@@ -339,12 +350,14 @@ impl FwLogChannel {
                         i,
                         msg
                     );
+                    self.ch.get(i);
                     continue;
                 }
                 let index = Self::BUF_SIZE * i + msg.msg_index.0 as usize;
                 let payload = &self.payload_buf.as_slice()[index];
                 if payload.msg_type != 3 {
                     dev_warn!(self.dev, "Unknown FWLog{} payload: {:?}", i, payload);
+                    self.ch.get(i);
                     continue;
                 }
                 let msg = if let Some(end) = payload.msg.iter().position(|&r| r == 0) {
@@ -357,6 +370,7 @@ impl FwLogChannel {
                         i,
                         payload
                     );
+                    self.ch.get(i);
                     continue;
                 };
                 match i {
@@ -368,6 +382,7 @@ impl FwLogChannel {
                     5 => dev_crit!(self.dev, "FWLog: {}", msg),
                     _ => (),
                 };
+                self.ch.get(i);
             }
         }
     }
