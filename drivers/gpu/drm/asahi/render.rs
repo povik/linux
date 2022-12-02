@@ -739,7 +739,7 @@ impl Renderer for Renderer::ver {
                             unk_30: if unk1 { 1 } else { 0 },
                             unk_buf_0: U64(0),
                             unk_buf_8: U64(0),
-                            unk_buf_10: U64(0),
+                            unk_buf_10: U64(1),
                             ts1: U64(0),
                             ts2: U64(0),
                             ts3: U64(0),
