@@ -53,6 +53,16 @@ pub(crate) enum DebugFlags {
     WaitForPowerOff = 38,
     NoGpuRecovery = 39,
     DisableClustering = 40,
+
+    // 48-: Misc
+    Debug0 = 48,
+    Debug1 = 49,
+    Debug2 = 50,
+    Debug3 = 51,
+    Debug4 = 52,
+    Debug5 = 53,
+    Debug6 = 54,
+    Debug7 = 55,
 }
 
 pub(crate) fn update_debug_flags() {

@@ -390,8 +390,12 @@ impl Renderer for Renderer::ver {
 
         batches_frag.add(Box::try_new(barrier)?)?;
 
-        let unk0 = false;
-        let unk1 = false;
+        let unk0 = debug_enabled(debug::DebugFlags::Debug0);
+        let unk1 = debug_enabled(debug::DebugFlags::Debug1);
+        let unk2 = debug_enabled(debug::DebugFlags::Debug2);
+        let unk3 = debug_enabled(debug::DebugFlags::Debug3);
+        let unk4 = debug_enabled(debug::DebugFlags::Debug4);
+        let unk5 = debug_enabled(debug::DebugFlags::Debug5);
 
         let mut tile_config: u64 = 0;
         if !unk1 {
@@ -503,7 +507,7 @@ impl Renderer for Renderer::ver {
                     #[ver(G >= G14)]
                     unk_8c_g14: U64(0),
                     restart_branch_offset: off,
-                    unk_98: 0,
+                    unk_98: if unk3 { 1 } else { 0 },
                     #[ver(V >= V13_0B4)]
                     unk_9c: Default::default(),
                 })?;
@@ -712,7 +716,7 @@ impl Renderer for Renderer::ver {
                         no_clear_pipeline_textures: (cmdbuf.flags
                             & bindings::ASAHI_CMDBUF_NO_CLEAR_PIPELINE_TEXTURES as u64
                             != 0) as u32,
-                        unk_param: 0, // 1 for boot stuff?
+                        unk_param: if unk2 { 1 } else { 0 }, // 1 for boot stuff?
                         unk_pointee: 0,
                         meta: fw::job::JobMeta {
                             unk_4: 0,
@@ -887,9 +891,9 @@ impl Renderer for Renderer::ver {
                         unk_buffer_buf: inner.scene.kernel_buffer_pointer(),
                         unk_34: 0,
                         job_params1: fw::vertex::raw::JobParameters1::ver {
-                            unk_0: U64(0x200), // sometimes 0
-                            unk_8: 0x1e3ce508, // fixed
-                            unk_c: 0x1e3ce508, // fixed
+                            unk_0: U64(if unk5 { 0 } else { 0x200 }), // sometimes 0
+                            unk_8: 0x1e3ce508,                        // fixed
+                            unk_c: 0x1e3ce508,                        // fixed
                             tvb_tilemap: inner.scene.tvb_tilemap_pointer(),
                             #[ver(G < G14)]
                             tvb_cluster_tilemaps: inner.scene.cluster_tilemaps_pointer(),
@@ -988,7 +992,8 @@ impl Renderer for Renderer::ver {
                         unk_560: 0,
                         memoryless_rts_used: (cmdbuf.flags
                             & bindings::ASAHI_CMDBUF_MEMORYLESS_RTS_USED as u64
-                            != 0) as u32,
+                            != 0
+                            || unk4) as u32,
                         unk_568: 0,
                         unk_56c: 0,
                         meta: fw::job::JobMeta {
