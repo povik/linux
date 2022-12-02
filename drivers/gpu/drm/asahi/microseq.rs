@@ -21,15 +21,16 @@ impl Builder {
     }
 
     pub(crate) fn offset_to(&self, target: i32) -> i32 {
-        self.ops.len() as i32 - target
+        target - self.ops.len() as i32
     }
 
     pub(crate) fn add<T: microseq::Operation>(&mut self, op: T) -> Result<i32> {
+        let off = self.ops.len();
         let p: *const T = &op;
         let p: *const u8 = p as *const u8;
         let s: &[u8] = unsafe { core::slice::from_raw_parts(p, core::mem::size_of::<T>()) };
         self.ops.try_extend_from_slice(s)?;
-        Ok(self.ops.len() as i32)
+        Ok(off as i32)
     }
 
     pub(crate) fn build(self, alloc: &mut Allocator) -> Result<MicroSequence> {
