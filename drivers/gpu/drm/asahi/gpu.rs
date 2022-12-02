@@ -368,13 +368,13 @@ impl GpuManager::ver {
         for _i in 0..=NUM_PIPES - 1 {
             pipes
                 .vtx
-                .try_push(Mutex::new(channel::PipeChannel::new(&mut alloc)?))?;
+                .try_push(Mutex::new(channel::PipeChannel::new(dev, &mut alloc)?))?;
             pipes
                 .frag
-                .try_push(Mutex::new(channel::PipeChannel::new(&mut alloc)?))?;
+                .try_push(Mutex::new(channel::PipeChannel::new(dev, &mut alloc)?))?;
             pipes
                 .comp
-                .try_push(Mutex::new(channel::PipeChannel::new(&mut alloc)?))?;
+                .try_push(Mutex::new(channel::PipeChannel::new(dev, &mut alloc)?))?;
         }
 
         UniqueArc::try_new(GpuManager::ver {
@@ -387,15 +387,15 @@ impl GpuManager::ver {
             io_mappings: Vec::new(),
             rtkit: Mutex::new(None),
             rx_channels: Mutex::new(box_in_place!(RxChannels::ver {
-                event: channel::EventChannel::new(&mut alloc, event_manager.clone())?,
+                event: channel::EventChannel::new(dev, &mut alloc, event_manager.clone())?,
                 fw_log: channel::FwLogChannel::new(dev, &mut alloc)?,
-                ktrace: channel::KTraceChannel::new(&mut alloc)?,
-                stats: channel::StatsChannel::ver::new(&mut alloc)?,
+                ktrace: channel::KTraceChannel::new(dev, &mut alloc)?,
+                stats: channel::StatsChannel::ver::new(dev, &mut alloc)?,
             })?),
             tx_channels: Mutex::new(Box::try_new(TxChannels {
-                device_control: channel::DeviceControlChannel::new(&mut alloc)?,
+                device_control: channel::DeviceControlChannel::new(dev, &mut alloc)?,
             })?),
-            fwctl_channel: Mutex::new(Box::try_new(channel::FwCtlChannel::new(&mut alloc)?)?),
+            fwctl_channel: Mutex::new(Box::try_new(channel::FwCtlChannel::new(dev, &mut alloc)?)?),
             pipes,
             event_manager,
             buffer_mgr: buffer::BufferManager::new()?,

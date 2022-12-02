@@ -135,14 +135,19 @@ where
 }
 
 pub(crate) struct DeviceControlChannel {
+    dev: AsahiDevice,
     ch: TxChannel<ChannelState, DeviceControlMsg>,
 }
 
 impl DeviceControlChannel {
     const COMMAND_TIMEOUT_MS: u64 = 100;
 
-    pub(crate) fn new(alloc: &mut gpu::KernelAllocators) -> Result<DeviceControlChannel> {
+    pub(crate) fn new(
+        dev: &AsahiDevice,
+        alloc: &mut gpu::KernelAllocators,
+    ) -> Result<DeviceControlChannel> {
         Ok(DeviceControlChannel {
+            dev: dev.clone(),
             ch: TxChannel::<ChannelState, DeviceControlMsg>::new(alloc, 0x100)?,
         })
     }
@@ -152,7 +157,7 @@ impl DeviceControlChannel {
     }
 
     pub(crate) fn send(&mut self, msg: &DeviceControlMsg) -> u32 {
-        cls_pr_debug!(DeviceControlCh, "DeviceControl: {:?}", msg);
+        cls_dev_dbg!(DeviceControlCh, self.dev, "DeviceControl: {:?}", msg);
         self.ch.put(msg)
     }
 
@@ -162,12 +167,14 @@ impl DeviceControlChannel {
 }
 
 pub(crate) struct PipeChannel {
+    dev: AsahiDevice,
     ch: TxChannel<ChannelState, PipeMsg>,
 }
 
 impl PipeChannel {
-    pub(crate) fn new(alloc: &mut gpu::KernelAllocators) -> Result<PipeChannel> {
+    pub(crate) fn new(dev: &AsahiDevice, alloc: &mut gpu::KernelAllocators) -> Result<PipeChannel> {
         Ok(PipeChannel {
+            dev: dev.clone(),
             ch: TxChannel::<ChannelState, PipeMsg>::new(alloc, 0x100)?,
         })
     }
@@ -177,20 +184,25 @@ impl PipeChannel {
     }
 
     pub(crate) fn send(&mut self, msg: &PipeMsg) {
-        cls_pr_debug!(PipeCh, "Pipe: {:?}", msg);
+        cls_dev_dbg!(PipeCh, self.dev, "Pipe: {:?}", msg);
         self.ch.put(msg);
     }
 }
 
 pub(crate) struct FwCtlChannel {
+    dev: AsahiDevice,
     ch: TxChannel<FwCtlChannelState, FwCtlMsg>,
 }
 
 impl FwCtlChannel {
     const COMMAND_TIMEOUT_MS: u64 = 100;
 
-    pub(crate) fn new(alloc: &mut gpu::KernelAllocators) -> Result<FwCtlChannel> {
+    pub(crate) fn new(
+        dev: &AsahiDevice,
+        alloc: &mut gpu::KernelAllocators,
+    ) -> Result<FwCtlChannel> {
         Ok(FwCtlChannel {
+            dev: dev.clone(),
             ch: TxChannel::<FwCtlChannelState, FwCtlMsg>::new_uncached(alloc, 0x100)?,
         })
     }
@@ -200,7 +212,7 @@ impl FwCtlChannel {
     }
 
     pub(crate) fn send(&mut self, msg: &FwCtlMsg) -> u32 {
-        cls_pr_debug!(FwCtlCh, "FwCtl: {:?}", msg);
+        cls_dev_dbg!(FwCtlCh, self.dev, "FwCtl: {:?}", msg);
         self.ch.put(msg)
     }
 
@@ -210,6 +222,7 @@ impl FwCtlChannel {
 }
 
 pub(crate) struct EventChannel {
+    dev: AsahiDevice,
     ch: RxChannel<ChannelState, RawEventMsg>,
     mgr: Arc<event::EventManager>,
     gpu: Option<Arc<dyn gpu::GpuManager>>,
@@ -217,10 +230,12 @@ pub(crate) struct EventChannel {
 
 impl EventChannel {
     pub(crate) fn new(
+        dev: &AsahiDevice,
         alloc: &mut gpu::KernelAllocators,
         mgr: Arc<event::EventManager>,
     ) -> Result<EventChannel> {
         Ok(EventChannel {
+            dev: dev.clone(),
             ch: RxChannel::<ChannelState, RawEventMsg>::new(alloc, 0x100)?,
             mgr,
             gpu: None,
@@ -242,11 +257,11 @@ impl EventChannel {
                 0..=EVENT_MAX => {
                     let msg = unsafe { msg.msg };
 
-                    cls_pr_debug!(EventCh, "Event: {:?}", msg);
+                    cls_dev_dbg!(EventCh, self.dev, "Event: {:?}", msg);
                     match msg {
                         EventMsg::Fault => match self.gpu.as_ref() {
                             Some(gpu) => gpu.handle_fault(),
-                            None => pr_crit!("EventChannel: No GPU manager available!"),
+                            None => dev_crit!(self.dev, "EventChannel: No GPU manager available!"),
                         },
                         EventMsg::Timeout {
                             counter,
@@ -254,7 +269,7 @@ impl EventChannel {
                             ..
                         } => match self.gpu.as_ref() {
                             Some(gpu) => gpu.handle_timeout(counter, event_slot),
-                            None => pr_crit!("EventChannel: No GPU manager available!"),
+                            None => dev_crit!(self.dev, "EventChannel: No GPU manager available!"),
                         },
                         EventMsg::Flag { firing, .. } => {
                             for (i, flags) in firing.iter().enumerate() {
@@ -266,12 +281,12 @@ impl EventChannel {
                             }
                         }
                         msg => {
-                            pr_crit!("Unknown event message: {:?}", msg);
+                            dev_crit!(self.dev, "Unknown event message: {:?}", msg);
                         }
                     }
                 }
                 _ => {
-                    pr_warn!("Unknown event message: {:?}", unsafe { msg.raw });
+                    dev_warn!(self.dev, "Unknown event message: {:?}", unsafe { msg.raw });
                 }
             }
         }
@@ -359,12 +374,17 @@ impl FwLogChannel {
 }
 
 pub(crate) struct KTraceChannel {
+    dev: AsahiDevice,
     ch: RxChannel<ChannelState, RawKTraceMsg>,
 }
 
 impl KTraceChannel {
-    pub(crate) fn new(alloc: &mut gpu::KernelAllocators) -> Result<KTraceChannel> {
+    pub(crate) fn new(
+        dev: &AsahiDevice,
+        alloc: &mut gpu::KernelAllocators,
+    ) -> Result<KTraceChannel> {
         Ok(KTraceChannel {
+            dev: dev.clone(),
             ch: RxChannel::<ChannelState, RawKTraceMsg>::new(alloc, 0x200)?,
         })
     }
@@ -375,20 +395,25 @@ impl KTraceChannel {
 
     pub(crate) fn poll(&mut self) {
         while let Some(msg) = self.ch.get(0) {
-            cls_pr_debug!(KTraceCh, "KTrace: {:?}", msg);
+            cls_dev_dbg!(KTraceCh, self.dev, "KTrace: {:?}", msg);
         }
     }
 }
 
 #[versions(AGX)]
 pub(crate) struct StatsChannel {
+    dev: AsahiDevice,
     ch: RxChannel<ChannelState, RawStatsMsg::ver>,
 }
 
 #[versions(AGX)]
 impl StatsChannel::ver {
-    pub(crate) fn new(alloc: &mut gpu::KernelAllocators) -> Result<StatsChannel::ver> {
+    pub(crate) fn new(
+        dev: &AsahiDevice,
+        alloc: &mut gpu::KernelAllocators,
+    ) -> Result<StatsChannel::ver> {
         Ok(StatsChannel::ver {
+            dev: dev.clone(),
             ch: RxChannel::<ChannelState, RawStatsMsg::ver>::new(alloc, 0x100)?,
         })
     }
@@ -403,7 +428,7 @@ impl StatsChannel::ver {
             match tag {
                 0..=STATS_MAX::ver => {
                     let msg = unsafe { msg.msg };
-                    cls_pr_debug!(StatsCh, "Stats: {:?}", msg);
+                    cls_dev_dbg!(StatsCh, self.dev, "Stats: {:?}", msg);
                 }
                 _ => {
                     pr_warn!("Unknown stats message: {:?}", unsafe { msg.raw });
