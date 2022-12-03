@@ -932,8 +932,8 @@ impl Renderer for Renderer::ver {
                         unk_34: 0,
                         job_params1: fw::vertex::raw::JobParameters1::ver {
                             unk_0: U64(if unk1 { 0 } else { 0x200 }), // sometimes 0
-                            unk_8: 0x1e3ce508,                        // fixed
-                            unk_c: 0x1e3ce508,                        // fixed
+                            unk_8: f32!(1e-20),                       // fixed
+                            unk_c: f32!(1e-20),                       // fixed
                             tvb_tilemap: inner.scene.tvb_tilemap_pointer(),
                             #[ver(G < G14)]
                             tvb_cluster_tilemaps: inner.scene.cluster_tilemaps_pointer(),
