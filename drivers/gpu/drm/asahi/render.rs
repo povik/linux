@@ -427,12 +427,15 @@ impl Renderer for Renderer::ver {
 
         batches_frag.add(Box::try_new(barrier)?)?;
 
+        // Seems to be a "go faster" bit? Not sure what it does exactly...
         let unk0 = debug_enabled(debug::DebugFlags::Debug0);
+
         let unk1 = debug_enabled(debug::DebugFlags::Debug1);
         let unk2 = debug_enabled(debug::DebugFlags::Debug2);
         let unk3 = debug_enabled(debug::DebugFlags::Debug3);
+
+        // Sometimes causes unknown event #7 and a hang, maybe synchronous TVB growth?
         let unk4 = debug_enabled(debug::DebugFlags::Debug4);
-        let unk5 = debug_enabled(debug::DebugFlags::Debug5);
 
         let mut tile_config: u64 = 0;
         if !unk1 {
@@ -928,7 +931,7 @@ impl Renderer for Renderer::ver {
                         unk_buffer_buf: inner.scene.kernel_buffer_pointer(),
                         unk_34: 0,
                         job_params1: fw::vertex::raw::JobParameters1::ver {
-                            unk_0: U64(if unk5 { 0 } else { 0x200 }), // sometimes 0
+                            unk_0: U64(if unk1 { 0 } else { 0x200 }), // sometimes 0
                             unk_8: 0x1e3ce508,                        // fixed
                             unk_c: 0x1e3ce508,                        // fixed
                             tvb_tilemap: inner.scene.tvb_tilemap_pointer(),
