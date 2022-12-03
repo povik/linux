@@ -57,6 +57,7 @@ pub(crate) trait Allocation<T>: Debug {
 
 pub(crate) struct GenericAlloc<T, U: RawAllocation> {
     alloc: U,
+    alloc_size: usize,
     debug_offset: usize,
     padding: usize,
     _p: PhantomData<T>,
@@ -72,7 +73,7 @@ impl<T, U: RawAllocation> Allocation<T> for GenericAlloc<T, U> {
         self.alloc.gpu_ptr() + self.debug_offset as u64
     }
     fn size(&self) -> usize {
-        self.alloc.size() - self.debug_offset - self.padding
+        self.alloc_size
     }
     fn device(&self) -> &AsahiDevice {
         self.alloc.device()
@@ -141,7 +142,7 @@ impl<T, U: RawAllocation> Drop for GenericAlloc<T, U> {
                         self.gpu_ptr(),
                         self.size(),
                         first_err,
-                        last_err
+                        self.padding - last_err
                     );
                 }
             }
@@ -265,6 +266,7 @@ pub(crate) trait Allocator {
 
                 GenericAlloc {
                     alloc,
+                    alloc_size: size,
                     debug_offset,
                     padding,
                     _p: PhantomData,
@@ -272,6 +274,7 @@ pub(crate) trait Allocator {
             } else {
                 GenericAlloc {
                     alloc: self.alloc(size + padding, align)?,
+                    alloc_size: size,
                     debug_offset: 0,
                     padding,
                     _p: PhantomData,
