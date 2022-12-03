@@ -425,6 +425,7 @@ impl Buffer::ver {
             }
         };
 
+        // Maybe: (4x4 macro tiles + 1 global page)*n, 32bit each (17*4*n)
         let meta1_size = align(tile_info.meta1_blocks as usize * 0x44, 0x80);
         // check
         let meta2_size = align(0x190 * inner.num_clusters, 0x80);

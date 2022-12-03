@@ -191,14 +191,15 @@ impl Renderer::ver {
         let rgn_entry_size = 5;
         // Macrotile stride in 32-bit words
         let rgn_size = align(rgn_entry_size * tiles_per_mtile * utiles_per_tile, 4) / 4;
-        let tilemap_size = (4 * rgn_size * mtiles) as usize;
+        let tilemap_size = (4 * rgn_size * mtiles * layers) as usize;
 
         let tpc_entry_size = 8;
         // TPC stride in 32-bit words
         let tpc_mtile_stride = tpc_entry_size * utiles_per_tile * tiles_per_mtile / 4;
-        let tpc_size = (num_clusters * (4 * tpc_mtile_stride * mtiles)) as usize;
+        let tpc_size = (num_clusters * (4 * tpc_mtile_stride * mtiles) * layers) as usize;
 
         // No idea where this comes from, but it fits what macOS does...
+        // TODO: layers?
         let meta1_blocks = if num_clusters > 1 {
             div_ceil(align(tiles_x, 2) * align(tiles_y, 4), 0x1980)
         } else {
