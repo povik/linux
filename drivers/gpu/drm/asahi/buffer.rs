@@ -445,10 +445,7 @@ impl Buffer::ver {
                 .ualloc
                 .lock()
                 .array_empty(inner.num_clusters * tilemap_size)?;
-            let meta = inner
-                .ualloc
-                .lock()
-                .array_empty(inner.num_clusters * meta_size)?;
+            let meta = inner.ualloc.lock().array_empty(meta_size)?;
             Some(buffer::ClusterBuffers { tilemaps, meta })
         } else {
             None
