@@ -176,8 +176,8 @@ impl Renderer::ver {
         let mtiles = mtiles_x * mtiles_y;
 
         // TODO: *samples
-        let tiles_per_mtile_x = align((tiles_x + mtiles_x - 1) / mtiles_x, 4);
-        let tiles_per_mtile_y = align((tiles_y + mtiles_y - 1) / mtiles_y, 4);
+        let tiles_per_mtile_x = align(div_ceil(tiles_x, mtiles_x), 4);
+        let tiles_per_mtile_y = align(div_ceil(tiles_y, mtiles_y), 4);
         let tiles_per_mtile = tiles_per_mtile_x * tiles_per_mtile_y;
 
         let mtile_x1 = tiles_per_mtile_x;
@@ -209,6 +209,11 @@ impl Renderer::ver {
         let min_tvb_blocks =
             div_ceil(tiles_x * tiles_y, 128).max(if num_clusters > 1 { 9 } else { 8 }) as usize;
 
+        // Sometimes clustering seems to use twice the cluster tilemap count
+        // and twice the meta4 size. TODO: Is this random or can we calculate
+        // it somehow??? Does it go higher???
+        let cluster_factor = 2;
+
         Ok(buffer::TileInfo {
             tiles_x,
             tiles_y,
@@ -227,6 +232,7 @@ impl Renderer::ver {
             tpc_size,
             meta1_blocks,
             min_tvb_blocks,
+            cluster_factor,
             params: fw::vertex::raw::TilingParameters {
                 rgn_size,
                 unk_4: 0x88,

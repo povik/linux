@@ -82,6 +82,7 @@ pub(crate) struct TileInfo {
     pub(crate) tpc_size: usize,
     pub(crate) meta1_blocks: u32,
     pub(crate) min_tvb_blocks: usize,
+    pub(crate) cluster_factor: usize,
     pub(crate) params: fw::vertex::raw::TilingParameters,
 }
 
@@ -397,8 +398,18 @@ impl Buffer::ver {
 
         // TODO: what is this exactly?
         mod_pr_debug!("Buffer: Allocating TVB buffers\n");
-        // Probably 8192 * 8 + 8 aligned
-        let user_buffer = inner.ualloc.lock().array_empty(0x10080)?;
+
+        // This seems to be a list, with 4x2 bytes of headers and 8 bytes per entry.
+        // On single-cluster devices, the used length always seems to be 1.
+        // On M1 Ultra, it can grow and usually doesn't exceed 8 * cluster_factor
+        // entries. macOS allocates a whole 64K * 0x80 for this, so let's go with
+        // that to be safe...
+        let user_buffer = inner.ualloc.lock().array_empty(if inner.num_clusters > 1 {
+            0x10080
+        } else {
+            0x80
+        })?;
+
         let tvb_heapmeta = inner.ualloc.lock().array_empty(0x200)?;
         let tvb_tilemap = inner.ualloc.lock().array_empty(tilemap_size)?;
 
@@ -436,7 +447,9 @@ impl Buffer::ver {
         // check
         let meta2_size = align(0x190 * inner.num_clusters, 0x80);
         let meta3_size = align(0x280 * inner.num_clusters, 0x80);
-        let meta4_size = align(0x30 * inner.num_clusters, 0x80);
+        // Like user_buffer for single-cluster modes, 0x30 per cluster * the cluster
+        // factor.
+        let meta4_size = align(0x30 * inner.num_clusters * tile_info.cluster_factor, 0x80);
         let meta_size = meta1_size + meta2_size + meta3_size + meta4_size;
 
         let clustering = if inner.num_clusters > 1 {
@@ -444,7 +457,7 @@ impl Buffer::ver {
             let tilemaps = inner
                 .ualloc
                 .lock()
-                .array_empty(inner.num_clusters * tilemap_size)?;
+                .array_empty(inner.num_clusters * tilemap_size * tile_info.cluster_factor)?;
             let meta = inner.ualloc.lock().array_empty(meta_size)?;
             Some(buffer::ClusterBuffers { tilemaps, meta })
         } else {
