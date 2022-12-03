@@ -212,9 +212,15 @@ impl Buffer::ver {
         let max_pages_nomemless = max_blocks_nomemless * PAGES_PER_BLOCK;
 
         let num_clusters = gpu.get_dyncfg().id.num_clusters as usize;
-        let preempt1_size = num_clusters * gpu.get_cfg().preempt1_size;
-        let preempt2_size = num_clusters * gpu.get_cfg().preempt2_size;
-        let preempt3_size = num_clusters * gpu.get_cfg().preempt3_size;
+        let num_clusters_adj = if num_clusters > 1 {
+            num_clusters + 1
+        } else {
+            1
+        };
+
+        let preempt1_size = num_clusters_adj * gpu.get_cfg().preempt1_size;
+        let preempt2_size = num_clusters_adj * gpu.get_cfg().preempt2_size;
+        let preempt3_size = num_clusters_adj * gpu.get_cfg().preempt3_size;
 
         let inner = box_in_place!(buffer::Info::ver {
             block_ctl: alloc.shared.new_default::<buffer::BlockControl>()?,
