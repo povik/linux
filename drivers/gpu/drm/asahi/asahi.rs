@@ -34,6 +34,18 @@ module_platform_driver! {
     type: driver::AsahiDriver,
     name: "asahi",
     license: "Dual MIT/GPL",
+    alias: [
+        "of:N*T*Capple,agx-t8103C*",
+        "of:N*T*Capple,agx-t8103",
+        "of:N*T*Capple,agx-t8112C*",
+        "of:N*T*Capple,agx-t8112",
+        "of:N*T*Capple,agx-t6000C*",
+        "of:N*T*Capple,agx-t6000",
+        "of:N*T*Capple,agx-t6001C*",
+        "of:N*T*Capple,agx-t6001",
+        "of:N*T*Capple,agx-t6002C*",
+        "of:N*T*Capple,agx-t6002",
+    ],
     params: {
         debug_flags: u64 {
             default: 0,
