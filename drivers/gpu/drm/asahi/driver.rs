@@ -9,6 +9,7 @@ use kernel::{
 
 use crate::{debug, file, gem, gpu, hw, regs};
 
+use kernel::device::RawDevice;
 use kernel::macros::vtable;
 
 const INFO: drv::DriverInfo = drv::DriverInfo {
@@ -78,7 +79,7 @@ impl platform::Driver for AsahiDriver {
 
         let dev = device::Device::from_dev(pdev);
 
-        dev_info!(dev, "Probing!\n");
+        dev_info!(dev, "Probing...\n");
 
         let cfg = id_info.ok_or(ENODEV)?;
 
@@ -92,14 +93,27 @@ impl platform::Driver for AsahiDriver {
         // Start the coprocessor CPU, so UAT can initialize the handoff
         res.start_cpu()?;
 
+        let node = dev.of_node().ok_or(EIO)?;
+        let compat: Vec<u32> = node.get_property(c_str!("apple,firmware-compat"))?;
+
         let reg = drm::drv::Registration::<AsahiDriver>::new(&dev)?;
-        let gpu =
-            match cfg.gpu_gen {
-                hw::GpuGen::G13 => gpu::GpuManagerG13V12_3::new(reg.device(), &res, cfg)?
-                    as Arc<dyn gpu::GpuManager>,
-                hw::GpuGen::G14 => gpu::GpuManagerG14V12_4::new(reg.device(), &res, cfg)?
-                    as Arc<dyn gpu::GpuManager>,
-            };
+        let gpu = match (cfg.gpu_gen, compat.as_slice()) {
+            (hw::GpuGen::G13, &[12, 3, 0]) => {
+                gpu::GpuManagerG13V12_3::new(reg.device(), &res, cfg)? as Arc<dyn gpu::GpuManager>
+            }
+            (hw::GpuGen::G14, &[12, 4, 0]) => {
+                gpu::GpuManagerG14V12_4::new(reg.device(), &res, cfg)? as Arc<dyn gpu::GpuManager>
+            }
+            _ => {
+                dev_info!(
+                    dev,
+                    "Unsupported GPU/firmware combination ({:?}, {:?})\n",
+                    cfg.gpu_gen,
+                    compat
+                );
+                return Err(ENODEV);
+            }
+        };
 
         let data =
             kernel::new_device_data!(reg, res, AsahiData { dev, gpu }, "Asahi::Registrations")?;
@@ -114,7 +128,7 @@ impl platform::Driver for AsahiDriver {
             0
         )?;
 
-        dev_info!(data.dev, "probed!\n");
+        dev_info!(data.dev, "Probed!\n");
         Ok(data)
     }
 }
