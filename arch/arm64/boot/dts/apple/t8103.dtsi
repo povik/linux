@@ -774,7 +774,7 @@
 			compatible = "apple,t8103-pmgr", "apple,pmgr", "syscon", "simple-mfd";
 			#address-cells = <1>;
 			#size-cells = <1>;
-			reg = <0x2 0x3d280000 0 0x4000>;
+			reg = <0x2 0x3d280000 0 0x8000>;
 		};
 
 		wdt: watchdog@23d2b0000 {
@@ -847,6 +847,7 @@
 		pinctrl_aop: pinctrl@24a820000 {
 			compatible = "apple,t8103-pinctrl", "apple,pinctrl";
 			reg = <0x2 0x4a820000 0x0 0x4000>;
+			power-domains = <&ps_aop_gpio>;
 
 			gpio-controller;
 			#gpio-cells = <2>;
