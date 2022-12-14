@@ -44,6 +44,7 @@ struct apple_pmgr_ps {
 	struct regmap *regmap;
 	u32 offset;
 	u32 min_state;
+	u32 fused_state_level;
 };
 
 #define genpd_to_apple_pmgr_ps(_genpd) container_of(_genpd, struct apple_pmgr_ps, genpd)
@@ -71,10 +72,18 @@ static int apple_pmgr_ps_set(struct generic_pm_domain *genpd, u32 pstate, bool a
 
 	regmap_write(ps->regmap, ps->offset, reg);
 
-	ret = regmap_read_poll_timeout_atomic(
-		ps->regmap, ps->offset, reg,
-		(FIELD_GET(APPLE_PMGR_PS_ACTUAL, reg) == pstate), 1,
-		APPLE_PMGR_PS_SET_TIMEOUT);
+	if (pstate > ps->fused_state_level) {
+		ret = regmap_read_poll_timeout_atomic(
+			ps->regmap, ps->offset, reg,
+			(FIELD_GET(APPLE_PMGR_PS_ACTUAL, reg) > ps->fused_state_level), 1,
+			APPLE_PMGR_PS_SET_TIMEOUT);
+	} else {
+		ret = regmap_read_poll_timeout_atomic(
+			ps->regmap, ps->offset, reg,
+			(FIELD_GET(APPLE_PMGR_PS_ACTUAL, reg) == pstate), 1,
+			APPLE_PMGR_PS_SET_TIMEOUT);
+	}
+
 	if (ret < 0)
 		dev_err(ps->dev, "PS %s: Failed to reach power state 0x%x (now: 0x%x)\n",
 			genpd->name, pstate, reg);
@@ -230,6 +239,12 @@ static int apple_pmgr_ps_probe(struct platform_device *pdev)
 	if (ret == 0 && ps->min_state <= APPLE_PMGR_PS_ACTIVE)
 		regmap_update_bits(regmap, ps->offset, APPLE_PMGR_FLAGS | APPLE_PMGR_PS_MIN,
 				   FIELD_PREP(APPLE_PMGR_PS_MIN, ps->min_state));
+
+	ret = of_property_read_u32(node, "apple,fuse-states-above", &ps->fused_state_level);
+	if (ret) {
+		/* Disable fusing of states by setting the fuse level to its maximum */
+		ps->fused_state_level = APPLE_PMGR_PS_ACTIVE;
+	}
 
 	active = apple_pmgr_ps_is_active(ps);
 	if (of_property_read_bool(node, "apple,always-on")) {
