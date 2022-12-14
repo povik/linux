@@ -33,6 +33,8 @@
 #include <sound/soc-jack.h>
 #include <uapi/linux/input-event-codes.h>
 
+#include "leapmic.h"
+
 #define DRIVER_NAME "snd-soc-macaudio"
 
 /*
@@ -240,6 +242,67 @@ static int macaudio_parse_of_be_dai_link(struct macaudio_snd_data *ma,
 	return 0;
 }
 
+/*
+ * Parse mic link from the devicetree. This is an ordinary non-DPCM
+ * link and as such is bit different from the rest.
+ */
+static int macaudio_parse_of_mic_dai_link(struct macaudio_snd_data *ma,
+				struct snd_soc_dai_link *link, int num_cpus,
+				struct device_node *cpu,
+				struct device_node *codec,
+				struct device_node *link_node)
+{
+	struct snd_soc_dai_link_component *comp;
+	struct device *dev = ma->card.dev;
+	struct platform_device *mic_pdev;
+	struct leapmic_config *config;
+	int ret, i;
+
+	link->no_pcm = 1;
+	link->dpcm_capture = 1;
+
+	link->dai_fmt = (SND_SOC_DAIFMT_PDM | \
+			 SND_SOC_DAIFMT_CBC_CFC | \
+			 SND_SOC_DAIFMT_GATED);
+
+	link->num_codecs = 1;
+	link->codecs = devm_kzalloc(dev, sizeof(*comp), GFP_KERNEL);
+	link->num_cpus = num_cpus;
+	link->cpus = devm_kcalloc(dev, num_cpus,
+				  sizeof(*comp), GFP_KERNEL);
+	link->num_platforms = 1;
+	link->platforms = devm_kzalloc(dev, sizeof(*comp), GFP_KERNEL);
+	link->name = devm_kasprintf(dev, GFP_KERNEL, "%s BE", link->name);
+
+	if (!link->codecs || !link->cpus || !link->platforms)
+		return -ENOMEM;
+
+	ret = macaudio_parse_of_component(codec, 0, link->codecs);
+	if (ret)
+		return dev_err_probe(ma->card.dev, ret, "parsing CODEC DAI of link '%s' at %pOF\n",
+				     link->name, codec);
+
+	for_each_link_cpus(link, i, comp) {
+		ret = macaudio_parse_of_component(cpu, i, comp);
+		if (ret)
+			return dev_err_probe(ma->card.dev, ret, "parsing CPU DAI of link '%s' at %pOF\n",
+				     	     link->name, codec);
+	}
+
+	config = devm_kzalloc(dev, sizeof(*config), GFP_KERNEL);
+	config->link_node = link_node;
+	config->leapshim_node = of_get_parent(link->cpus[0].of_node); /* TODO: clean up */
+
+	mic_pdev = platform_device_register_data(ma->card.dev, LEAPMIC_PLATFORM_DRV_NAME,
+						 PLATFORM_DEVID_AUTO, config, sizeof(*config));
+	if (IS_ERR(mic_pdev))
+		return dev_err_probe(dev, PTR_ERR(mic_pdev), "registering mic platform\n");
+
+	link->platforms[0].name = dev_name(&mic_pdev->dev);
+
+	return 0;
+}
+
 static int macaudio_parse_of(struct macaudio_snd_data *ma)
 {
 	struct device_node *codec = NULL;
@@ -263,7 +326,16 @@ static int macaudio_parse_of(struct macaudio_snd_data *ma)
 
 	/* Now add together the (dynamic) number of BE links */
 	for_each_available_child_of_node(dev->of_node, np) {
+		const char *link_name;
 		int num_cpus;
+		bool mic;
+
+		ret = of_property_read_string(np, "link-name", &link_name);
+		if (ret) {
+			dev_err_probe(card->dev, ret, "missing link name\n");
+			goto err_free;
+		}
+		mic = !strcmp(link_name, "Internal Mic");
 
 		cpu = of_get_child_by_name(np, "cpu");
 		if (!cpu) {
@@ -283,8 +355,13 @@ static int macaudio_parse_of(struct macaudio_snd_data *ma)
 		of_node_put(cpu);
 		cpu = NULL;
 
-		/* Each CPU specified counts as one BE link */
-		num_links += num_cpus;
+		if (!mic) {
+			/* Each CPU specified counts as one BE link */
+			num_links += num_cpus;
+		} else {
+			/* Mic is one link despite having many CPUs */
+			num_links += 1;
+		}
 	}
 
 	/* Allocate the DAI link array */
@@ -312,8 +389,9 @@ static int macaudio_parse_of(struct macaudio_snd_data *ma)
 	/* Fill in the BEs */
 	for_each_available_child_of_node(dev->of_node, np) {
 		const char *link_name;
-		bool speakers;
-		int be_index, num_codecs, num_bes, ncodecs_per_cpu, nchannels;
+		bool speakers, mic;
+		int num_codecs, num_cpus;
+		int be_index, num_bes, ncodecs_per_cpu, nchannels;
 		unsigned int left_mask, right_mask;
 
 		ret = of_property_read_string(np, "link-name", &link_name);
@@ -326,6 +404,8 @@ static int macaudio_parse_of(struct macaudio_snd_data *ma)
 
 		speakers = !strcmp(link_name, "Speaker")
 			   || !strcmp(link_name, "Speakers");
+		mic = !strcmp(link_name, "Internal Mic");
+
 		if (speakers)
 			ma->has_speakers = 1;
 
@@ -338,9 +418,9 @@ static int macaudio_parse_of(struct macaudio_snd_data *ma)
 			goto err_free;
 		}
 
-		num_bes = of_count_phandle_with_args(cpu, "sound-dai",
-						     "#sound-dai-cells");
-		if (num_bes <= 0) {
+		num_cpus = of_count_phandle_with_args(cpu, "sound-dai",
+						      "#sound-dai-cells");
+		if (num_cpus <= 0) {
 			ret = dev_err_probe(card->dev, -EINVAL,
 				"missing sound-dai property at %pOF\n", cpu);
 			goto err_free;
@@ -355,13 +435,18 @@ static int macaudio_parse_of(struct macaudio_snd_data *ma)
 		}
 
 		dev_dbg(ma->card.dev, "link '%s': %d CPUs %d CODECs\n",
-			link_name, num_bes, num_codecs);
+			link_name, num_cpus, num_codecs);
 
-		if (num_codecs % num_bes != 0) {
-			ret = dev_err_probe(card->dev, -EINVAL,
-				"bad combination of CODEC (%d) and CPU (%d) number at %pOF\n",
-				num_codecs, num_bes, np);
-			goto err_free;
+		if (mic) {
+			/* Mics are special */
+			link->name = link_name;
+
+			ret = macaudio_parse_of_mic_dai_link(ma, link, num_cpus, cpu, codec, np);
+			if (ret)
+				goto err_free;
+
+			link++; link_props++;
+			goto done_with_of_link;
 		}
 
 		/*
@@ -370,6 +455,15 @@ static int macaudio_parse_of(struct macaudio_snd_data *ma)
 		 * an evenly distributed number of DAIs from the codec list. (As is
 		 * the binding semantics.)
 		 */
+
+		num_bes = num_cpus;
+		if (num_codecs % num_bes != 0) {
+			ret = dev_err_probe(card->dev, -EINVAL,
+				"bad combination of CODEC (%d) and CPU (%d) number at %pOF\n",
+				num_codecs, num_bes, np);
+			goto err_free;
+		}
+
 		ncodecs_per_cpu = num_codecs / num_bes;
 		nchannels = num_codecs * (speakers ? 1 : 2);
 
@@ -418,6 +512,7 @@ static int macaudio_parse_of(struct macaudio_snd_data *ma)
 			link++; link_props++;
 		}
 
+done_with_of_link:
 		of_node_put(codec);
 		of_node_put(cpu);
 		cpu = codec = NULL;
@@ -773,6 +868,10 @@ static int macaudio_late_probe(struct snd_soc_card *card)
 		if (!rtd->dai_link->no_pcm)
 			continue;
 
+
+		/* Microphone? */
+		if (!(props->is_speakers || props->is_headphones))
+			continue;
 		for_each_rtd_cpu_dais(rtd, i, dai) {
 			ret = macaudio_add_backend_dai_route(card, dai, props->is_speakers);
 
