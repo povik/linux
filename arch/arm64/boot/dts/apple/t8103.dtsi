@@ -900,6 +900,78 @@
 			resets = <&ps_ans2>;
 		};
 
+		aop_dart: iommu@24a808000 {
+			compatible = "apple,t8103-dart", "apple,dart";
+			reg = <0x2 0x4a808000 0x0 0x4000>;
+			interrupt-parent = <&aic>;
+			interrupts = <AIC_IRQ 300 IRQ_TYPE_LEVEL_HIGH>;
+			#iommu-cells = <1>;
+			power-domains = <&ps_aop_filter>;
+		};
+
+		aop_admac_audio: dma-controller@24a980000 {
+			compatible = "apple,t8103-admac", "apple,admac";
+			reg = <0x2 0x4a980000 0x0 0x34000>;
+			dma-channels = <16>;
+			interrupts-extended = <0>,
+					      <0>,
+					      <&aic AIC_IRQ 321 IRQ_TYPE_LEVEL_HIGH>,
+					      <0>;
+			#dma-cells = <1>;
+			iommus = <&aop_dart 7>;
+			power-domains = <&ps_aop_audio_adma0>;
+			resets = <&ps_audio_p>;
+		};
+
+		aop_leap: dsp@294000000 {
+			compatible = "apple,t8103-leap", "apple,leap";
+			reg = <0x2 0x4b000000 0x0 0x1000000>;
+
+			power-domains = <&ps_aop_leap>;
+			resets = <&ps_aop_leap>;
+			#apple,leap-io-ports-cells = <1>;
+		};
+
+		leap-shim@295000000 {
+			compatible = "apple,t8103-leap-shim";
+			reg = <0x2 0x4c000000 0x0 0x4000>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			leap_pdm: pdm-shim@0 {
+				compatible = "apple,t8103-leap-pdm-shim";
+				reg = <0>;
+				apple,leap-io-ports = <&aop_leap 0x20>, <&aop_leap 0x21>, <&aop_leap 0x22>, <&aop_leap 0x23>,
+						      <&aop_leap 0x24>, <&aop_leap 0x25>, <&aop_leap 0x26>, <&aop_leap 0x27>;
+
+				/*
+				 * First cell is pin number, second cell is left/right clock phase.
+				 */
+				#sound-dai-cells = <2>;
+			};
+
+			dma-shim@1 {
+				compatible = "apple,t8103-leap-dma-shim";
+				reg = <1>;
+
+				/*
+		     		 * The DMA channels are numbered TX even, RX odd, but the LEAP ports are
+				 * numbered all TX first, all RX second. Here, in the binding, we list the
+				 * DMA channels and LEAP ports in a mutually corresponding order, that's
+				 * the reason for the peculiar LEAP ports numbering.
+				 */
+				dmas = <&aop_admac_audio 0>, <&aop_admac_audio 1>, <&aop_admac_audio 2>, <&aop_admac_audio 3>,
+				       <&aop_admac_audio 4>, <&aop_admac_audio 5>, <&aop_admac_audio 6>, <&aop_admac_audio 7>,
+				       <&aop_admac_audio 8>, <&aop_admac_audio 9>, <&aop_admac_audio 10>, <&aop_admac_audio 11>,
+				       <&aop_admac_audio 12>, <&aop_admac_audio 13>, <&aop_admac_audio 14>, <&aop_admac_audio 15>;
+				dma-names = "tx0", "rx0";
+				apple,leap-io-ports = <&aop_leap 0x40>, <&aop_leap 0x4f>, <&aop_leap 0x41>, <&aop_leap 0x50>,
+						      <&aop_leap 0x42>, <&aop_leap 0x51>, <&aop_leap 0x43>, <&aop_leap 0x52>,
+						      <&aop_leap 0x44>, <&aop_leap 0x43>, <&aop_leap 0x45>, <&aop_leap 0x54>,
+						      <&aop_leap 0x46>, <&aop_leap 0x55>, <&aop_leap 0x47>, <&aop_leap 0x56>;
+			};
+		};
+
 		efuse@23d2bc000 {
 			compatible = "apple,t8103-efuses", "apple,efuses";
 			reg = <0x2 0x3d2bc000 0x0 0x1000>;
