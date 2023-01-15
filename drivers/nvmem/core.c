@@ -822,11 +822,8 @@ struct nvmem_device *nvmem_register(const struct nvmem_config *config)
 		break;
 	}
 
-	if (rval) {
-		ida_free(&nvmem_ida, nvmem->id);
-		kfree(nvmem);
-		return ERR_PTR(rval);
-	}
+	if (rval)
+		goto err_gpiod_put;
 
 	nvmem->read_only = device_property_present(config->dev, "read-only") ||
 			   config->read_only || !nvmem->reg_write;
@@ -837,20 +834,16 @@ struct nvmem_device *nvmem_register(const struct nvmem_config *config)
 
 	dev_dbg(&nvmem->dev, "Registering nvmem device %s\n", config->name);
 
-	rval = device_register(&nvmem->dev);
-	if (rval)
-		goto err_put_device;
-
 	if (nvmem->nkeepout) {
 		rval = nvmem_validate_keepouts(nvmem);
 		if (rval)
-			goto err_device_del;
+			goto err_gpiod_put;
 	}
 
 	if (config->compat) {
 		rval = nvmem_sysfs_setup_compat(nvmem, config);
 		if (rval)
-			goto err_device_del;
+			goto err_gpiod_put;
 	}
 
 	if (config->cells) {
@@ -867,6 +860,15 @@ struct nvmem_device *nvmem_register(const struct nvmem_config *config)
 	if (rval)
 		goto err_remove_cells;
 
+	rval = device_register(&nvmem->dev);
+	if (rval) {
+		nvmem_device_remove_all_cells(nvmem);
+		if (config->compat)
+			nvmem_sysfs_remove_compat(nvmem, config);
+		put_device(&nvmem->dev);
+		return ERR_PTR(rval);
+	}
+
 	blocking_notifier_call_chain(&nvmem_notifier, NVMEM_ADD, nvmem);
 
 	return nvmem;
@@ -876,10 +878,10 @@ err_remove_cells:
 err_teardown_compat:
 	if (config->compat)
 		nvmem_sysfs_remove_compat(nvmem, config);
-err_device_del:
-	device_del(&nvmem->dev);
-err_put_device:
-	put_device(&nvmem->dev);
+err_gpiod_put:
+	gpiod_put(nvmem->wp_gpio);
+	ida_free(&nvmem_ida, nvmem->id);
+	kfree(nvmem);
 
 	return ERR_PTR(rval);
 }
