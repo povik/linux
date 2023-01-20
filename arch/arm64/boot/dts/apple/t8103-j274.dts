@@ -80,6 +80,8 @@
 		reg = <0x31>;
 		shutdown-gpios = <&pinctrl_ap 181 GPIO_ACTIVE_HIGH>;
 		#sound-dai-cells = <0>;
+		ti,imon-slot-no = <0>;
+		ti,vmon-slot-no = <2>;
 	};
 };
 
