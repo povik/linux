@@ -425,7 +425,7 @@ static int mca_fe_prepare(struct snd_pcm_substream *substream,
 			return -EINVAL;
 		}
 
-		writel_relaxed(port + mca->nclusters + 1,
+		writel_relaxed(port + 6 + 1,
 			       cl->base + REG_SYNCGEN_MCLK_SEL);
 		mca_modify(cl, REG_SYNCGEN_STATUS, SYNCGEN_STATUS_EN,
 			   SYNCGEN_STATUS_EN);
