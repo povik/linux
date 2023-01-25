@@ -22,6 +22,7 @@
 #include <linux/of.h>
 #include <linux/of_gpio.h>
 #include <linux/slab.h>
+#include <linux/sysfs.h>
 #include <sound/soc.h>
 #include <sound/pcm.h>
 #include <sound/pcm_params.h>
@@ -493,6 +494,47 @@ static struct snd_soc_dai_driver tas2770_dai_driver[] = {
 	},
 };
 
+static int tas2770_read_die_temp(struct tas2770_priv *tas2770, int *result)
+{
+	int ret, reading;
+
+	ret = snd_soc_component_read(tas2770->component, TAS2770_TEMP_MSB);
+	if (ret < 0)
+		return ret;
+	reading = ret << 4;
+
+	ret = snd_soc_component_read(tas2770->component, TAS2770_TEMP_LSB);
+	if (ret < 0)
+		return ret;
+	reading |= ret >> 4;
+
+	*result = reading - (93 * 16);
+	return 0;
+}
+
+static ssize_t die_temp_show(struct device *dev,
+			 struct device_attribute *attr, char *buf)
+{
+	struct tas2770_priv *tas2770 = i2c_get_clientdata(to_i2c_client(dev));
+	int ret, temp;
+
+	ret = tas2770_read_die_temp(tas2770, &temp);
+
+	if (ret < 0)
+		return ret;
+
+	return sysfs_emit(buf, "%d.%03d C\n", temp / 16,
+			  (temp * 1000 / 16) % 1000);
+}
+
+static DEVICE_ATTR_RO(die_temp);
+
+static struct attribute *tas2770_sysfs_attrs[] = {
+	&dev_attr_die_temp.attr,
+	NULL
+};
+ATTRIBUTE_GROUPS(tas2770_sysfs);
+
 static const struct regmap_config tas2770_i2c_regmap;
 
 static int tas2770_codec_probe(struct snd_soc_component *component)
@@ -518,6 +560,11 @@ static int tas2770_codec_probe(struct snd_soc_component *component)
 		if (ret < 0)
 			return ret;
 	}
+
+	ret = sysfs_create_groups(&component->dev->kobj, tas2770_sysfs_groups);
+
+	if (ret < 0)
+		return ret;
 
 	return 0;
 }
