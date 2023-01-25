@@ -63,9 +63,6 @@ struct macaudio_snd_data {
 		bool is_headphones;
 		unsigned int tdm_mask;
 	} *link_props;
-
-	unsigned int speaker_nchans_array[2];
-	struct snd_pcm_hw_constraint_list speaker_nchans_list;
 };
 
 static bool please_blow_up_my_speakers;
@@ -904,7 +901,6 @@ static const struct snd_kcontrol_new macaudio_hp_mux =
 
 static const struct snd_soc_dapm_widget macaudio_snd_widgets[] = {
 	SND_SOC_DAPM_SPK("Speaker", NULL),
-	SND_SOC_DAPM_SPK("Speaker (Static)", NULL),
 	SND_SOC_DAPM_HP("Headphone", NULL),
 	SND_SOC_DAPM_MIC("Headset Mic", NULL),
 
