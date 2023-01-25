@@ -414,7 +414,7 @@ static int mca_fe_prepare(struct snd_pcm_substream *substream,
 		return 0;
 
 	if (!cl->syncgen_in_use) {
-		int port = ffs(mca_fe_get_portmask(substream));
+		int port = ffs(mca_fe_get_portmask(substream)) - 1;
 
 		cl->pd_link = device_link_add(mca->dev, cl->pd_dev,
 					      DL_FLAG_STATELESS | DL_FLAG_PM_RUNTIME |
