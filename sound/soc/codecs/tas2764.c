@@ -715,6 +715,11 @@ static int tas2764_codec_probe(struct snd_soc_component *component)
 	return 0;
 }
 
+static void tas2764_codec_remove(struct snd_soc_component *component)
+{
+	sysfs_remove_groups(&component->dev->kobj, tas2764_sysfs_groups);
+}
+
 static DECLARE_TLV_DB_SCALE(tas2764_digital_tlv, 1100, 50, 0);
 static DECLARE_TLV_DB_SCALE(tas2764_playback_volume, -10050, 50, 1);
 
@@ -746,6 +751,7 @@ static const struct snd_kcontrol_new tas2764_snd_controls[] = {
 
 static const struct snd_soc_component_driver soc_component_driver_tas2764 = {
 	.probe			= tas2764_codec_probe,
+	.remove			= tas2764_codec_remove,
 	.suspend		= tas2764_codec_suspend,
 	.resume			= tas2764_codec_resume,
 	.controls		= tas2764_snd_controls,
