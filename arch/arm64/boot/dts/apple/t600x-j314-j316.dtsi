@@ -453,7 +453,7 @@
 			 * to attenuate the audio stream, you run the risk of
 			 * blowing your speakers.
 			 */
-			status = "disabled";
+			//status = "disabled";
 
 			cpu {
 				sound-dai = <&mca 0>, <&mca 1>;
