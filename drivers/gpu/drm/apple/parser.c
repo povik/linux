@@ -215,11 +215,6 @@ int parse(void *blob, size_t size, struct dcp_parse_ctx *ctx)
 	return 0;
 }
 
-struct dimension {
-	s64 total, front_porch, sync_width, active;
-	s64 precise_sync_rate;
-};
-
 static int parse_dimension(struct dcp_parse_ctx *handle, struct dimension *dim)
 {
 	struct iterator it;
@@ -381,9 +376,14 @@ static int parse_mode(struct dcp_parse_ctx *handle,
 		else
 			skip(it.handle);
 
-		if (ret)
+		if (ret) {
+			trace_iomfb_parse_mode_fail(id, &horiz, &vert, best_color_mode, is_virtual, *score);
 			return ret;
+		}
 	}
+
+	
+	trace_iomfb_parse_mode_success(id, &horiz, &vert, best_color_mode, is_virtual, *score);
 
 	/*
 	 * Reject modes without valid color mode.
