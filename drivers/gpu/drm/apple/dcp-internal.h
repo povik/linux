@@ -189,6 +189,8 @@ struct apple_dcp {
 	/* Workqueue for updating the initial initial brightness */
 	struct work_struct bl_register_wq;
 	struct mutex bl_register_mutex;
+
+	struct dentry *debugfs_root;
 };
 
 int dcp_backlight_register(struct apple_dcp *dcp);

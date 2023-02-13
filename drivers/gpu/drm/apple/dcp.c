@@ -7,6 +7,7 @@
 #include <linux/clk.h>
 #include <linux/completion.h>
 #include <linux/component.h>
+#include <linux/debugfs.h>
 #include <linux/delay.h>
 #include <linux/dma-mapping.h>
 #include <linux/iommu.h>
@@ -592,6 +593,8 @@ static const struct component_ops dcp_comp_ops = {
 	.unbind	= dcp_comp_unbind,
 };
 
+static struct dentry *dcp_debugfs_root;
+
 static int dcp_platform_probe(struct platform_device *pdev)
 {
 	enum dcp_firmware_version fw_compat;
@@ -621,15 +624,22 @@ static int dcp_platform_probe(struct platform_device *pdev)
 	if (ret)
 		dev_err(dev, "pm_runtime_put_sync_suspend failed: %d\n", ret);
 
+	dcp->debugfs_root = debugfs_create_dir(pdev->name, dcp_debugfs_root);
+
 	ret = component_add(&pdev->dev, &dcp_comp_ops);
-	if (ret)
+	if (ret) {
 		pm_runtime_enable(dev);
+		debugfs_remove_recursive(dcp->debugfs_root);
+	}
 	return ret;
 }
 
 static int dcp_platform_remove(struct platform_device *pdev)
 {
+	struct apple_dcp *dcp = platform_get_drvdata(pdev);
+
 	component_del(&pdev->dev, &dcp_comp_ops);
+	debugfs_remove_recursive(dcp->debugfs_root);
 
 	return 0;
 }
@@ -734,7 +744,29 @@ static struct platform_driver dcp_driver = {
 	},
 };
 
-drm_module_platform_driver(dcp_driver);
+static int __init dcp_init(void)
+{
+	int ret;
+
+	if (drm_firmware_drivers_only())
+		return -ENODEV;
+
+	dcp_debugfs_root = debugfs_create_dir("apple_dcp", NULL);
+
+	ret = platform_driver_register(&dcp_driver);
+	if (ret)
+		return ret;
+
+	return 0;
+}
+module_init(dcp_init);
+
+static void __exit dcp_exit(void)
+{
+	platform_driver_unregister(&dcp_driver);
+	debugfs_remove_recursive(dcp_debugfs_root);	
+}
+module_exit(dcp_exit);
 
 MODULE_AUTHOR("Alyssa Rosenzweig <alyssa@rosenzweig.io>");
 MODULE_DESCRIPTION("Apple Display Controller DRM driver");
