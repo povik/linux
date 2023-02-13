@@ -620,7 +620,10 @@ static int dcp_platform_probe(struct platform_device *pdev)
 	if (ret)
 		dev_err(dev, "pm_runtime_put_sync_suspend failed: %d\n", ret);
 
-	return component_add(&pdev->dev, &dcp_comp_ops);
+	ret = component_add(&pdev->dev, &dcp_comp_ops);
+	if (ret)
+		pm_runtime_enable(dev);
+	return ret;
 }
 
 static int dcp_platform_remove(struct platform_device *pdev)
