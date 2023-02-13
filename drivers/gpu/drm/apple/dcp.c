@@ -107,6 +107,9 @@ static void dcp_recv_msg(void *cookie, u8 endpoint, u64 message)
 	switch (endpoint) {
 	case IOMFB_ENDPOINT:
 		return iomfb_recv_msg(dcp, message);
+	case AV_ENDPOINT:
+		afk_receive_message(dcp->avep, message);
+		return;
 	default:
 		WARN(endpoint, "unknown DCP endpoint %hhu", endpoint);
 	}
@@ -257,6 +260,12 @@ int dcp_start(struct platform_device *pdev)
 	init_completion(&dcp->start_done);
 
 	/* start RTKit endpoints */
+	ret = avep_init(dcp);
+	if (ret) {
+		dev_err(dcp->dev, "Failed to start AV endpoint: %d", ret);
+		return ret;
+	}
+
 	ret = iomfb_start_rtkit(dcp);
 	if (ret)
 		dev_err(dcp->dev, "Failed to start IOMFB endpoint: %d", ret);

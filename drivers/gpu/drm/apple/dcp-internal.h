@@ -28,6 +28,7 @@ enum {
 	TEST_ENDPOINT = 0x21,
 	DCP_EXPERT_ENDPOINT = 0x22,
 	DISP0_ENDPOINT = 0x23,
+	AV_ENDPOINT = 0x29,
 	DPTX_ENDPOINT = 0x2a,
 	HDCP_ENDPOINT = 0x2b,
 	REMOTE_ALLOC_ENDPOINT = 0x2d,
@@ -81,6 +82,8 @@ struct dcp_brightness {
 	int scale;
 	bool update;
 };
+
+struct audiosrv_data;
 
 /* TODO: move IOMFB members to its own struct */
 struct apple_dcp {
@@ -189,6 +192,9 @@ struct apple_dcp {
 	/* Workqueue for updating the initial initial brightness */
 	struct work_struct bl_register_wq;
 	struct mutex bl_register_mutex;
+
+	struct apple_dcp_afkep *avep;
+	struct audiosrv_data *audiosrv;
 
 	struct dentry *debugfs_root;
 };
