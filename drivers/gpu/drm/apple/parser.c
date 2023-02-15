@@ -279,7 +279,7 @@ static int parse_dimension(struct dcp_parse_ctx *handle, struct dimension *dim)
 	int ret = 0;
 
 	dcp_parse_foreach_in_dict(handle, it) {
-		char *key = parse_string(it.handle);
+		char *key = parse_string(it.handle); // TODO: leaks
 
 		if (IS_ERR(key))
 			ret = PTR_ERR(key);
@@ -328,7 +328,7 @@ static int parse_color_modes(struct dcp_parse_ctx *handle, s64 *preferred_id)
 		struct color_mode cmode;
 
 		dcp_parse_foreach_in_dict(handle, it) {
-			char *key = parse_string(it.handle);
+			char *key = parse_string(it.handle); // TODO: leaks
 
 			if (IS_ERR(key))
 				ret = PTR_ERR(key);
@@ -413,7 +413,7 @@ static int parse_mode(struct dcp_parse_ctx *handle,
 	struct drm_display_mode *mode = &out->mode;
 
 	dcp_parse_foreach_in_dict(handle, it) {
-		char *key = parse_string(it.handle);
+		char *key = parse_string(it.handle); // TODO: leaks
 
 		if (IS_ERR(key))
 			ret = PTR_ERR(key);
@@ -553,7 +553,7 @@ int parse_display_attributes(struct dcp_parse_ctx *handle, int *width_mm,
 	s64 width_cm = 0, height_cm = 0;
 
 	dcp_parse_foreach_in_dict(handle, it) {
-		char *key = parse_string(it.handle);
+		char *key = parse_string(it.handle); // TODO: leaks
 
 		if (IS_ERR(key))
 			ret = PTR_ERR(key);
