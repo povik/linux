@@ -546,6 +546,11 @@ static int dcp_comp_bind(struct device *dev, struct device *main, void *data)
 	pm_runtime_use_autosuspend(dev);
 
 	/*
+	 * For hotplug experiments: prevent the DCP from going to sleep.
+	 */
+	pm_runtime_get_noresume(dev);
+
+	/*
 	 * On probe, DCP is probably in charge of the boot framebuffer.
 	 * Don't suspend it until we get an explicit poweroff request.
 	 */
