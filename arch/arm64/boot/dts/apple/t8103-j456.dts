@@ -56,6 +56,42 @@
 	};
 };
 
+&i2c1 {
+	spkr_left_tweeter: codec@14 {
+		compatible = "adi,ssm3515";
+		reg = <0x14>;
+		#sound-dai-cells = <0>;
+		adi,ana-gain = <0>;
+		sound-name-prefix = "Left Tweeter";
+	};
+
+	spkr_left_woofer: codec@15 {
+		compatible = "adi,ssm3515";
+		reg = <0x15>;
+		#sound-dai-cells = <0>;
+		adi,ana-gain = <0>;
+		sound-name-prefix = "Left Woofer";
+	};
+};
+
+&i2c3 {
+	spkr_right_tweeter: codec@14 {
+		compatible = "adi,ssm3515";
+		reg = <0x14>;
+		#sound-dai-cells = <0>;
+		adi,ana-gain = <0>;
+		sound-name-prefix = "Right Tweeter";
+	};
+
+	spkr_right_woofer: codec@15 {
+		compatible = "adi,ssm3515";
+		reg = <0x15>;
+		#sound-dai-cells = <0>;
+		adi,ana-gain = <0>;
+		sound-name-prefix = "Right Woofer";
+	};
+};
+
 /*
  * Provide labels for the USB type C ports.
  */
@@ -114,6 +150,28 @@
 	sound {
 		compatible = "apple,j456-macaudio", "apple,macaudio";
 		model = "iMac J456";
+
+		dai-link@0 {
+			link-name = "Speakers";
+			/*
+			 * DANGER ZONE: You can blow your speakers!
+			 *
+			 * The drivers are not ready, and unless you are careful
+			 * to attenuate the audio stream, you run the risk of
+			 * blowing your speakers.
+			 */
+			status = "disabled";
+
+			cpu {
+				sound-dai = <&mca 0>, <&mca 1>;
+			};
+			codec {
+				sound-dai = <&spkr_left_woofer>,
+					    <&spkr_left_tweeter>,
+					    <&spkr_right_woofer>,
+					    <&spkr_right_tweeter>;
+			};
+		};
 
 		dai-link@1 {
 			link-name = "Headphone Jack";
