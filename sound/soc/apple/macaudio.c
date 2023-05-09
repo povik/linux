@@ -479,60 +479,32 @@ static int macaudio_get_runtime_bclk_ratio(struct snd_pcm_substream *substream)
 	return 0;
 }
 
-static int macaudio_dpcm_hw_params(struct snd_pcm_substream *substream,
-				   struct snd_pcm_hw_params *params)
+/* called on both FE and BE at hw_params time to apply the bclk_ratio */ 
+static void macaudio_apply_bclk_ratio(struct snd_pcm_substream *substream,
+				      struct snd_pcm_hw_params *params)
 {
 	struct snd_soc_pcm_runtime *rtd = asoc_substream_to_rtd(substream);
-	struct macaudio_snd_data *ma = snd_soc_card_get_drvdata(rtd->card);
-	struct macaudio_link_props *props = &ma->link_props[rtd->dai_link->id];
 	struct snd_soc_dai *cpu_dai = asoc_rtd_to_cpu(rtd, 0);
-	struct snd_interval *rate = hw_param_interval(params,
-						      SNDRV_PCM_HW_PARAM_RATE);
+	struct snd_soc_dai *dai;
 	int bclk_ratio = macaudio_get_runtime_bclk_ratio(substream);
-	int i;
+	int i, mclk;
 
-	if (props->is_sense) {
-		rate->min = rate->max = cpu_dai->rate;
-		return 0;
+	if (!bclk_ratio)
+		return;
+
+	mclk = params_rate(params) * bclk_ratio;
+
+	for_each_rtd_codec_dais(rtd, i, dai) {
+		snd_soc_dai_set_sysclk(dai, 0, mclk, SND_SOC_CLOCK_IN);
+		snd_soc_dai_set_bclk_ratio(dai, bclk_ratio);
 	}
 
-	/* Speakers BE */
-	if (props->is_speakers) {
-		if (substream->stream == SNDRV_PCM_STREAM_CAPTURE) {
-			/* Sense PCM: keep the existing BE rate (0 if not already running) */
-			rate->min = rate->max = cpu_dai->rate;
-
-			return 0;
-		} else {
-			/*
-			 * Set the sense PCM rate control to inform userspace of the
-			 * new sample rate.
-			 */
-			ma->speaker_sample_rate = params_rate(params);
-			snd_ctl_notify(ma->card.snd_card, SNDRV_CTL_EVENT_MASK_VALUE,
-				       &ma->speaker_sample_rate_kctl->id);
-		}
-	}
-
-	if (bclk_ratio) {
-		struct snd_soc_dai *dai;
-		int mclk = params_rate(params) * bclk_ratio;
-
-		for_each_rtd_codec_dais(rtd, i, dai) {
-			snd_soc_dai_set_sysclk(dai, 0, mclk, SND_SOC_CLOCK_IN);
-			snd_soc_dai_set_bclk_ratio(dai, bclk_ratio);
-		}
-
-		snd_soc_dai_set_sysclk(cpu_dai, 0, mclk, SND_SOC_CLOCK_OUT);
-		snd_soc_dai_set_bclk_ratio(cpu_dai, bclk_ratio);
-	}
-
-	return 0;
+	snd_soc_dai_set_sysclk(cpu_dai, 0, mclk, SND_SOC_CLOCK_OUT);
+	snd_soc_dai_set_bclk_ratio(cpu_dai, bclk_ratio);
 }
 
 static int macaudio_fe_startup(struct snd_pcm_substream *substream)
 {
-
 	struct snd_soc_pcm_runtime *rtd = asoc_substream_to_rtd(substream);
 	struct macaudio_snd_data *ma = snd_soc_card_get_drvdata(rtd->card);
 	struct macaudio_link_props *props = &ma->link_props[rtd->dai_link->id];
@@ -567,8 +539,13 @@ static int macaudio_fe_hw_params(struct snd_pcm_substream *substream,
 				   struct snd_pcm_hw_params *params)
 {
 	struct snd_soc_pcm_runtime *rtd = asoc_substream_to_rtd(substream);
+	struct macaudio_snd_data *ma = snd_soc_card_get_drvdata(rtd->card);
+	struct macaudio_link_props *props = &ma->link_props[rtd->dai_link->id];
 	struct snd_soc_pcm_runtime *be;
 	struct snd_soc_dpcm *dpcm;
+	struct snd_soc_dai *cpu_dai = asoc_rtd_to_cpu(rtd, 0);
+	struct snd_interval *rate = hw_param_interval(params,
+						      SNDRV_PCM_HW_PARAM_RATE);
 
 	be = NULL;
 	for_each_dpcm_be(rtd, substream->stream, dpcm) {
@@ -582,9 +559,46 @@ static int macaudio_fe_hw_params(struct snd_pcm_substream *substream,
 		return -EINVAL;
 	}
 
-	return macaudio_dpcm_hw_params(substream, params);
+	if (props->is_sense) {
+		rate->min = rate->max = cpu_dai->rate;
+		return 0;
+	}
+
+	macaudio_apply_bclk_ratio(substream, params);
+
+	return 0;
 }
 
+static int macaudio_be_hw_params(struct snd_pcm_substream *substream,
+				 struct snd_pcm_hw_params *params)
+{
+	struct snd_soc_pcm_runtime *rtd = asoc_substream_to_rtd(substream);
+	struct macaudio_snd_data *ma = snd_soc_card_get_drvdata(rtd->card);
+	struct macaudio_link_props *props = &ma->link_props[rtd->dai_link->id];
+	struct snd_soc_dai *cpu_dai = asoc_rtd_to_cpu(rtd, 0);
+	struct snd_interval *rate = hw_param_interval(params,
+						      SNDRV_PCM_HW_PARAM_RATE);
+
+	if (props->is_speakers) {
+		if (substream->stream == SNDRV_PCM_STREAM_CAPTURE) {
+			/* Sense PCM: keep the existing BE rate (0 if not already running) */
+			rate->min = rate->max = cpu_dai->rate;
+
+			return 0;
+		} else {
+			/*
+			 * Set the sense PCM rate control to inform userspace of the
+			 * new sample rate.
+			 */
+			ma->speaker_sample_rate = params_rate(params);
+			snd_ctl_notify(ma->card.snd_card, SNDRV_CTL_EVENT_MASK_VALUE,
+				       &ma->speaker_sample_rate_kctl->id);
+		}
+	}
+
+	macaudio_apply_bclk_ratio(substream, params);
+	return 0;
+}
 
 static void macaudio_dpcm_shutdown(struct snd_pcm_substream *substream)
 {
@@ -638,7 +652,7 @@ static const struct snd_soc_ops macaudio_fe_ops = {
 static const struct snd_soc_ops macaudio_be_ops = {
 	.hw_free	= macaudio_be_hw_free,
 	.shutdown	= macaudio_dpcm_shutdown,
-	.hw_params	= macaudio_dpcm_hw_params,
+	.hw_params	= macaudio_be_hw_params,
 };
 
 static int macaudio_be_assign_tdm(struct snd_soc_pcm_runtime *rtd)
