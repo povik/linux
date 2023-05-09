@@ -761,7 +761,7 @@ static int macaudio_add_backend_dai_route(struct snd_soc_card *card, struct snd_
 	/* If speakers, add sense capture path */
 	if (is_speakers) {
 		r = &routes[nroutes++];
-		r->source = dai->capture_widget->name;
+		r->source = dai->stream[SNDRV_PCM_STREAM_CAPTURE].widget->name;
 		r->sink = "Speaker Sense Capture";
 	}
 
