@@ -18,6 +18,7 @@
 #include <linux/soc/apple/rtkit.h>
 
 #include "dmaengine.h"
+#include "virt-dma.h"
 
 #define NCHANNELS_MAX	0x80
 
@@ -90,24 +91,10 @@ struct sio_tx;
 struct sio_chan {
 	unsigned int no;
 	struct sio_data *host;
-	struct dma_chan chan;
-	struct tasklet_struct tasklet;
+	struct virt_dma_chan vc;
 	struct work_struct terminate_wq;
 
-	spinlock_t lock;
 	struct sio_tx *current_tx;
-	int nperiod_acks;
-
-	/*
-	 * We maintain a 'submitted' and 'issued' list mainly for interface
-	 * correctness. Typical use of the driver (per channel) will be
-	 * prepping, submitting and issuing a single cyclic transaction which
-	 * will stay current until terminate_all is called.
-	 */
-	struct list_head submitted;
-	struct list_head issued;
-
-	struct list_head to_free;
 };
 
 #define SIO_NTAGS		16
@@ -140,8 +127,7 @@ struct sio_data {
 };
 
 struct sio_tx {
-	struct dma_async_tx_descriptor tx;
-	struct list_head node;
+	struct virt_dma_desc vd;
 	struct completion done;
 
 	bool terminated;
@@ -161,12 +147,12 @@ static int sio_call(struct sio_data *sio, u64 msg);
 
 static struct sio_chan *to_sio_chan(struct dma_chan *chan)
 {
-	return container_of(chan, struct sio_chan, chan);
+	return container_of(chan, struct sio_chan, vc.chan);
 }
 
 static struct sio_tx *to_sio_tx(struct dma_async_tx_descriptor *tx)
 {
-	return container_of(tx, struct sio_tx, tx);
+	return container_of(tx, struct sio_tx, vd.tx);
 }
 
 static int sio_alloc_tag(struct sio_data *sio)
@@ -250,33 +236,16 @@ static enum dma_transfer_direction sio_chan_direction(int channo)
 	return (channo & 1) ? DMA_DEV_TO_MEM : DMA_MEM_TO_DEV;
 }
 
-static dma_cookie_t sio_tx_submit(struct dma_async_tx_descriptor *tx)
+static void sio_tx_free(struct virt_dma_desc *vd)
 {
-	struct sio_tx *siotx = to_sio_tx(tx);
-	struct sio_chan *siochan = to_sio_chan(tx->chan);
-	unsigned long flags;
-	dma_cookie_t cookie;
-
-	spin_lock_irqsave(&siochan->lock, flags);
-	cookie = dma_cookie_assign(tx);
-	list_add_tail(&siotx->node, &siochan->submitted);
-	spin_unlock_irqrestore(&siochan->lock, flags);
-
-	return cookie;
-}
-
-static int sio_tx_free(struct dma_async_tx_descriptor *tx)
-{
-	struct sio_data *sio = to_sio_chan(tx->chan)->host;
-	struct sio_tx *siotx = to_sio_tx(tx);
+	struct sio_data *sio = to_sio_chan(vd->tx.chan)->host;
+	struct sio_tx *siotx = to_sio_tx(&vd->tx);
 	int i;
 
 	for (i = 0; i < siotx->nperiods; i++)
 		if (siotx->siodesc[i])
 			sio_free_desc(sio, siotx->siodesc[i]);
 	kfree(siotx);
-
-	return 0;
 }
 
 static struct dma_async_tx_descriptor *sio_prep_dma_cyclic(
@@ -296,7 +265,6 @@ static struct dma_async_tx_descriptor *sio_prep_dma_cyclic(
 		return NULL;
 
 	init_completion(&siotx->done);
-	dma_async_tx_descriptor_init(&siotx->tx, chan);
 	siotx->period_len = period_len;
 	siotx->nperiods = nperiods;
 
@@ -305,7 +273,7 @@ static struct dma_async_tx_descriptor *sio_prep_dma_cyclic(
 
 		siotx->siodesc[i] = d = sio_alloc_desc(siochan->host);
 		if (!d) {
-			sio_tx_free(&siotx->tx);
+			sio_tx_free(&siotx->vd);
 			return NULL;
 		}
 
@@ -315,16 +283,14 @@ static struct dma_async_tx_descriptor *sio_prep_dma_cyclic(
 	}
 	dma_wmb();
 
-	siotx->tx.tx_submit = sio_tx_submit;
-	siotx->tx.desc_free = sio_tx_free;
-
-	return &siotx->tx;
+	return vchan_tx_prep(&siochan->vc, &siotx->vd, flags);
 }
 
 static enum dma_status sio_tx_status(struct dma_chan *chan, dma_cookie_t cookie,
 				     struct dma_tx_state *txstate)
 {
 	struct sio_chan *siochan = to_sio_chan(chan);
+	struct virt_dma_desc *vd;
 	struct sio_tx *siotx;
 	enum dma_status ret;
 	unsigned long flags;
@@ -335,10 +301,10 @@ static enum dma_status sio_tx_status(struct dma_chan *chan, dma_cookie_t cookie,
 	if (ret == DMA_COMPLETE || !txstate)
 		return ret;
 
-	spin_lock_irqsave(&siochan->lock, flags);
+	spin_lock_irqsave(&siochan->vc.lock, flags);
 	siotx = siochan->current_tx;
 
-	if (siotx && siotx->tx.cookie == cookie) {
+	if (siotx && siotx->vd.tx.cookie == cookie) {
 		ret = DMA_IN_PROGRESS;
 		periods_residue = siotx->next - siotx->ninflight;
 		while (periods_residue < 0)
@@ -347,14 +313,13 @@ static enum dma_status sio_tx_status(struct dma_chan *chan, dma_cookie_t cookie,
 	} else {
 		ret = DMA_IN_PROGRESS;
 		residue = 0;
-		list_for_each_entry(siotx, &siochan->issued, node) {
-			if (siotx->tx.cookie == cookie) {
-				residue = siotx->period_len * siotx->nperiods;
-				break;
-			}
+		vd = vchan_find_desc(&siochan->vc, cookie);
+		if (vd) {
+			siotx = to_sio_tx(&vd->tx);
+			residue = siotx->period_len * siotx->nperiods;
 		}
 	}
-	spin_unlock_irqrestore(&siochan->lock, flags);
+	spin_unlock_irqrestore(&siochan->vc.lock, flags);
 	dma_set_residue(txstate, residue);
 
 	return ret;
@@ -373,9 +338,9 @@ static void sio_handle_issue_ack(struct sio_chan *siochan, void *cookie, bool ok
 		return;
 	}
 
-	spin_lock_irqsave(&siochan->lock, flags);
-	if (!siochan->current_tx || tx_cookie != siochan->current_tx->tx.cookie ||
-	    siochan->current_tx->terminated)
+	spin_lock_irqsave(&siochan->vc.lock, flags);
+	if (!siochan->current_tx || tx_cookie != siochan->current_tx->vd.tx.cookie ||
+	    	siochan->current_tx->terminated)
 		goto out;
 
 	tx = siochan->current_tx;
@@ -384,7 +349,7 @@ static void sio_handle_issue_ack(struct sio_chan *siochan, void *cookie, bool ok
 	sio_fill_in_locked(siochan);
 
 out:
-	spin_unlock_irqrestore(&siochan->lock, flags);
+	spin_unlock_irqrestore(&siochan->vc.lock, flags);
 }
 
 static bool sio_fill_in_locked(struct sio_chan *siochan)
@@ -401,7 +366,7 @@ static bool sio_fill_in_locked(struct sio_chan *siochan)
 	ret = sio_send_siomsg_atomic(sio, FIELD_PREP(SIOMSG_EP, siochan->no) |
 				     FIELD_PREP(SIOMSG_TYPE, MSG_ISSUE) |
 				     FIELD_PREP(SIOMSG_DATA, sio_coproc_desc_slot(sio, d)),
-				     sio_handle_issue_ack, (void *) (uintptr_t) tx->tx.cookie);
+				     sio_handle_issue_ack, (void *) (uintptr_t) tx->vd.tx.cookie);
 	if (ret < 0)
 		dev_err_ratelimited(sio->dev, "can't issue on chan %d ninflight %d: %d\n",
 				    siochan->no, tx->ninflight, ret);
@@ -410,13 +375,11 @@ static bool sio_fill_in_locked(struct sio_chan *siochan)
 
 static void sio_update_current_tx_locked(struct sio_chan *siochan)
 {
-	struct sio_tx *tx;
+	struct virt_dma_desc *vd = vchan_next_desc(&siochan->vc);
 
-	if (!list_empty(&siochan->issued) && !siochan->current_tx) {
-		tx = list_first_entry(&siochan->issued, struct sio_tx, node);
-		list_del(&tx->node);
-
-		siochan->current_tx = tx;
+	if (vd && !siochan->current_tx) {
+		list_del(&vd->node);
+		siochan->current_tx = to_sio_tx(&vd->tx);
 		sio_fill_in_locked(siochan);
 	}
 }
@@ -426,25 +389,28 @@ static void sio_issue_pending(struct dma_chan *chan)
 	struct sio_chan *siochan = to_sio_chan(chan);
 	unsigned long flags;
 
-	spin_lock_irqsave(&siochan->lock, flags);
-	list_splice_tail_init(&siochan->submitted, &siochan->issued);
+	spin_lock_irqsave(&siochan->vc.lock, flags);
+	vchan_issue_pending(&siochan->vc);
 	sio_update_current_tx_locked(siochan);
-	spin_unlock_irqrestore(&siochan->lock, flags);
+	spin_unlock_irqrestore(&siochan->vc.lock, flags);
 }
 
 static int sio_terminate_all(struct dma_chan *chan)
 {
 	struct sio_chan *siochan = to_sio_chan(chan);
 	unsigned long flags;
+	LIST_HEAD(to_free);
 
-	spin_lock_irqsave(&siochan->lock, flags);
-	if (siochan->current_tx) {
+	spin_lock_irqsave(&siochan->vc.lock, flags);
+	if (siochan->current_tx && !siochan->current_tx->terminated) {
+		dma_cookie_complete(&siochan->current_tx->vd.tx);
 		siochan->current_tx->terminated = true;
 		schedule_work(&siochan->terminate_wq);
 	}
-	list_splice_tail_init(&siochan->submitted, &siochan->to_free);
-	list_splice_tail_init(&siochan->issued, &siochan->to_free);
-	spin_unlock_irqrestore(&siochan->lock, flags);
+	vchan_get_all_descriptors(&siochan->vc, &to_free);
+	spin_unlock_irqrestore(&siochan->vc.lock, flags);
+
+	vchan_dma_desc_free_list(&siochan->vc, &to_free);
 
 	return 0;
 }
@@ -452,15 +418,13 @@ static int sio_terminate_all(struct dma_chan *chan)
 static void sio_terminate_work(struct work_struct *wq)
 {
 	struct sio_chan *siochan = container_of(wq, struct sio_chan, terminate_wq);
-	struct sio_tx *tx, *_tx;
+	struct sio_tx *tx;
 	unsigned long flags;
-	LIST_HEAD(to_free);
 	int ret;
 
-	spin_lock_irqsave(&siochan->lock, flags);
+	spin_lock_irqsave(&siochan->vc.lock, flags);
 	tx = siochan->current_tx;
-	list_splice_tail_init(&siochan->to_free, &to_free);
-	spin_unlock_irqrestore(&siochan->lock, flags);
+	spin_unlock_irqrestore(&siochan->vc.lock, flags);
 
 	if (WARN_ON(!tx))
 		return;
@@ -475,19 +439,15 @@ static void sio_terminate_work(struct work_struct *wq)
 	if (!ret)
 		dev_err(siochan->host->dev, "terminate descriptor wait timed out\n");
 
-	tasklet_kill(&siochan->tasklet);
+	tasklet_kill(&siochan->vc.task);
 
-	spin_lock_irqsave(&siochan->lock, flags);
+	spin_lock_irqsave(&siochan->vc.lock, flags);
 	WARN_ON(siochan->current_tx != tx);
 	siochan->current_tx = NULL;
 	sio_update_current_tx_locked(siochan);
-	spin_unlock_irqrestore(&siochan->lock, flags);
+	spin_unlock_irqrestore(&siochan->vc.lock, flags);
 
-	sio_tx_free(&tx->tx);
-	list_for_each_entry_safe(tx, _tx, &to_free, node) {
-		list_del(&tx->node);
-		sio_tx_free(&tx->tx);
-	}
+	sio_tx_free(&tx->vd);
 }
 
 static void sio_synchronize(struct dma_chan *chan)
@@ -497,18 +457,11 @@ static void sio_synchronize(struct dma_chan *chan)
 	flush_work(&siochan->terminate_wq);
 }
 
-static int sio_alloc_chan_resources(struct dma_chan *chan)
-{
-	struct sio_chan *siochan = to_sio_chan(chan);
-
-	dma_cookie_init(&siochan->chan);
-	return 0;
-}
-
 static void sio_free_chan_resources(struct dma_chan *chan)
 {
 	sio_terminate_all(chan);
 	sio_synchronize(chan);
+	vchan_free_chan_resources(&to_sio_chan(chan)->vc);
 }
 
 static struct dma_chan *sio_dma_of_xlate(struct of_phandle_args *dma_spec,
@@ -520,7 +473,7 @@ static struct dma_chan *sio_dma_of_xlate(struct of_phandle_args *dma_spec,
 	if (dma_spec->args_count != 1 || index >= sio->nchannels)
 		return ERR_PTR(-EINVAL);
 
-	return dma_get_slave_channel(&sio->channels[index].chan);
+	return dma_get_slave_channel(&sio->channels[index].vc.chan);
 }
 
 static void sio_rtk_crashed(void *cookie)
@@ -534,19 +487,17 @@ static void sio_process_report(struct sio_chan *siochan)
 {
 	unsigned long flags;
 
-	spin_lock_irqsave(&siochan->lock, flags);
+	spin_lock_irqsave(&siochan->vc.lock, flags);
 	if (siochan->current_tx) {
 		struct sio_tx *tx = siochan->current_tx;
 
-		siochan->nperiod_acks++;
 		if (tx->ninflight)
 			tx->ninflight--;
-		if (!tx->terminated)
-			tasklet_schedule(&siochan->tasklet);
+		vchan_cyclic_callback(&tx->vd);
 		if (!sio_fill_in_locked(siochan) && !tx->ninflight)
 			complete(&tx->done);
 	}
-	spin_unlock_irqrestore(&siochan->lock, flags);
+	spin_unlock_irqrestore(&siochan->vc.lock, flags);
 }
 
 static void sio_recv_msg(void *cookie, u8 ep, u64 msg)
@@ -671,32 +622,6 @@ static const struct apple_rtkit_ops sio_rtkit_ops = {
 	.crashed = sio_rtk_crashed,
 	.recv_message = sio_recv_msg,
 };
-
-static void sio_chan_tasklet(struct tasklet_struct *t)
-{
-	struct sio_chan *siochan = container_of(t, struct sio_chan, tasklet);
-	struct sio_tx *siotx;
-	struct dmaengine_desc_callback cb;
-	struct dmaengine_result tx_result;
-	unsigned long flags;
-	int nacks;
-
-	spin_lock_irqsave(&siochan->lock, flags);
-	siotx = siochan->current_tx;
-	nacks = siochan->nperiod_acks;
-	siochan->nperiod_acks = 0;
-	spin_unlock_irqrestore(&siochan->lock, flags);
-
-	if (!siotx || !nacks)
-		return;
-
-	tx_result.result = DMA_TRANS_NOERROR;
-	tx_result.residue = 0;
-
-	dmaengine_desc_get_callback(&siotx->tx, &cb);
-	while (nacks--)
-		dmaengine_desc_callback_invoke(&cb, &tx_result);
-}
 
 static int sio_device_config(struct dma_chan *chan,
 			     struct dma_slave_config *config)
@@ -850,7 +775,6 @@ static int sio_probe(struct platform_device *pdev)
 	dma_cap_set(DMA_CYCLIC, dma->cap_mask);
 
 	dma->dev = &pdev->dev;
-	dma->device_alloc_chan_resources = sio_alloc_chan_resources;
 	dma->device_free_chan_resources = sio_free_chan_resources;
 	dma->device_tx_status = sio_tx_status;
 	dma->device_issue_pending = sio_issue_pending;
@@ -871,14 +795,9 @@ static int sio_probe(struct platform_device *pdev)
 
 		siochan->host = sio;
 		siochan->no = i;
-		siochan->chan.device = &sio->dma;
-		spin_lock_init(&siochan->lock);
-		INIT_LIST_HEAD(&siochan->submitted);
-		INIT_LIST_HEAD(&siochan->issued);
-		INIT_LIST_HEAD(&siochan->to_free);
-		list_add_tail(&siochan->chan.device_node, &dma->channels);
-		tasklet_setup(&siochan->tasklet, sio_chan_tasklet);
+		siochan->vc.desc_free = sio_tx_free;
 		INIT_WORK(&siochan->terminate_wq, sio_terminate_work);
+		vchan_init(&siochan->vc, dma);
 	}
 
 	writel(CPU_CONTROL_RUN, sio->base + REG_CPU_CONTROL);
