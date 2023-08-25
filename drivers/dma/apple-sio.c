@@ -131,8 +131,7 @@ struct sio_data {
 	unsigned long *desc_allocated;
 
 	struct sio_tagdata {
-		static_assert(sizeof(unsigned long) * 8 >= SIO_NTAGS);
-		unsigned long allocated;
+		DECLARE_BITMAP(allocated, SIO_NTAGS);
 		int last_tag;
 
 		struct completion completions[SIO_NTAGS];
@@ -192,7 +191,7 @@ static int sio_alloc_tag(struct sio_data *sio)
 	tag = (READ_ONCE(tags->last_tag) % SIO_USABLE_TAGS) + 1;
 
 	for (i = 0; i < SIO_USABLE_TAGS; i++) {
-		if (!test_and_set_bit(tag, &tags->allocated))
+		if (!test_and_set_bit(tag, tags->allocated))
 			break;
 
 		tag = (tag % SIO_USABLE_TAGS) + 1;
@@ -217,7 +216,7 @@ static void sio_free_tag(struct sio_data *sio, int tag)
 	tags->atomic[tag] = false;
 	tags->ack_callback[tag] = NULL;
 
-	WARN_ON(!test_and_clear_bit(tag, &tags->allocated));
+	WARN_ON(!test_and_clear_bit(tag, tags->allocated));
 }
 
 static void sio_set_tag_atomic(struct sio_data *sio, int tag,
