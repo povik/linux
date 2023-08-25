@@ -96,13 +96,6 @@ struct sio_chan {
 
 	spinlock_t lock;
 	struct sio_tx *current_tx;
-	/*
-	 * 'tx_cookie' is used for distinguishing between transactions from
-	 * within tag ack/nack callbacks. Without it, we would have no way
-	 * of knowing if the current transaction is the one the callback handler
-	 * was installed for.
-	 */
-	unsigned long tx_cookie;
 	int nperiod_acks;
 
 	/*
@@ -372,7 +365,7 @@ static bool sio_fill_in_locked(struct sio_chan *siochan);
 static void sio_handle_issue_ack(struct sio_chan *siochan, void *cookie, bool ok)
 {
 	unsigned long flags;
-	unsigned long tx_cookie = (unsigned long) cookie;
+	dma_cookie_t tx_cookie = (unsigned long) cookie;
 	struct sio_tx *tx;
 
 	if (!ok) {
@@ -381,7 +374,7 @@ static void sio_handle_issue_ack(struct sio_chan *siochan, void *cookie, bool ok
 	}
 
 	spin_lock_irqsave(&siochan->lock, flags);
-	if (!siochan->current_tx || tx_cookie != siochan->tx_cookie ||
+	if (!siochan->current_tx || tx_cookie != siochan->current_tx->tx.cookie ||
 	    siochan->current_tx->terminated)
 		goto out;
 
@@ -404,10 +397,11 @@ static bool sio_fill_in_locked(struct sio_chan *siochan)
 	if (tx->ninflight >= SIO_MAX_NINFLIGHT || tx->terminated)
 		return false;
 
+	static_assert(sizeof(dma_cookie_t) <= sizeof(void *));
 	ret = sio_send_siomsg_atomic(sio, FIELD_PREP(SIOMSG_EP, siochan->no) |
 				     FIELD_PREP(SIOMSG_TYPE, MSG_ISSUE) |
 				     FIELD_PREP(SIOMSG_DATA, sio_coproc_desc_slot(sio, d)),
-				     sio_handle_issue_ack, (void *) siochan->tx_cookie);
+				     sio_handle_issue_ack, (void *) (uintptr_t) tx->tx.cookie);
 	if (ret < 0)
 		dev_err_ratelimited(sio->dev, "can't issue on chan %d ninflight %d: %d\n",
 				    siochan->no, tx->ninflight, ret);
